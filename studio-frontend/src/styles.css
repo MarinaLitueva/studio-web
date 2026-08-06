@@ -151,7 +151,241 @@ label.field input { display: block; width: 100%; margin-top: 6px; font-weight: 4
   font-size: 12.5px; color: var(--muted);
   display: flex; flex-direction: column; gap: 8px;
 }
-.content { flex: 1; min-width: 0; padding: 1.75rem 2rem 4rem; max-width: 860px; }
+/* The work area takes all width between the nav and the filter panel; cards
+   inside cap their own line lengths, the shell itself fills the screen. */
+.content { flex: 1; min-width: 0; padding: 1.75rem 2.25rem 4rem; }
+
+/* ── Console-style nav sections, account menu, home hub ── */
+.nav-section { margin-top: 6px; }
+.nav-section-title {
+  font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted); padding: 8px 10px 2px;
+}
+.account-button {
+  display: flex; gap: 10px; align-items: center; width: 100%;
+  background: none; border: 1px solid var(--border); border-radius: 10px;
+  padding: 8px 10px; cursor: pointer; text-align: left;
+}
+.account-avatar {
+  width: 28px; height: 28px; border-radius: 8px; flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--accent, #6366f1); color: #fff; font-weight: 800;
+}
+.account-lines { display: flex; flex-direction: column; min-width: 0; }
+.account-name {
+  font-size: 12.5px; font-weight: 700; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.account-menu {
+  border: 1px solid var(--border); border-radius: 10px; background: var(--bg);
+  padding: 8px; margin-bottom: 8px; display: flex; flex-direction: column; gap: 4px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+}
+.account-menu-head {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 4px 6px 8px; border-bottom: 1px solid var(--border); margin-bottom: 4px;
+  font-size: 12px; color: var(--muted);
+}
+.account-user { font-size: 13.5px; font-weight: 700; color: var(--text); }
+.account-orgs { border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-bottom: 4px; }
+.account-orgs-title {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--muted); padding: 4px 6px;
+}
+.account-orgs button { display: flex; align-items: center; gap: 8px; width: 100%; }
+.account-avatar.small { width: 20px; height: 20px; border-radius: 6px; font-size: 11px; }
+.admin-title { color: var(--accent); }
+.org-select-wrap { position: relative; }
+.org-select {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
+  padding: 7px 10px; text-align: left;
+}
+.org-select-name {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-weight: 600; font-size: 13px;
+}
+.org-select .chev { color: var(--muted); font-size: 10px; }
+.org-menu {
+  position: absolute; top: 105%; left: 0; right: 0; z-index: 30;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  padding: 6px; display: flex; flex-direction: column; gap: 2px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+}
+.org-menu button {
+  display: flex; align-items: center; gap: 8px; text-align: left;
+  border: none; background: none; padding: 8px 10px;
+}
+button.danger {
+  background: var(--danger); border-color: var(--danger); color: #fff;
+}
+button.danger:hover:not(:disabled) { background: #b91c1c; border-color: #b91c1c; }
+.danger-zone { border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
+.sidebar.collapsed .org-select-name, .sidebar.collapsed .org-select .chev { display: none; }
+.account-menu > button { text-align: left; }
+/* ── Login page (creative full-bleed) ── */
+.login-page {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background:
+    linear-gradient(var(--accent-soft) 0 0) 0 0 / 28% 22% no-repeat,
+    linear-gradient(color-mix(in srgb, var(--accent) 12%, transparent) 0 0) 78% 8% / 24% 30% no-repeat,
+    linear-gradient(var(--accent-soft) 0 0) 88% 74% / 22% 26% no-repeat,
+    linear-gradient(color-mix(in srgb, #8b5cf6 10%, transparent) 0 0) 6% 82% / 26% 18% no-repeat,
+    var(--bg);
+}
+.login-panel {
+  width: min(460px, 92%);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 16px; box-shadow: var(--shadow);
+  padding: 3rem 2.75rem 2.25rem;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.login-logo { width: 48px; height: 48px; font-size: 26px; border-radius: 12px; margin-bottom: 8px; }
+.login-title { font-size: 2.1rem; margin: 0; }
+.login-sso { width: 100%; padding: 12px; font-size: 15px; margin-top: 10px; }
+.login-providers { display: flex; gap: 10px; }
+.login-providers button {
+  flex: 1; display: flex; align-items: center; justify-content: center; padding: 11px 0;
+}
+.login-dev { margin-top: 18px; }
+.login-dev summary {
+  cursor: pointer; color: var(--muted); font-size: 12.5px; list-style: none;
+}
+.login-dev summary:hover { color: var(--accent); }
+.login-dev form { margin-top: 10px; }
+
+/* ── Collapsible sidebar ── */
+.sidebar-toggle {
+  border: none; background: none; color: var(--muted);
+  padding: 4px 8px; border-radius: 6px; font-size: 13px; flex: 0 0 auto;
+}
+.sidebar-toggle:hover { background: var(--accent-soft); color: var(--accent); }
+.sidebar.collapsed { width: 64px; padding: 1.25rem 0.5rem; }
+.sidebar.collapsed .product-button strong,
+.sidebar.collapsed .product-button .chev { display: none; }
+.sidebar.collapsed .product-switch { display: flex; flex-direction: column; gap: 6px; align-items: center; }
+.sidebar.collapsed nav button {
+  font-size: 0; gap: 0; justify-content: center; padding: 9px 0;
+}
+.sidebar.collapsed nav button .ico { font-size: 15px; }
+.sidebar.collapsed nav button .dirty-dot { font-size: 9px; margin: 0; position: absolute; transform: translate(10px, -8px); }
+.sidebar.collapsed .nav-section-title { display: none; }
+.sidebar.collapsed .space-x { display: none; }
+.sidebar.collapsed .account-lines { display: none; }
+.sidebar.collapsed .account-button { justify-content: center; padding: 8px 4px; }
+.sidebar.collapsed .account-menu { position: fixed; left: 70px; bottom: 16px; z-index: 40; min-width: 220px; }
+
+/* ── Product switcher & connector catalog ── */
+.product-switch { position: relative; }
+.product-button {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  background: none; border: none; padding: 4px 6px; cursor: pointer;
+  font-size: 15px; color: var(--text); border-radius: 8px;
+}
+.product-button:hover { background: var(--accent-soft); }
+.product-button .chev { color: var(--muted); font-size: 11px; }
+.product-menu {
+  position: absolute; top: 110%; left: 0; z-index: 30; min-width: 190px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  padding: 6px; display: flex; flex-direction: column; gap: 2px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+}
+.product-menu button {
+  text-align: left; border: none; background: none;
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+}
+.product-menu .check { margin-left: auto; color: var(--accent); }
+.catalog { margin-top: 10px; }
+.catalog-row {
+  display: grid; grid-template-columns: 2fr 1fr 120px 110px;
+  gap: 10px; align-items: center; padding: 10px 4px;
+  border-bottom: 1px solid var(--border); font-size: 13.5px;
+}
+.catalog-row:last-child { border-bottom: none; }
+.catalog-head {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--muted); border-bottom: 1px solid var(--border);
+}
+.catalog-dim .catalog-name { opacity: 0.65; }
+.catalog-name { font-weight: 600; display: flex; align-items: center; gap: 10px; }
+.catalog-icon { width: 22px; text-align: center; }
+
+.home-hero {
+  margin: 0.5rem 0 1.5rem;
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
+}
+.home-hero h1 { font-size: 2rem; }
+.hero-links { display: flex; gap: 18px; flex-shrink: 0; padding-top: 10px; }
+.hero-links a {
+  color: var(--muted); text-decoration: none; font-size: 13.5px; font-weight: 600;
+}
+.hero-links a:hover { color: var(--accent); }
+
+/* Full-page create-organization onboarding (empty state) */
+.hero-create {
+  min-height: 70vh; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 14px;
+  background: radial-gradient(600px 340px at 50% 30%, var(--accent-soft) 0%, transparent 70%);
+  border-radius: var(--radius);
+}
+.hero-create h1 { font-size: 2.2rem; }
+.hero-create-card { width: min(440px, 90%); margin-top: 0.5rem; }
+.hero-create-btn { width: min(440px, 90%); padding: 11px; font-size: 14.5px; }
+.hero-gradient {
+  background: linear-gradient(90deg, var(--accent), #8b5cf6, #c084fc);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.home-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px; align-items: stretch;
+}
+.home-grid .card { margin: 0; }
+.home-grid .span-all { grid-column: 1 / -1; }
+.home-links { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.home-links a, .linklike {
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: var(--text); font-size: 13.5px; text-align: left;
+}
+.home-links a:hover, .linklike:hover { color: var(--accent, #6366f1); }
+
+/* ── Access map (tenant hierarchy = privilege system) ── */
+.access-tree, .access-tree ul { list-style: none; margin: 0; padding: 0; }
+.access-tree ul { margin-left: 14px; padding-left: 14px; border-left: 1px solid var(--border); }
+.access-tree li { margin: 6px 0; }
+.access-node { display: inline-flex; gap: 8px; align-items: center; font-size: 13.5px; }
+.access-dim > .access-node { opacity: 0.55; }
+.badge.you { background: var(--accent, #6366f1); color: #fff; }
+.scope-line { font-size: 11.5px; opacity: 0.8; }
+
+/* ── Permission catalog (System) ── */
+.perm-list {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 4px 12px;
+}
+.perm-list code { font-size: 12px; }
+
+/* ── Spaces: sessions embedded in the portal window ── */
+.spaces-host {
+  flex: 1; min-width: 0; height: 100vh; position: sticky; top: 0;
+  flex-direction: column; background: var(--bg);
+}
+.space-bar {
+  display: flex; gap: 12px; align-items: center;
+  padding: 4px 12px; font-size: 12.5px; color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+.space-bar a { margin-left: auto; font-size: 12px; }
+.space-frames { flex: 1; position: relative; }
+.space-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.nav-spaces { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 8px; }
+.nav-spaces-title {
+  font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted); padding: 0 10px 4px;
+}
+.space-row { display: flex; align-items: center; gap: 2px; }
+.space-row button:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.space-x { padding: 2px 6px; flex: 0 0 auto; }
+.dirty-dot { color: #fbbf24; margin-left: 6px; font-size: 10px; }
 .content > h1 { margin-bottom: 0.25rem; }
 @media (max-width: 720px) {
   .shell { flex-direction: column; }
@@ -159,3 +393,95 @@ label.field input { display: block; width: 100%; margin-top: 6px; font-weight: 4
   .sidebar nav { flex-direction: row; }
   .sidebar .whoami { border: none; padding: 0; }
 }
+
+/* ── Right panel: context-aware filters ── */
+.rightbar {
+  width: 264px; flex-shrink: 0;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  padding: 1.25rem 1rem;
+  position: sticky; top: 0; height: 100vh;
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: 1.1rem;
+  animation: rightbar-in 0.18s ease;
+}
+@keyframes rightbar-in {
+  from { transform: translateX(16px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.rightbar.collapsed {
+  width: 56px;
+  padding: 1.25rem 0.5rem;
+  align-items: center;
+  overflow: visible;
+}
+.rightbar-head { display: flex; justify-content: space-between; align-items: center; }
+.rightbar-head h2 { margin: 0; font-size: 0.95rem; display: flex; align-items: center; gap: 8px; }
+
+.count-pill {
+  background: var(--accent); color: #fff;
+  border-radius: 999px; font-size: 11px; font-weight: 700;
+  min-width: 18px; height: 18px; line-height: 18px;
+  text-align: center; padding: 0 5px;
+}
+
+.funnel {
+  position: relative;
+  width: 38px; height: 38px; padding: 0;
+  display: grid; place-items: center;
+  font-size: 17px; border-radius: 10px;
+}
+.funnel .count {
+  position: absolute; top: -6px; right: -6px;
+  background: var(--accent); color: #fff;
+  border-radius: 999px; font-size: 10px; font-weight: 700;
+  min-width: 16px; height: 16px; line-height: 16px; text-align: center;
+}
+
+.filter-group { display: flex; flex-direction: column; gap: 6px; }
+.filter-group .lbl {
+  font-size: 11px; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.rightbar input, .rightbar select { width: 100%; }
+
+.chipset { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  padding: 3px 11px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface);
+  font-size: 12px; font-weight: 500;
+}
+.chip.on {
+  background: var(--accent-soft); border-color: var(--accent);
+  color: var(--accent); font-weight: 600;
+}
+
+@media (max-width: 980px) {
+  .rightbar { display: none; }
+}
+
+/* ── Dark theme (server-side preference via simple-user-settings) ── */
+/* One palette with the embedded IDE (the session splash and Theia dark run
+   on the #1e1e2e family) — switching portal ↔ space must not change hue. */
+:root[data-theme="dark"] {
+  --bg: #181825;
+  --surface: #1e1e2e;
+  --border: #313244;
+  --text: #cdd6f4;
+  --muted: #8f96b3;
+  --accent: #818cf8;
+  --accent-hover: #6d79f2;
+  --accent-soft: #2a2a45;
+  --danger-soft: #3a1f26;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+:root[data-theme="dark"] body {
+  background: radial-gradient(1000px 400px at 80% -10%, #232338 0%, transparent 60%), var(--bg);
+}
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select {
+  background: #181825; color: var(--text);
+}
+:root[data-theme="dark"] .sidebar nav button:hover { background: #222c44; }
+:root[data-theme="dark"] .hint code { background: #222c44; }
+:root[data-theme="dark"] button:hover:not(:disabled) { background: #222c44; }

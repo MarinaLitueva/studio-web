@@ -19,6 +19,30 @@ anyhow = "1"
 tokio = { version = "1", features = ["full"] }
 clap = { version = "4", features = ["derive"] }
 
+# ── studio-session gear (in-crate; per-workspace Theia IDE containers) ──
+bollard = "0.17"
+futures-util = "0.3" # image-pull stream in ensure_image
+async-trait = "0.1"
+axum = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+inventory = "0.3"
+tracing = "0.1"
+tokio-util = "0.7"
+utoipa = "5"
+uuid = { version = "1", features = ["serde", "v4"] }
+toolkit-macros = { package = "cf-gears-toolkit-macros", path = "../../gears-rust/libs/toolkit-macros" }
+credstore-sdk = { package = "cf-gears-credstore-sdk", path = "../../gears-rust/gears/credstore/credstore-sdk" }
+
+# ── keycloak-idp-plugin (in-crate; real user provisioning, ADR-0004) ──
+# "stream" is for the llm-proxy gear (SSE passthrough to the LLM upstream).
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+account-management-sdk = { package = "cf-gears-account-management-sdk", path = "../../gears-rust/gears/system/account-management/account-management-sdk" }
+toolkit-odata = { package = "cf-gears-toolkit-odata", path = "../../gears-rust/libs/toolkit-odata" }
+types-registry-sdk = { package = "cf-gears-types-registry-sdk", path = "../../gears-rust/gears/system/types-registry/types-registry-sdk" }
+toolkit-security = { package = "cf-gears-toolkit-security", path = "../../gears-rust/libs/toolkit-security" }
+toolkit-canonical-errors = { package = "cf-gears-toolkit-canonical-errors", path = "../../gears-rust/libs/toolkit-canonical-errors", features = ["axum"] }
+
 # ── Core toolkit ──
 toolkit = { package = "cf-gears-toolkit", path = "../../gears-rust/libs/toolkit", features = ["bootstrap"] }
 
@@ -35,9 +59,24 @@ resource_group = { package = "cf-gears-resource-group", path = "../../gears-rust
 
 # ── Dev plugins (static auth for the demo; replace with OIDC for real deployments) ──
 static_authn_plugin = { package = "cf-gears-static-authn-plugin", path = "../../gears-rust/gears/system/authn-resolver/plugins/static-authn-plugin" }
+# Real login: OIDC JWT validation (used by config/oidc.yaml with Keycloak from compose)
+oidc_authn_plugin = { package = "cf-gears-oidc-authn-plugin", path = "../../gears-rust/gears/system/authn-resolver/plugins/oidc-authn-plugin" }
 static_authz_plugin = { package = "cf-gears-static-authz-plugin", path = "../../gears-rust/gears/system/authz-resolver/plugins/static-authz-plugin" }
 
 # ── The gear under demonstration ──
 # account-management ships its own Tenant Resolver plugin (src/tr_plugin) in-crate.
 account_management = { package = "cf-gears-account-management", path = "../../gears-rust/gears/system/account-management/account-management" }
 static_idp_plugin = { package = "cf-gears-static-idp-plugin", path = "../../gears-rust/gears/system/account-management/plugins/static-idp-plugin" }
+
+# ── Feature gears: AI chat, per-user settings, file storage ──
+# mini-chat hard-depends on oagw (LLM egress); oagw depends on credstore.
+# NB: the static model-policy plugin lives INSIDE the mini-chat crate
+# (src/infra/plugins/static_model_policy); the standalone
+# gears/mini-chat/plugins/static-model-policy-plugin dir is a leftover
+# Cargo.toml with no sources (gears issue candidate #5).
+mini_chat = { package = "cf-gears-mini-chat", path = "../../gears-rust/gears/mini-chat/mini-chat" }
+api_egress = { package = "cf-gears-oagw", path = "../../gears-rust/gears/system/oagw/oagw" }
+credstore = { package = "cf-gears-credstore", path = "../../gears-rust/gears/credstore/credstore" }
+static_credstore_plugin = { package = "cf-gears-static-credstore-plugin", path = "../../gears-rust/gears/credstore/plugins/static-credstore-plugin" }
+simple_user_settings = { package = "cf-gears-simple-user-settings", path = "../../gears-rust/gears/simple-user-settings/simple-user-settings" }
+file_storage = { package = "cf-gears-file-storage", path = "../../gears-rust/gears/file-storage/file-storage" }

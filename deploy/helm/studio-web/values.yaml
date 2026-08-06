@@ -1,0 +1,78 @@
+# Defaults are dev-safe: no production hostnames, no real credentials.
+# Required per environment: database.existingSecret, auth (IDP) secret.
+global:
+  hostname: ""            # e.g. constructor.local (never a prod default)
+  customDomains: []
+  environmentName: "dev"
+  environmentType: "prod" # policy: default reflects production behavior
+
+backend:
+  image:
+    # Matches release.yml: ghcr.io/<github repo>/studio-backend
+    repository: ghcr.io/constructorfabric/studio-web/studio-backend
+    tag: ""                # REQUIRED: fixed at chart publication (no latest)
+  replicas: 1
+  port: 8090
+  configProfile: "k8s"
+  # Postgres is operator-managed; connection comes ONLY from this Secret
+  # (keys: host, port, user, password, dbname).
+  database:
+    existingSecret: "studio-postgres-app"
+  # Platform IDP (OIDC issuer + client) — external, per-service Secret
+  # (keys: issuer_url, client_id, client_secret).
+  auth:
+    existingSecret: "studio-web-idp"
+  # Application secrets (keys: llm_api_key [required], fs_signing_seed
+  # [required], s2s_client_secret [optional], idp_admin_secret [optional]).
+  appSecrets:
+    existingSecret: "studio-web-app"
+  # LLM egress endpoint (non-secret half; the key lives in appSecrets).
+  # Any OpenAI-compatible provider; defaults = Groq free tier.
+  llm:
+    baseUrl: "https://api.groq.com/openai/v1"  # Theia AI proxy upstream
+    host: "api.groq.com"                       # mini-chat/OAGW upstream host
+    model: "llama-3.3-70b-versatile"
+  # Keycloak Admin API base URL for user invites (keycloak-idp-plugin).
+  # Empty = invites disabled (plugin self-deprioritizes).
+  idpAdmin:
+    baseUrl: ""
+  resources:
+    requests: { cpu: 200m, memory: 256Mi }
+    limits: { cpu: "1", memory: 1Gi }
+  autoscaling:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 80
+
+frontend:
+  image:
+    repository: ghcr.io/constructorfabric/studio-web/studio-frontend
+    tag: ""                # REQUIRED: fixed at chart publication
+  replicas: 1
+  port: 8080               # nginx-unprivileged listens on 8080 (non-root)
+  # Optional Discord invite shown on the Home hub (runtime env.js).
+  discordUrl: ""
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 250m, memory: 256Mi }
+  autoscaling:
+    enabled: false
+
+ingress:
+  enabled: true
+  className: "nginx"
+  # Private by default; public exposure (ext-ingress + basic auth) is an
+  # explicit per-environment override (INFRA-3725).
+  annotations: {}
+  tls: []
+
+serviceAccount:
+  create: true
+  name: ""
+
+# Non-root is enforced; the concrete uid comes from each image (backend:
+# the `studio` system user, frontend: nginx-unprivileged uid 101) — pinning
+# one pod-wide uid would break whichever image doesn't own its files.
+podSecurityContext:
+  runAsNonRoot: true

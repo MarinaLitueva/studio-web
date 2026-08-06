@@ -76,6 +76,18 @@ gears:
             subject_tenant_id: "00000000-0000-0000-0000-000000000001"
             token_scopes: ["*"]
             subject_type: "gts.cf.core.security.subject_user.v1~"
+      # S2S: mini-chat exchanges these for a SecurityContext to call other gears
+      s2s_credentials:
+        # Explicit identity: without it the plugin's built-in default tenant id
+        # is used, which does not exist in OUR tenant tree -> the AM tenant-
+        # resolver plugin fails OAGW hierarchy resolution (TenantNotFound).
+        - client_id: "mini-chat"
+          client_secret: "mini-chat-dev-secret"
+          identity:
+            subject_id: "00000000-0000-0000-0000-00000000b001"
+            subject_tenant_id: "00000000-0000-0000-0000-000000000001"
+            token_scopes: ["*"]
+            subject_type: "gts.cf.core.security.subject_user.v1~"
 
   # ── AuthZ: permissive static PDP for the demo (Studio roles later = own PDP plugin) ──
   authz-resolver:
@@ -120,6 +132,19 @@ gears:
           x-gts-traits:
             allowed_parent_types: ["gts.cf.core.am.tenant_type.v1~cf.studio.tenant.organization.v1~"]
             idp_provisioning: false
+        # Workspace settings as AM tenant metadata (vision J2: automation level,
+        # approved worker categories). override_only: each workspace sets its own.
+        - "$id": "gts://gts.cf.core.am.tenant_metadata.v1~cf.studio.workspace.settings.v1~"
+          # Free-form payload: the GTS OP#12 narrowing check treats the base
+          # tenant_metadata envelope as a CLOSED empty object, so a derived
+          # schema may not declare typed properties at all (gears issue #4).
+          # Shape {automation_level, approved_worker_categories} is enforced
+          # client-side until the base schema is relaxed upstream.
+          "$schema": "http://json-schema.org/draft-07/schema#"
+          description: "Studio workspace settings (free-form until gears issue #4)"
+          type: "object"
+          x-gts-traits:
+            inheritance_policy: "override_only"
 
   nodes-registry:
     database:
@@ -155,3 +180,167 @@ gears:
     config:
       vendor: "cf"       # matches AM idp.vendor default
       priority: 100
+
+  # ── Feature gears: per-user settings, files, AI chat ──
+
+  simple-user-settings:
+    database:
+      server: "sqlite_main"
+      file: "settings.db"
+    config:
+      max_field_length: 200
+
+  file-storage:
+    database:
+      server: "sqlite_main"
+      file: "file_storage.db"
+    config:
+      # Dev-only Ed25519 seed so signed URLs survive restarts (generate your
+      # own for any shared environment).
+      signing_key_seed: "ej5FEOW2E1emMKbKUNBKALhdHb-VLvLNM-n4FcuDREY"
+
+  # LLM egress chain: mini-chat -> oagw -> provider; secrets via credstore
+  oagw:
+    config:
+      proxy_timeout_secs: 120
+
+  credstore:
+    database:
+      server: "sqlite_main"
+      file: "credstore.db"
+    config:
+      vendor: "constructorfabric"
+
+  static-credstore-plugin:
+    config:
+      vendor: "constructorfabric"
+      priority: 100
+      secrets:
+        # Shared secret (no tenant_id). Put your real OpenAI key here for the
+        # Ask AI feature; without it chats are created but streaming replies
+        # fail at the provider with 401.
+        - key: "openai-key"
+          value: "sk-REPLACE_ME"
+
+  mini-chat:
+    database:
+      server: "sqlite_main"
+      file: "mini_chat.db"
+    config:
+      outbox:
+        num_partitions: 2   # SQLite is single-writer; default 4 causes contention
+      client_credentials:
+        client_id: "mini-chat"
+        client_secret: "mini-chat-dev-secret"
+      providers:
+        openai:
+          kind: openai_responses
+          storage_kind: openai
+          host: "api.openai.com"
+          auth_plugin_type: "gts.cf.core.oagw.auth_plugin.v1~cf.core.oagw.apikey.v1"
+          auth_config:
+            header: "Authorization"
+            prefix: "Bearer "
+            secret_ref: "openai-key"
+
+  static-mini-chat-model-policy-plugin:
+    config:
+      vendor: "constructorfabric"
+      priority: 100
+      model_catalog:
+        - id: "gpt-5.2"
+          provider_model_id: "gpt-5.2"
+          display_name: "GPT-5.2"
+          tier: Standard
+          enabled: true
+          system_prompt: "You are the Constructor Studio workspace assistant. Be concise and practical."
+          thread_summary_prompt: ""
+          input_tokens_credit_multiplier_micro: 1000000
+          output_tokens_credit_multiplier_micro: 3000000
+          multimodal_capabilities: ["VISION_INPUT"]
+          context_window: 128000
+          max_output_tokens: 8192
+          max_input_tokens: 120000
+          description: "Default Studio assistant model"
+          version: "2025-01"
+          icon: ""
+          provider_display_name: "OpenAI"
+          multiplier_display: "1x"
+          provider_id: "openai"
+          max_num_results: 10
+          max_tool_calls: 2
+          estimation_budgets:
+            bytes_per_token_conservative: 4
+            fixed_overhead_tokens: 500
+            safety_margin_pct: 10
+            image_token_budget: 1000
+            tool_surcharge_tokens: 200
+            web_search_surcharge_tokens: 500
+            code_interpreter_surcharge_tokens: 1000
+            minimal_generation_floor: 100
+          preference:
+            is_default: true
+            sort_order: 1
+          general_config:
+            type: "chat"
+            available_from: "2025-01-01T00:00:00Z"
+            max_file_size_mb: 50
+            api_params:
+              temperature: 0.7
+              top_p: 1.0
+              frequency_penalty: 0.0
+              presence_penalty: 0.0
+              stop: []
+            features:
+              streaming: true
+              structured_output: true
+            tool_support:
+              web_search: false
+              file_search: false
+              image_generation: false
+              code_interpreter: false
+              mcp: false
+            supported_endpoints:
+              chat_completions: true
+              responses: true
+              embeddings: false
+              image_generation: false
+              audio_speech_generation: false
+              audio_transcription: false
+              audio_translation: false
+
+  # ── Studio's own gear: per-workspace Theia IDE sessions in containers ──
+  # Requires a Docker daemon; the CI-published image is pulled/refreshed
+  # automatically (docker login ghcr.io once if the package is private).
+  studio-session:
+    config:
+      image: "ghcr.io/constructorfabric/fabric-poc/cf-studio-theia:edge"
+      always_pull: true
+      workspaces_root: "~/.cf-studio-workspaces"
+      bind_host: "127.0.0.1"      # loopback only — the Theia PoC has no auth
+      public_host: "localhost"
+      port_range_start: 41000
+      port_range_end: 41099
+      max_session_secs: 14400     # 4h, then the reaper stops the container
+      git_mode: "disabled"
+
+  # oidc-authn-plugin is link-time active in every profile (gears discover
+  # via inventory), and it REQUIRES a config section. In this static-token
+  # profile it is configured valid but DEPRIORITIZED: static-authn-plugin
+  # (priority 100) wins the vendor selection, so this section is inert.
+  oidc-authn-plugin:
+    config:
+      vendor: "constructorfabric"
+      priority: 1000   # LOWER number wins vendor selection; static (100) stays in charge here
+      jwt:
+        supported_algorithms: ["RS256", "ES256"]
+        require_audience: false
+        trusted_issuers:
+          - issuer: "https://localhost:8443/realms/studio"
+        claim_mapping:
+          subject_id: "sub"
+          subject_tenant_id: "tenant_id"
+          token_scopes: "scope"
+      s2s_oauth:
+        discovery_url: "https://localhost:8443/realms/studio"
+        default_subject_type: "gts.cf.core.security.subject_service.v1~"
