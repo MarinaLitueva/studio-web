@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { env as runtimeEnv } from "./env";
+import { errText, matches } from "./format";
+import { ProjectsPortfolio } from "./projects";
+import { PeopleView } from "./people";
 import {
   api,
   ApiError,
@@ -23,34 +26,56 @@ import {
 } from "./api";
 
 // Portal (личный кабинет): sign in with a bearer token, then an app shell
-// with a sidebar — Workspaces / Organizations / Members / Profile.
-// Selecting a workspace hands off to the Theia-based Studio (/studio/{id}).
+// with a sidebar — Projects / People / Integrations / Profile.
+// Opening a project hands off to the Theia-based Studio (/space/{id}).
+//
+// ── Concept v2 ───────────────────────────────────────────────────────────────
+// A **Project** is the only unit of work the UI knows. What the platform calls
+// a *workspace tenant* IS a project (it owns the sources, the automation level,
+// the people and the IDE sessions); what the `studio-project` gear records are
+// *nested projects* inside it.
+//
+// **Organizations are hidden, not removed.** The organization tenant still
+// exists and still does its two jobs — owning the shared connector catalogue
+// and anchoring the tenant hierarchy — but it is no longer a place you can
+// navigate to, and nobody holds a role in one. The code below keeps every
+// org-shaped seam (`orgId` on a project, org-scoped connections, the tenant
+// admin surfaces) reachable behind a flag, so bringing the level back is a
+// UI decision rather than a re-architecture.
 
-function errText(e: unknown): string {
-  if (e instanceof ApiError) {
-    const b = e.body as { title?: string; detail?: string } | undefined;
-    return `HTTP ${e.status}${b?.title ? ` · ${b.title}` : ""}${b?.detail ? ` — ${b.detail}` : ""}`;
-  }
-  return String(e);
-}
-
+/** The AM tenant behind a root project.
+ *
+ *  Still named `Workspace` on purpose: that is the tenant type the backend
+ *  serves, and renaming the wire word would only hide where the UI's noun and
+ *  the platform's noun disagree. `orgName`/`orgId` stay for the same reason —
+ *  a connection can be attached to the organization instead of the project,
+ *  which is what makes one PAT serve every project of an organization. */
 interface Workspace extends Tenant {
   orgName: string;
-  /// Parent tenant. A connection can be attached to it instead of the
-  /// workspace, which is what makes one PAT serve every workspace of an
-  /// organization.
   orgId: string;
+}
+
+/** Platform tenant administration (organizations, raw workspace list).
+ *
+ *  Off by default — concept v2 hides the organization level. Kept one
+ *  `localStorage.setItem("studio.platformAdmin", "on")` away because the
+ *  hierarchy is still real and someone has to be able to see it. */
+function platformAdminEnabled(): boolean {
+  try {
+    return localStorage.getItem("studio.platformAdmin") === "on";
+  } catch {
+    return false;
+  }
 }
 
 /* ── Filters (right panel) ── */
 
 interface Filters {
   query: string;
-  org: string; // workspaces: filter by organization id
-  selfManagedOnly: boolean; // workspaces
-  sort: "name-asc" | "name-desc"; // workspaces
+  org: string; // platform admin: filter the raw workspace list by organization
+  selfManagedOnly: boolean;
+  sort: "name-asc" | "name-desc";
   model: string; // chats: filter by model_id
-  mode: "all" | "managed" | "self"; // organizations
   sections: { gears: boolean; upstreams: boolean; entities: boolean }; // system
 }
 
@@ -60,28 +85,19 @@ const DEFAULT_FILTERS: Filters = {
   selfManagedOnly: false,
   sort: "name-asc",
   model: "",
-  mode: "all",
   sections: { gears: true, upstreams: true, entities: true },
 };
-
-function matches(q: string, ...fields: (string | undefined | null)[]): boolean {
-  const needle = q.trim().toLowerCase();
-  if (!needle) return true;
-  return fields.some((f) => (f ?? "").toLowerCase().includes(needle));
-}
 
 type PanelView = View | "dashboard";
 
 function activeFilterCount(view: PanelView, f: Filters): number {
   let n = 0;
   if (view !== "system" && view !== "profile" && view !== "dashboard" && f.query.trim()) n++;
-  if (view === "workspaces") {
-    if (f.org) n++;
+  if (view === "projects") {
     if (f.selfManagedOnly) n++;
     if (f.sort !== "name-asc") n++;
   }
   if (view === "chats" && f.model) n++;
-  if (view === "organizations" && f.mode !== "all") n++;
   if (view === "system") n += Object.values(f.sections).filter((v) => !v).length;
   return n;
 }
@@ -280,13 +296,10 @@ function Login({
 
 type View =
   | "home"
-  | "organizations"
-  | "workspaces"
   | "projects"
+  | "people"
   | "chats"
-  | "members"
   | "files"
-  | "secrets"
   | "connectors"
   | "system"
   | "profile";
@@ -365,37 +378,28 @@ function NavIcon({ name }: { name: string }) {
   );
 }
 
-// Sectioned nav (console-style), grouped by the domain model's layers:
-// the CONTROL PLANE (tenant admin hierarchy, working contexts, citizens,
-// credentials), the WORK surfaces, and MONITORING. Projects are NOT a
-// top-level surface — in the model a Project is a managed object living in
-// a workspace's context, managed from the Workspace Dashboard. Profile
-// moved to the bottom account menu.
-// The MAIN portal is pure work (console pattern): administration —
-// organizations, members, secrets — lives in the separate Admin area,
-// reached from the account menu / product switcher.
-/** Where a nav item exists. A workspace section shown while an organization is
- *  selected is a promise the app cannot keep — it can only answer "pick a
- *  workspace first", which is a dead end dressed as a page. */
-type NavScope = "always" | "workspace";
-
+// Sectioned nav (concept v2). Two nouns carry the whole product — Projects and
+// People — and everything that used to need a level above them (organizations,
+// the workspace/project split, "pick a workspace first" dead ends) is gone from
+// the sidebar. Sources, secrets and nested projects are not top-level surfaces:
+// they belong TO a project and live on its page, which is what makes the
+// project the unit rather than a folder you have to select first.
 const NAV_SECTIONS: {
   title: string | null;
-  items: { id: View; icon: string; label: string; scope?: NavScope }[];
+  items: { id: View; icon: string; label: string }[];
 }[] = [
   { title: null, items: [{ id: "home", icon: "home", label: "Home" }] },
   {
     title: "Work",
     items: [
-      // "Overview" rather than "Organizations": what opens here is the
-      // dashboard of whatever the switcher has selected — an organization
-      // with its workspaces, or a workspace with its own content.
-      { id: "workspaces", icon: "org", label: "Overview" },
-      { id: "projects", icon: "grid", label: "Projects", scope: "workspace" },
-      { id: "chats", icon: "chat", label: "Chats", scope: "workspace" },
-      { id: "files", icon: "file", label: "Files", scope: "workspace" },
-      { id: "connectors", icon: "plug", label: "Connectors", scope: "workspace" },
-      { id: "secrets", icon: "key", label: "Secrets", scope: "workspace" },
+      { id: "projects", icon: "grid", label: "Projects" },
+      { id: "people", icon: "users", label: "People" },
+      // Shared credential catalogue. It is owned by the hidden organization —
+      // which is exactly why it sits here and not inside one project: every
+      // project of the org inherits it.
+      { id: "connectors", icon: "plug", label: "Integrations" },
+      { id: "chats", icon: "chat", label: "Chats" },
+      { id: "files", icon: "file", label: "Files" },
     ],
   },
   {
@@ -404,43 +408,41 @@ const NAV_SECTIONS: {
   },
 ];
 
-type AdminView = "organizations" | "members" | "workspaces" | "connectors" | "secrets";
+type AdminView = "people" | "connectors" | "secrets" | "tenants" | "workspaces";
 
+/** Administration that survives concept v2: people, the shared catalogue,
+ *  credentials. The tenant hierarchy (organizations, the raw workspace list)
+ *  appears only when the platform-admin flag is on. */
 const ADMIN_NAV: { id: AdminView; icon: string; label: string }[] = [
-  { id: "organizations", icon: "org", label: "Organization" },
-  { id: "members", icon: "users", label: "Members" },
-  { id: "workspaces", icon: "grid", label: "Workspaces" },
-  // Organization-owned connections. The workspace-level page can only show them
-  // as inherited and read-only: a connection is edited in the tenant that owns
-  // it, and for an organization-scoped PAT that tenant is the organization.
-  { id: "connectors", icon: "plug", label: "Connectors" },
+  { id: "people", icon: "users", label: "People" },
+  { id: "connectors", icon: "plug", label: "Integrations" },
   { id: "secrets", icon: "key", label: "Secrets" },
+];
+
+const PLATFORM_NAV: { id: AdminView; icon: string; label: string }[] = [
+  { id: "tenants", icon: "org", label: "Organizations" },
+  { id: "workspaces", icon: "grid", label: "Project tenants" },
 ];
 
 function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () => void }) {
   const [view, setView] = useState<View>("home");
-  /** Position in the organization → workspace → project drill-down. */
+  /** Position in the project → nested project drill-down. Two levels, one noun. */
   const [crumb, setCrumb] = useState<Crumb>({});
-  /** Name of the opened project, kept for the crumb: the group is not in any
-   *  list the shell holds, and refetching it for a label would be silly. */
+  /** Name of the opened nested project, kept for the crumb: the record is not
+   *  in any list the shell holds, and refetching it for a label would be silly. */
   const [projectLabel, setProjectLabel] = useState<string | undefined>();
-
-  // Leaving a workspace must not strand you on one of its sections: the item
-  // is gone from the sidebar, so the page would be unreachable and empty.
-  useEffect(() => {
-    const item = NAV_SECTIONS.flatMap((sec) => sec.items).find((i) => i.id === view);
-    if (item?.scope === "workspace" && !crumb.wsId) setView("workspaces");
-  }, [crumb.wsId, view]);
   const [accountMenu, setAccountMenu] = useState(false);
   const [productMenu, setProductMenu] = useState(false);
   // Admin area (console pattern): a separate mode with its own sidebar for
   // organizations / members / workspaces administration.
   const [adminOpen, setAdminOpen] = useState(false);
-  const [adminView, setAdminView] = useState<AdminView>("organizations");
+  const [adminView, setAdminView] = useState<AdminView>("people");
   // Which organization the admin area is scoped to ("__new__" = create hero).
+  // Concept v2 resolves it implicitly; the picker only appears under the flag.
   const [adminOrgId, setAdminOrgId] = useState<string | null>(null);
   const [adminOrgMenu, setAdminOrgMenu] = useState(false);
-  const openAdmin = (v: AdminView = "organizations", orgId?: string) => {
+  const showPlatform = platformAdminEnabled();
+  const openAdmin = (v: AdminView = "people", orgId?: string) => {
     setAdminOpen(true);
     setAdminView(v);
     if (orgId) setAdminOrgId(orgId);
@@ -715,6 +717,22 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
     (home?.tenant_type === TENANT_TYPES.organization ? (home as Tenant) : orgs[0]) ??
     null;
 
+  /** The organization concept v2 hides.
+   *
+   *  It is still where a new project is created and still owns the shared
+   *  connector catalogue — the UI simply never names it. Resolution order: the
+   *  one the platform-admin picker selected, your home tenant when that IS an
+   *  organization, the first organization you can see, else your home tenant
+   *  (single-tenant deployments put projects straight under the root). */
+  const implicitOrgId = adminOrg?.id ?? home?.id ?? null;
+  /** Shaped like a project so the connector surfaces — written against "a
+   *  tenant that owns a catalogue" — can be pointed at the organization. */
+  const orgAsSpace: Workspace | null = adminOrg
+    ? { ...adminOrg, orgId: adminOrg.id, orgName: adminOrg.name }
+    : home
+      ? { ...home, orgId: home.id, orgName: home.name }
+      : null;
+
   const panelView: PanelView = dash ? "dashboard" : view;
 
   const refresh = useCallback(async () => {
@@ -819,7 +837,9 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
                   <span className="ico">←</span> Back to Studio
                 </button>
               </div>
-              {/* Org selector: every admin view below is scoped to it. */}
+              {/* Org selector: only under the platform flag — concept v2
+                  resolves the organization implicitly. */}
+              {showPlatform && (
               <div className="nav-section org-select-wrap">
                 <button className="org-select" onClick={() => setAdminOrgMenu((v) => !v)}>
                   <span className="account-avatar small">
@@ -847,7 +867,7 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
                     <button
                       onClick={() => {
                         setAdminOrgId("__new__");
-                        setAdminView("organizations");
+                        setAdminView("tenants");
                         setAdminOrgMenu(false);
                       }}
                     >
@@ -856,6 +876,7 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
                   </div>
                 )}
               </div>
+              )}
               <div className="nav-section">
                 <div className="nav-section-title admin-title">Administration</div>
                 {ADMIN_NAV.map((n) => (
@@ -869,6 +890,21 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
                   </button>
                 ))}
               </div>
+              {showPlatform && (
+                <div className="nav-section">
+                  <div className="nav-section-title admin-title">Platform (tenant hierarchy)</div>
+                  {PLATFORM_NAV.map((n) => (
+                    <button
+                      key={n.id}
+                      className={adminView === n.id ? "active" : ""}
+                      title="The organization level concept v2 hides — still real, still administrable"
+                      onClick={() => setAdminView(n.id)}
+                    >
+                      <span className="ico"><NavIcon name={n.icon} /></span> {n.label}
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="nav-section">
                 <div className="nav-section-title admin-title">IdP</div>
                 <button
@@ -881,20 +917,16 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
             </>
           ) : (
             NAV_SECTIONS.map((sec) => {
-              // Workspace sections disappear while an organization is selected:
-              // the level decides what exists, so the sidebar always matches
-              // what the switcher says you are looking at.
-              const items = sec.items.filter((n) => n.scope !== "workspace" || crumb.wsId);
-              if (items.length === 0) return null;
+              // Every item exists unconditionally now: nothing in the sidebar
+              // depends on having picked a container first.
+              const items = sec.items;
               return (
               <div key={sec.title ?? "_top"} className="nav-section">
                 {sec.title && (
                   <div className="nav-section-title">
-                    {sec.title === "Work" && crumb.wsId
-                      ? workspaces.find((w) => w.id === crumb.wsId)?.name ?? sec.title
-                      : sec.title === "Work" && crumb.orgId
-                        ? orgs.find((o) => o.id === crumb.orgId)?.name ?? sec.title
-                        : sec.title}
+                    {sec.title === "Work" && crumb.projectId
+                      ? workspaces.find((w) => w.id === crumb.projectId)?.name ?? sec.title
+                      : sec.title}
                   </div>
                 )}
                 {items.map((n) => (
@@ -983,23 +1015,20 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
                 <button onClick={onLogout}>Sign out</button>
               </div>
 
-              {/* Right: where you are working. Workspaces belong to the
-                  organization above them rather than sharing one flat column,
-                  because that is the actual containment. */}
+              {/* Right: where you are working — one flat list of projects,
+                  because in concept v2 there is no level above them to group by. */}
               <ContextPane
                 token={token}
-                home={home}
-                orgs={orgs}
+                orgId={implicitOrgId}
                 workspaces={workspaces}
                 crumb={crumb}
                 onPick={(next) => {
                   setAdminOpen(false);
                   setCrumb(next);
-                  setView("workspaces");
+                  setView("projects");
                   setActiveSpace(null);
                   setAccountMenu(false);
                 }}
-                onAdminOrg={(id) => openAdmin("organizations", id)}
                 onChanged={() => void refresh()}
               />
             </div>
@@ -1015,8 +1044,7 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
               {/* The context lives here, next to the identity — the two
                   questions "who am I" and "where am I" get one answer spot. */}
               <span className="scope-line">
-                {workspaces.find((w) => w.id === crumb.wsId)?.name ??
-                  orgs.find((o) => o.id === crumb.orgId)?.name ??
+                {workspaces.find((w) => w.id === crumb.projectId)?.name ??
                   userEmail ??
                   home?.name ??
                   ""}
@@ -1116,7 +1144,7 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
         {error && <div className="error">{error}</div>}
         {adminOpen ? (
           <>
-            {adminView === "organizations" && (
+            {adminView === "tenants" && (
               <OrganizationsView
                 token={token}
                 homeId={me.subject_tenant_id}
@@ -1129,14 +1157,16 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
                 onNew={() => setAdminOrgId("__new__")}
               />
             )}
-            {adminView === "members" && (
-              <MembersView
+            {adminView === "people" && (
+              <PeopleView
                 token={token}
-                home={home}
-                orgs={orgs}
-                workspaces={workspaces}
-                filters={filters}
-                fixedTenantId={adminOrg?.id ?? null}
+                roots={workspaces}
+                query={filters.query}
+                onOpenProject={(id) => {
+                  setAdminOpen(false);
+                  setCrumb({ projectId: id });
+                  setView("projects");
+                }}
               />
             )}
             {adminView === "workspaces" && (
@@ -1151,31 +1181,27 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
                   setStudio(ws);
                 }}
                 onOpen={(ws) => {
-                  // Admin lists workspaces across the platform; opening one
-                  // hands over to the normal drill-down rather than growing a
-                  // second workspace page inside the admin zone.
+                  // The platform list is the raw tenant view; opening a row hands
+                  // over to the normal project page rather than growing a second
+                  // project surface inside the admin zone.
                   setAdminOpen(false);
-                  setCrumb({ orgId: ws.orgId, wsId: ws.id });
-                  setView("workspaces");
+                  setCrumb({ projectId: ws.id });
+                  setView("projects");
                 }}
               />
             )}
             {adminView === "connectors" &&
-              (adminOrg ? (
+              (orgAsSpace ? (
                 /* ConnectorsView is written against a tenant that owns a
-                   connection catalogue, which an organization is. Passing the
-                   organization in the workspace slot makes `inherited` false for
-                   its own rows, so the Edit button is enabled here — which is the
-                   whole point of this section. */
-                <ConnectorsView
-                  token={token}
-                  workspace={{ ...adminOrg, orgId: adminOrg.id, orgName: adminOrg.name }}
-                  filters={filters}
-                />
+                   connection catalogue, which the organization is. Passing it in
+                   the project slot makes `inherited` false for its own rows, so
+                   the Edit button is enabled here — the whole point of this
+                   section, and the reason the org level survives in the model. */
+                <ConnectorsView token={token} workspace={orgAsSpace} filters={filters} />
               ) : (
                 <div className="card">
-                  <h2>Connectors</h2>
-                  <p className="empty">Select an organization first.</p>
+                  <h2>Integrations</h2>
+                  <p className="empty">No tenant to hold the shared catalogue yet.</p>
                 </div>
               ))}
             {adminView === "secrets" && <SecretsView token={token} workspaces={workspaces} filters={filters} />}
@@ -1189,18 +1215,29 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
           />
         ) : (
           <>
-        {view === "workspaces" && (
-          <BrowseView
+        {view === "projects" && (
+          <ProjectsView
             token={token}
-            home={home}
-            orgs={orgs}
             workspaces={workspaces}
+            implicitOrgId={implicitOrgId}
             filters={filters}
             crumb={crumb}
             setCrumb={setCrumb}
             projectLabel={projectLabel}
+            setProjectLabel={setProjectLabel}
             onChanged={refresh}
             onOpenStudio={setStudio}
+          />
+        )}
+        {view === "people" && (
+          <PeopleView
+            token={token}
+            roots={workspaces}
+            query={filters.query}
+            onOpenProject={(id) => {
+              setCrumb({ projectId: id });
+              setView("projects");
+            }}
           />
         )}
         {view === "home" && (
@@ -1216,42 +1253,16 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
             onNavigate={setView}
           />
         )}
-        {view === "secrets" && (
-          <WorkspaceSectionView
-            title="Secrets"
-            ws={workspaces.find((w) => w.id === crumb.wsId) ?? null}
-          >
-            {(ws) => <SecretsView token={token} workspaces={[ws]} filters={filters} />}
-          </WorkspaceSectionView>
-        )}
-        {view === "projects" && (
-          <WorkspaceSectionView
-            title="Projects"
-            ws={workspaces.find((w) => w.id === crumb.wsId) ?? null}
-          >
-            {(ws) => (
-              <WorkspaceProjectsCard
-                token={token}
-                ws={ws}
-                onChanged={() => void refresh()}
-                onOpen={(p) => {
-                  setProjectLabel(p.name);
-                  setCrumb({ orgId: ws.orgId, wsId: ws.id, projectId: p.id });
-                  setView("workspaces");
-                }}
-              />
-            )}
-          </WorkspaceSectionView>
-        )}
-        {view === "connectors" && (
-          <WorkspaceSectionView
-            title="Connectors"
-            ws={workspaces.find((w) => w.id === crumb.wsId) ?? null}
-          >
-            {(ws) => <ConnectorsView token={token} workspace={ws} filters={filters} />}
-          </WorkspaceSectionView>
-        )}
-        {/* organizations/members render only inside the Admin area now. */}
+        {view === "connectors" &&
+          (orgAsSpace ? (
+            <ConnectorsView token={token} workspace={orgAsSpace} filters={filters} />
+          ) : (
+            <div className="card">
+              <h2>Integrations</h2>
+              <p className="empty">No tenant to hold the shared catalogue yet.</p>
+            </div>
+          ))}
+        {/* The tenant hierarchy renders only inside the Admin area, under the flag. */}
         {view === "chats" && <ChatsView token={token} filters={filters} />}
         {view === "files" && <FilesView token={token} filters={filters} />}
         {view === "system" && <SystemView token={token} filters={filters} />}
@@ -1276,7 +1287,6 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
           onChange={setFilters}
           open={panelOpen}
           onToggle={() => setPanelOpen((v) => !v)}
-          orgs={orgs}
         />
       )}
     </div>
@@ -1292,7 +1302,6 @@ function FilterPanel({
   onChange,
   open,
   onToggle,
-  orgs,
 }: {
   view: PanelView;
   token: string;
@@ -1300,7 +1309,6 @@ function FilterPanel({
   onChange: (f: Filters) => void;
   open: boolean;
   onToggle: () => void;
-  orgs: Tenant[];
 }) {
   const [models, setModels] = useState<import("./api").Model[]>([]);
 
@@ -1364,19 +1372,8 @@ function FilterPanel({
             </div>
           )}
 
-          {view === "workspaces" && (
+          {view === "projects" && (
             <>
-              <div className="filter-group">
-                <span className="lbl">Organization</span>
-                <select value={filters.org} onChange={(e) => set({ org: e.target.value })}>
-                  <option value="">All organizations</option>
-                  {orgs.map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {o.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
               <div className="filter-group">
                 <span className="lbl">Mode</span>
                 <div className="chipset">
@@ -1416,24 +1413,6 @@ function FilterPanel({
             </div>
           )}
 
-          {view === "organizations" && (
-            <div className="filter-group">
-              <span className="lbl">Mode</span>
-              <div className="chipset">
-                {(["all", "managed", "self"] as const).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    className={`chip ${filters.mode === m ? "on" : ""}`}
-                    onClick={() => set({ mode: m })}
-                  >
-                    {m === "self" ? "self-managed" : m}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
           {view === "system" && (
             <div className="filter-group">
               <span className="lbl">Sections</span>
@@ -1459,84 +1438,49 @@ function FilterPanel({
   );
 }
 
-/* ── Workspaces ── */
+/* ── Projects ── */
 
-/** A sidebar section that only means anything inside a workspace.
+/** The right pane of the account popover: pick the project you are working in.
  *
- *  Connectors, Projects and friends are workspace-scoped now, so instead of
- *  each growing its own workspace picker — a second answer to a question the
- *  account switcher already answers — they refuse to render without one and
- *  say where to choose it. */
-function WorkspaceSectionView({
-  title,
-  ws,
-  children,
-}: {
-  title: string;
-  ws: Workspace | null;
-  children: (ws: Workspace) => React.ReactNode;
-}) {
-  if (!ws) {
-    return (
-      <>
-        <h1>{title}</h1>
-        <p className="empty">
-          Pick a workspace first — the switcher at the bottom of the sidebar, under your name.
-        </p>
-      </>
-    );
-  }
-  return <>{children(ws)}</>;
-}
-/** The right pane of the account popover: pick where you are working.
- *
- *  Organizations first, then the workspaces OF the selected organization —
- *  not one flat column, because a workspace only exists inside an organization
- *  and a list that hides that makes people pick the wrong one. */
+ *  One flat list. Concept v2 removed the level above a project, so there is
+ *  nothing left to group by — and a two-column switcher whose first column
+ *  always held exactly one entry was a decision the user never got to make. */
 function ContextPane({
   token,
-  home,
-  orgs,
+  orgId,
   workspaces,
   crumb,
   onPick,
-  onAdminOrg,
   onChanged,
 }: {
   token: string;
-  home: Tenant | null;
-  orgs: Tenant[];
+  /** Hidden organization the new project is created in. */
+  orgId: string | null;
   workspaces: Workspace[];
   crumb: Crumb;
   onPick: (c: Crumb) => void;
-  onAdminOrg: (id: string) => void;
   onChanged: () => void;
 }) {
   const [q, setQ] = useState("");
-  const [adding, setAdding] = useState<"org" | "ws" | null>(null);
+  const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Which organization's workspaces to show: the one in context, else the one
-  // owning the workspace in context, else the first.
-  const activeOrgId = crumb.orgId ?? workspaces.find((w) => w.id === crumb.wsId)?.orgId ?? orgs[0]?.id;
-  const orgList = orgs.filter((o) => matches(q, o.name));
-  const wsList = workspaces.filter((w) => w.orgId === activeOrgId && matches(q, w.name));
+  const list = workspaces.filter((w) => matches(q, w.name)).sort((a, b) => a.name.localeCompare(b.name));
 
-  async function create(kind: "org" | "ws") {
-    const parent = kind === "org" ? home?.id : activeOrgId;
-    if (!parent || !name.trim()) return;
+  async function create() {
+    if (!orgId || !name.trim()) return;
     setBusy(true);
     setError(null);
     try {
       await api.createTenant(token, {
         name: name.trim(),
-        parent_id: parent,
-        tenant_type: kind === "org" ? TENANT_TYPES.organization : TENANT_TYPES.workspace,
+        parent_id: orgId,
+        tenant_type: TENANT_TYPES.workspace,
       });
       setName("");
-      setAdding(null);
+      setAdding(false);
       onChanged();
     } catch (e) {
       setError(errText(e));
@@ -1549,94 +1493,44 @@ function ContextPane({
     <div className="pane-right">
       <input
         className="ctx-search"
-        placeholder="Search…"
+        placeholder="Search projects…"
         value={q}
         onChange={(e) => setQ(e.target.value)}
       />
 
       <div className="ctx-head">
-        <span>Your organizations</span>
+        <span>Your projects</span>
         <button
           type="button"
-          title="New organization"
-          onClick={() => setAdding(adding === "org" ? null : "org")}
+          title="New project"
+          disabled={!orgId}
+          onClick={() => setAdding((v) => !v)}
         >
           +
         </button>
       </div>
-      {adding === "org" && (
+      {adding && (
         <div className="ctx-add">
           <input
             autoFocus
-            placeholder="Organization name"
+            placeholder="Project name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") void create("org");
+              if (e.key === "Enter") void create();
             }}
           />
-          <button type="button" disabled={busy || !name.trim()} onClick={() => void create("org")}>
+          <button type="button" disabled={busy || !name.trim()} onClick={() => void create()}>
             Create
           </button>
         </div>
       )}
-      {orgList.map((o) => (
-        <div key={o.id} className={`ctx-row${activeOrgId === o.id ? " on" : ""}`}>
-          <button type="button" className="grow" onClick={() => onPick({ orgId: o.id })}>
-            <span className="account-avatar small">{o.name.slice(0, 1).toUpperCase()}</span>
-            {o.name}
-            {o.self_managed && <span className="badge selfmanaged">🔒</span>}
-          </button>
-          {/* The gear is administration, deliberately a separate target from
-              the row that only switches context. */}
-          <button
-            type="button"
-            className="ctx-gear"
-            title="Administer this organization"
-            onClick={() => onAdminOrg(o.id)}
-          >
-            ⚙
-          </button>
-        </div>
-      ))}
-
-      <div className="ctx-head">
-        <span>Workspaces</span>
-        <button
-          type="button"
-          title="New workspace"
-          disabled={!activeOrgId}
-          onClick={() => setAdding(adding === "ws" ? null : "ws")}
-        >
-          +
-        </button>
-      </div>
-      {adding === "ws" && (
-        <div className="ctx-add">
-          <input
-            autoFocus
-            placeholder="Workspace name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") void create("ws");
-            }}
-          />
-          <button type="button" disabled={busy || !name.trim()} onClick={() => void create("ws")}>
-            Create
-          </button>
-        </div>
-      )}
-      {wsList.length === 0 ? (
-        <p className="empty">No workspaces here yet.</p>
+      {list.length === 0 ? (
+        <p className="empty">No projects yet.</p>
       ) : (
-        wsList.map((w) => (
-          <div key={w.id} className={`ctx-row${crumb.wsId === w.id ? " on" : ""}`}>
-            <button
-              type="button"
-              className="grow"
-              onClick={() => onPick({ orgId: w.orgId, wsId: w.id })}
-            >
+        list.map((w) => (
+          <div key={w.id} className={`ctx-row${crumb.projectId === w.id ? " on" : ""}`}>
+            <button type="button" className="grow" onClick={() => onPick({ projectId: w.id })}>
               <span className="account-avatar small">{w.name.slice(0, 1).toUpperCase()}</span>
               {w.name}
             </button>
@@ -1647,19 +1541,19 @@ function ContextPane({
     </div>
   );
 }
-/* ── Browse: organization → workspace drill-down ───────────────────────────
+
+/* ── Project drill-down ────────────────────────────────────────────────────────
  *
- * The portal's spine. Every level shows what it contains and what it owns, and
- * the crumb says where you are — instead of a flat set of screens where
- * "Connectors" and "Secrets" floated free of the thing they belong to.
- * Projects become the level below a workspace.
+ * Two levels of the same noun: the portfolio, then one project, then a nested
+ * project inside it. The level above (organizations) is gone from navigation —
+ * see the concept note at the top of this file for what survived in the model.
  */
 
 interface Crumb {
-  orgId?: string;
-  wsId?: string;
-  /** Resource-Group id of the project (ADR-0002) — the level below a workspace. */
+  /** Root project: the AM tenant of type `workspace`. */
   projectId?: string;
+  /** Nested project: the `studio-project` gear record inside it. */
+  nestedId?: string;
 }
 
 function Breadcrumbs({
@@ -1685,324 +1579,291 @@ function Breadcrumbs({
   );
 }
 
-function BrowseView({
+function ProjectsView({
   token,
-  home,
-  orgs,
   workspaces,
+  implicitOrgId,
   filters,
   crumb,
   setCrumb,
   projectLabel,
+  setProjectLabel,
   onChanged,
   onOpenStudio,
 }: {
   token: string;
-  home: Tenant | null;
-  orgs: Tenant[];
   workspaces: Workspace[];
+  implicitOrgId: string | null;
   filters: Filters;
   crumb: Crumb;
   setCrumb: (c: Crumb) => void;
-  /** Label for the project crumb, remembered when the project was opened. */
   projectLabel?: string;
+  setProjectLabel: (n: string | undefined) => void;
   onChanged: () => void;
   onOpenStudio: (ws: Workspace) => void;
 }) {
-  const org = orgs.find((o) => o.id === crumb.orgId);
-  const ws = workspaces.find((w) => w.id === crumb.wsId);
-  // The project name is not in any list we already hold, so the crumb carries
-  // it: cheaper and steadier than refetching the group for a label.
-  const projectName = crumb.projectId ? projectLabel : undefined;
+  const root = workspaces.find((w) => w.id === crumb.projectId);
+
+  if (!root) {
+    return (
+      <ProjectsPortfolio
+        token={token}
+        roots={workspaces}
+        query={filters.query}
+        selfManagedOnly={filters.selfManagedOnly}
+        sort={filters.sort}
+        homeOrgId={implicitOrgId}
+        onOpen={(r) => setCrumb({ projectId: r.id })}
+        onOpenNested={(r, p) => {
+          setProjectLabel(p.name);
+          setCrumb({ projectId: r.id, nestedId: p.id });
+        }}
+        onOpenStudio={(r) => {
+          const ws = workspaces.find((w) => w.id === r.id);
+          if (ws) onOpenStudio(ws);
+        }}
+        onChanged={onChanged}
+      />
+    );
+  }
 
   const trail: { label: string; onClick?: () => void }[] = [
-    { label: "Organizations", onClick: org ? () => setCrumb({}) : undefined },
+    { label: "Projects", onClick: () => setCrumb({}) },
+    {
+      label: root.name,
+      onClick: crumb.nestedId ? () => setCrumb({ projectId: root.id }) : undefined,
+    },
   ];
-  if (org) {
-    trail.push({
-      label: org.name,
-      onClick: ws ? () => setCrumb({ orgId: org.id }) : undefined,
-    });
-  }
-  if (ws) {
-    trail.push({
-      label: ws.name,
-      onClick: crumb.projectId ? () => setCrumb({ orgId: org?.id, wsId: ws.id }) : undefined,
-    });
-  }
-  if (crumb.projectId && ws) trail.push({ label: projectName ?? "project" });
+  if (crumb.nestedId) trail.push({ label: projectLabel ?? "nested project" });
 
   return (
     <>
       <Breadcrumbs items={trail} />
-      {!org ? (
-        <OrganizationsLevel
+      {crumb.nestedId ? (
+        <NestedProjectLevel
+          key={crumb.nestedId}
           token={token}
-          home={home}
-          orgs={orgs}
-          workspaces={workspaces}
-          filters={filters}
-          onChanged={onChanged}
-          onOpen={(o) => setCrumb({ orgId: o.id })}
+          root={root}
+          nestedId={crumb.nestedId}
+          fallbackName={projectLabel}
+          onBack={() => setCrumb({ projectId: root.id })}
         />
-      ) : !ws ? (
-        <OrganizationLevel
-          token={token}
-          org={org}
-          workspaces={workspaces.filter((w) => w.orgId === org.id)}
-          filters={filters}
-          onChanged={onChanged}
-          onOpenStudio={onOpenStudio}
-          onOpenWorkspace={(w) => setCrumb({ orgId: org.id, wsId: w.id })}
-          onDeleted={() => {
-            setCrumb({});
-            onChanged();
-          }}
-        />
-      ) : crumb.projectId ? (
-        <ProjectLevel name={projectName ?? "Project"} ws={ws} />
       ) : (
-        <WorkspaceLevel
+        <ProjectDetail
+          key={root.id}
           token={token}
-          ws={ws}
+          root={root}
+          filters={filters}
+          onBack={() => setCrumb({})}
           onOpenStudio={onOpenStudio}
-          onBack={() => setCrumb({ orgId: org.id })}
+          onOpenNested={(p) => {
+            setProjectLabel(p.name);
+            setCrumb({ projectId: root.id, nestedId: p.id });
+          }}
+          onChanged={onChanged}
         />
       )}
     </>
   );
 }
 
-/** Level 0 — the organizations you can see, and creating one. */
-function OrganizationsLevel({
+/** Tabs of one project. Everything a project owns is here — that is what makes
+ *  it the unit of work rather than a container you have to select first. */
+type ProjectTab = "overview" | "nested" | "people" | "integrations" | "secrets";
+
+const PROJECT_TABS: { id: ProjectTab; label: string }[] = [
+  { id: "overview", label: "Overview" },
+  { id: "nested", label: "Nested projects" },
+  { id: "people", label: "People" },
+  { id: "integrations", label: "Integrations" },
+  { id: "secrets", label: "Secrets" },
+];
+
+function ProjectDetail({
   token,
-  home,
-  orgs,
-  workspaces,
+  root,
   filters,
-  onChanged,
-  onOpen,
-}: {
-  token: string;
-  home: Tenant | null;
-  orgs: Tenant[];
-  workspaces: Workspace[];
-  filters: Filters;
-  onChanged: () => void;
-  onOpen: (o: Tenant) => void;
-}) {
-  const [name, setName] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const visible = orgs.filter((o) => matches(filters.query, o.name));
-
-  async function create(e: FormEvent) {
-    e.preventDefault();
-    if (!home) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await api.createTenant(token, {
-        name,
-        parent_id: home.id,
-        tenant_type: TENANT_TYPES.organization,
-      });
-      setName("");
-      onChanged();
-    } catch (err) {
-      setError(errText(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <>
-      <h1>Organizations</h1>
-      <p className="subtitle">
-        An organization owns workspaces, the people in them, and the connectors they share. Open one
-        to work inside it.
-      </p>
-      <div className="card">
-        {visible.length === 0 ? (
-          <p className="empty">No organizations yet — create the first one below.</p>
-        ) : (
-          <ul className="rows">
-            {visible.map((o) => {
-              const count = workspaces.filter((w) => w.orgId === o.id).length;
-              return (
-                <li key={o.id}>
-                  <div
-                    className="grow"
-                    style={{ cursor: "pointer" }}
-                    onClick={() => onOpen(o)}
-                    title="Open this organization"
-                  >
-                    <div className="name">{o.name}</div>
-                    <div className="sub">
-                      {count} workspace{count === 1 ? "" : "s"}
-                    </div>
-                  </div>
-                  {o.self_managed && <span className="badge selfmanaged">self-managed</span>}
-                  <button onClick={() => onOpen(o)}>Open</button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-        <form className="inline" onSubmit={create}>
-          <input
-            placeholder="New organization name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <button className="primary" disabled={busy || !name || !home}>
-            Create
-          </button>
-        </form>
-        {error && <div className="error">{error}</div>}
-      </div>
-    </>
-  );
-}
-
-/** Level 1 — one organization: its workspaces, and what it owns for all of them. */
-function OrganizationLevel({
-  token,
-  org,
-  workspaces,
-  filters,
-  onChanged,
-  onOpenStudio,
-  onOpenWorkspace,
-  onDeleted,
-}: {
-  token: string;
-  org: Tenant;
-  workspaces: Workspace[];
-  filters: Filters;
-  onChanged: () => void;
-  onOpenStudio: (ws: Workspace) => void;
-  onOpenWorkspace: (ws: Workspace) => void;
-  onDeleted: () => void;
-}) {
-  const [error, setError] = useState<string | null>(null);
-
-  async function remove() {
-    if (workspaces.length > 0) {
-      window.alert(
-        `“${org.name}” still has ${workspaces.length} workspace(s). Delete them first — an ` +
-          `organization is not a folder you can drop with its contents inside.`,
-      );
-      return;
-    }
-    if (!window.confirm(`Delete organization “${org.name}”? This cannot be undone.`)) return;
-    try {
-      await api.deleteTenant(token, org.id);
-      onDeleted();
-    } catch (err) {
-      setError(errText(err));
-    }
-  }
-
-  return (
-    <>
-      <div className="topbar">
-        <div>
-          <h1>{org.name}</h1>
-          <p className="subtitle" style={{ margin: 0 }}>
-            organization · <code>{org.id.slice(0, 8)}…</code>
-          </p>
-        </div>
-      </div>
-      {error && <div className="error">{error}</div>}
-
-      <WorkspacesView
-        token={token}
-        orgs={[org]}
-        workspaces={workspaces}
-        filters={filters}
-        heading={false}
-        onChanged={onChanged}
-        onOpenStudio={onOpenStudio}
-        onOpen={onOpenWorkspace}
-      />
-
-      <div className="card">
-        <h2>Danger zone</h2>
-        <p className="hint">
-          Deleting an organization is only possible once it is empty — the backend enforces it too,
-          this button just says so before you find out from a 409.
-        </p>
-        <button className="ghost" onClick={() => void remove()}>
-          Delete organization
-        </button>
-      </div>
-    </>
-  );
-}
-
-/** Level 3 — one project inside a workspace.
- *
- *  A placeholder with an honest boundary: a project today is a Resource Group
- *  (ADR-0002) with members and a workspace binding, and nothing else has been
- *  built to hang on it yet. The level exists so the path is complete and so
- *  the next thing — plan phases from plan.toml, artifacts, traceability — has
- *  a place to land instead of being wedged into the workspace page. */
-function ProjectLevel({ name, ws }: { name: string; ws: Workspace }) {
-  return (
-    <>
-      <div className="topbar">
-        <div>
-          <h1>{name}</h1>
-          <p className="subtitle" style={{ margin: 0 }}>
-            project in {ws.name}
-          </p>
-        </div>
-      </div>
-      <div className="card">
-        <h2>Nothing here yet</h2>
-        <p className="hint">
-          A project is a Resource Group bound to this workspace (ADR-0002): it has a name and
-          members, and that is all it has so far. What belongs here next is the execution plan —
-          the phases, briefs and outputs the planner already writes to{" "}
-          <code>.cf-studio/.plans/</code> — surfaced from the server instead of living only on
-          disk. Members and settings move here once there is more than one thing to show.
-        </p>
-      </div>
-    </>
-  );
-}
-/** Level 2 — one workspace. Its own header, then everything it owns. */
-function WorkspaceLevel({
-  token,
-  ws,
-  onOpenStudio,
   onBack,
+  onOpenStudio,
+  onOpenNested,
+  onChanged,
 }: {
   token: string;
-  ws: Workspace;
-  onOpenStudio: (ws: Workspace) => void;
+  root: Workspace;
+  filters: Filters;
   onBack: () => void;
+  onOpenStudio: (ws: Workspace) => void;
+  onOpenNested: (p: Project) => void;
+  onChanged: () => void;
 }) {
+  const [tab, setTab] = useState<ProjectTab>("overview");
+
   return (
     <>
       <div className="topbar">
         <div>
-          <h1>{ws.name}</h1>
+          <h1>{root.name}</h1>
           <p className="subtitle" style={{ margin: 0 }}>
-            workspace of {ws.orgName} · <code>{ws.id.slice(0, 8)}…</code>
+            project · <code>{root.id.slice(0, 8)}…</code>
+            {root.self_managed ? " · self-managed" : ""}
           </p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button className="primary" onClick={() => onOpenStudio(ws)}>
+          <button onClick={onBack}>← All projects</button>
+          <button className="primary" onClick={() => onOpenStudio(root)}>
             Open Studio
           </button>
         </div>
       </div>
-      {/* embedded: the header above already carries the name and Open Studio. */}
-      <WorkspaceDashboard token={token} ws={ws} embedded onBack={onBack} onOpenStudio={onOpenStudio} />
+
+      <div className="tabs">
+        {PROJECT_TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            className={tab === t.id ? "tab on" : "tab"}
+            onClick={() => setTab(t.id)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "overview" && (
+        <WorkspaceDashboard token={token} ws={root} embedded onBack={onBack} onOpenStudio={onOpenStudio} />
+      )}
+      {tab === "nested" && (
+        <WorkspaceProjectsCard token={token} ws={root} onChanged={onChanged} onOpen={onOpenNested} />
+      )}
+      {tab === "people" && (
+        <PeopleView
+          token={token}
+          roots={[root]}
+          query={filters.query}
+          onOpenProject={() => setTab("overview")}
+        />
+      )}
+      {tab === "integrations" && <ConnectorsView token={token} workspace={root} filters={filters} />}
+      {tab === "secrets" && <SecretsView token={token} workspaces={[root]} filters={filters} />}
+    </>
+  );
+}
+
+/** One nested project.
+ *
+ *  Honest boundary: the gear stores the shape (greenfield vs modernize), the
+ *  journey stages, the status and the member group — and that is all there is.
+ *  What belongs here next is the execution plan the planner already writes to
+ *  `.cf-studio/.plans/`, served instead of living only on disk. */
+function NestedProjectLevel({
+  token,
+  root,
+  nestedId,
+  fallbackName,
+  onBack,
+}: {
+  token: string;
+  root: Workspace;
+  nestedId: string;
+  fallbackName?: string;
+  onBack: () => void;
+}) {
+  const [project, setProject] = useState<Project | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api.project(token, nestedId, root.id).then(
+      (p) => {
+        if (!cancelled) setProject(p);
+      },
+      (e) => {
+        if (!cancelled) setError(errText(e));
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [token, nestedId, root.id]);
+
+  return (
+    <>
+      <div className="topbar">
+        <div>
+          <h1>{project?.name ?? fallbackName ?? "Nested project"}</h1>
+          <p className="subtitle" style={{ margin: 0 }}>
+            nested in {root.name}
+            {project ? ` · ${project.mode === "modernize" ? "modernization" : "new build"}` : ""}
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onBack}>← {root.name}</button>
+        </div>
+      </div>
+      {error && <div className="error">{error}</div>}
+
+      {project && (
+        <div className="card">
+          <h2>Shape</h2>
+          <ul className="rows">
+            <li>
+              <div className="grow">
+                <div className="sub">Status</div>
+                <div className="name">{project.status}</div>
+              </div>
+            </li>
+            <li>
+              <div className="grow">
+                <div className="sub">{project.mode === "modernize" ? "Imported from" : "Brief"}</div>
+                <div className="name">
+                  {project.mode === "modernize"
+                    ? project.git_url || "uploaded archive"
+                    : project.brief?.trim() || "— none given —"}
+                </div>
+              </div>
+            </li>
+            <li>
+              <div className="grow">
+                <div className="sub">Journey stages</div>
+                <div className="name">{project.stages.join(", ") || "none"}</div>
+              </div>
+            </li>
+          </ul>
+          <p className="hint">
+            The plan itself — phases, briefs and outputs — is still written to{" "}
+            <code>.cf-studio/.plans/</code> by the planner and has no server surface yet. This page
+            is where it lands when it gets one.
+          </p>
+        </div>
+      )}
+
+      {project?.members_group_id ? (
+        <ProjectMembers
+          token={token}
+          /* Membership stayed on Resource Group (ADR-0002), so the group the
+             gear created is what this needs. */
+          project={{
+            id: project.members_group_id,
+            type: PROJECT_RG_TYPE,
+            name: project.name,
+            hierarchy: { parent_id: null, tenant_id: root.id, depth: 0 },
+            metadata: { workspace_id: root.id },
+          }}
+          workspace={root}
+          onClose={onBack}
+        />
+      ) : (
+        project && (
+          <div className="card">
+            <h2>Members</h2>
+            <p className="empty">
+              No Resource Group member list exists for this project — resource-group was unavailable
+              when it was created, so there is nothing to show rather than an empty list pretending
+              otherwise.
+            </p>
+          </div>
+        )
+      )}
     </>
   );
 }
@@ -2076,10 +1937,11 @@ function WorkspacesView({
     <>
       {heading && (
         <>
-          <h1>Workspaces</h1>
+          <h1>Project tenants</h1>
           <p className="subtitle">
-            Open a workspace to see and edit everything it owns — sources, automation, projects,
-            members — or go straight into its Studio.
+            The raw tenant list behind the projects — one AM tenant of type <code>workspace</code>
+            per project. Concept v2 does not show this level; it is here so the hierarchy stays
+            administrable.
           </p>
         </>
       )}
@@ -2096,12 +1958,12 @@ function WorkspacesView({
                   className="grow"
                   style={{ cursor: "pointer" }}
                   onClick={() => onOpen(w)}
-                  title="Open this workspace"
+                  title="Open this project"
                 >
                   <div className="name">{w.name}</div>
                   <div className="sub">{w.orgName}</div>
                 </div>
-                <span className="badge workspace">workspace</span>
+                <span className="badge workspace">tenant</span>
                 {w.self_managed && <span className="badge selfmanaged">self-managed</span>}
                 <button onClick={() => onOpen(w)}>Open</button>
                 <button className="primary" onClick={() => onOpenStudio(w)}>
@@ -2252,7 +2114,7 @@ function SourceFromConnector({
         <p className="empty">Loading connections…</p>
       ) : connections.length === 0 ? (
         <p className="empty">
-          No source connector for this workspace yet — add one on the Connectors page, then come
+          No source connector for this project yet — add one on its Integrations tab, then come
           back.
         </p>
       ) : (
@@ -2514,7 +2376,7 @@ function WorkspaceDashboard({
   // workspace. Only the non-git connectors are still ahead.
   const gitConnector = (settings?.repos ?? []).some((r) => r.source !== "local" && r.url?.trim());
   const steps: { label: string; done: boolean; soon?: boolean }[] = [
-    { label: "Workspace created", done: true },
+    { label: "Project created", done: true },
     { label: "Members invited", done: (users?.length ?? 0) > 0 },
     { label: "First project created", done: (projects?.length ?? 0) > 0 },
     { label: "Automation configured", done: settingsExist },
@@ -2565,7 +2427,7 @@ function WorkspaceDashboard({
       <div className="card">
         <h2>Automation — trust ramp</h2>
         <p className="hint">
-          The domain model's trust ramp, per workspace: <b>manual</b> = read-only insight,{" "}
+          The domain model's trust ramp, per project: <b>manual</b> = read-only insight,{" "}
           <b>recommendations</b> = prepared actions awaiting approval, <b>autonomous</b> = approved
           automation for the categories below. Stored as tenant metadata (GTS-validated).
         </p>
@@ -2615,9 +2477,9 @@ function WorkspaceDashboard({
       </div>
 
       <div className="card">
-        <h2>Workspace sources</h2>
+        <h2>Project sources</h2>
         <p className="hint">
-          How repositories enter this workspace (the domain model's ingress): each source becomes{" "}
+          How repositories enter this project (the domain model's ingress): each source becomes{" "}
           <code>./&lt;name&gt;</code> in the IDE and a <code>[sources.&lt;name&gt;]</code> entry in{" "}
           <code>.cf-workspace.toml</code>. Repositories come from a connector, so no clone URL or
           token is typed here — the source keeps only a credstore reference, and{" "}
@@ -2625,9 +2487,9 @@ function WorkspaceDashboard({
         </p>
         {settings && (
           <form onSubmit={saveRepo}>
-            <h3 className="group">Workspace root</h3>
+            <h3 className="group">Project root</h3>
             <p className="hint">
-              A Studio workspace is itself a repository (manifest, docs, <code>.workspace-sources/</code>).
+              A Studio project is itself a repository (manifest, docs, <code>.workspace-sources/</code>).
               Pick it from a connector, or point at a folder that already exists on the backend host.
             </p>
             {settings.root_repo_url?.trim() ? (
@@ -2763,7 +2625,7 @@ function WorkspaceDashboard({
           <li>
             <div className="grow">
               <div className="name">Knowledge Graph</div>
-              <div className="sub">the workspace's managed objects and relations (§3.2) — requires the graph gear</div>
+              <div className="sub">the project's managed objects and relations (§3.2) — requires the graph gear</div>
             </div>
             <span className="badge">preview</span>
           </li>
@@ -2784,7 +2646,7 @@ function WorkspaceDashboard({
           <li>
             <div className="grow">
               <div className="name">Kits & ontology</div>
-              <div className="sub">object types, templates, workflows the workspace activates (§7)</div>
+              <div className="sub">object types, templates, workflows the project activates (§7)</div>
             </div>
             <span className="badge">preview</span>
           </li>
@@ -2882,7 +2744,7 @@ function ChatsView({ token, filters }: { token: string; filters: Filters }) {
 
       <div className="card">
         {chats.length === 0 ? (
-          <p className="empty">No chats yet — start one from a workspace dashboard (Ask AI).</p>
+          <p className="empty">No chats yet — start one from a project overview (Ask AI).</p>
         ) : visibleChats.length === 0 ? (
           <p className="empty">No chats match the current filters.</p>
         ) : (
@@ -3113,7 +2975,7 @@ function AskAI({ token, ws }: { token: string; ws: Workspace }) {
     try {
       let id = chatId;
       if (!id) {
-        const chat = await api.createChat(token, `Workspace: ${ws.name}`);
+        const chat = await api.createChat(token, `Project: ${ws.name}`);
         id = chat.id;
         setChatId(id);
       }
@@ -3297,7 +3159,7 @@ function WorkspaceProjectsCard({
       <div className="card">
         <h2>Projects</h2>
         <p className="hint">
-          This workspace's effort containers. The project record lives in the studio-project
+          The efforts running inside this project. Each nested project's record lives in the studio-project
           gear (ADR-0005); membership stays on Resource Group, so a project without a member
           group says so rather than showing an empty list.
         </p>
@@ -3537,7 +3399,7 @@ function ProjectMembers({
               <li key={id}>
                 <div className="grow">
                   <div className="name">{u?.display_name ?? u?.username ?? id}</div>
-                  <div className="sub">{u ? u.username : "user outside this workspace"}</div>
+                  <div className="sub">{u ? u.username : "person outside this project"}</div>
                 </div>
               </li>
             );
@@ -3546,7 +3408,7 @@ function ProjectMembers({
       )}
       <form className="inline" onSubmit={add}>
         <select value={pick} onChange={(e) => setPick(e.target.value)}>
-          <option value="">Add workspace user…</option>
+          <option value="">Add someone from this project…</option>
           {candidates.map((u) => (
             <option key={u.id} value={u.id}>
               {u.display_name ?? u.username}
@@ -3625,8 +3487,8 @@ function HomeView({
             <span className="hero-gradient">Constructor Studio</span>
           </h1>
           <p className="subtitle">
-            Your workspace for building with AI over real repositories — the control plane of the
-            Studio domain model.
+            Projects that build with AI over real repositories — the control plane of the Studio
+            domain model.
           </p>
         </div>
         <div className="hero-links">
@@ -3651,14 +3513,14 @@ function HomeView({
         <div className="card span-all">
           <h2>Continue</h2>
           {continueItems.length === 0 ? (
-            <p className="empty">No live sessions. Open a workspace to start one.</p>
+            <p className="empty">No live sessions. Open a project to start one.</p>
           ) : (
             <ul className="rows">
               {continueItems.map(({ ws, space, session }) => (
                 <li key={ws.id}>
                   <div className="grow">
                     <div className="name">⚙ {ws.name}</div>
-                    <div className="sub">{ws.orgName}{session ? ` · session ${session.state}` : ""}</div>
+                    <div className="sub">project{session ? ` · session ${session.state}` : ""}</div>
                   </div>
                   {space ? (
                     <button className="primary" onClick={() => onOpenSpace(ws.id)}>
@@ -3679,17 +3541,22 @@ function HomeView({
           <h2>Build</h2>
           <ul className="home-links">
             <li>
-              <button className="linklike" onClick={() => onNavigate("workspaces")}>
-                Workspaces — open the Studio IDE →
+              <button className="linklike" onClick={() => onNavigate("projects")}>
+                Projects — open one, or start the Studio IDE →
               </button>
             </li>
             {workspaces[0] && (
               <li>
                 <button className="linklike" onClick={() => onOpenDashboard(workspaces[0])}>
-                  Workspace dashboard (sources, automation, projects) →
+                  Project overview (sources, automation, nested projects) →
                 </button>
               </li>
             )}
+            <li>
+              <button className="linklike" onClick={() => onNavigate("people")}>
+                Invite someone into a project →
+              </button>
+            </li>
             <li>
               <button className="linklike" onClick={() => onNavigate("connectors")}>
                 Connect a repository →
@@ -3697,7 +3564,7 @@ function HomeView({
             </li>
             <li>
               <button className="linklike" onClick={() => onNavigate("chats")}>
-                Ask AI (workspace chats) →
+                Ask AI →
               </button>
             </li>
           </ul>
@@ -3716,8 +3583,17 @@ function HomeView({
               </div>
             </li>
             <li>
-              <div className="grow"><div className="sub">Organizations / Workspaces</div>
-                <div className="name">{orgs.length} / {workspaces.length}</div>
+              <div className="grow">
+                <div className="sub">Projects</div>
+                <div className="name">
+                  {workspaces.length}
+                  {/* The organization count stays visible as a platform fact,
+                      not as a place to go — concept v2 hides the level, it does
+                      not pretend the tenants vanished. */}
+                  <span className="sub" style={{ fontWeight: 400 }}>
+                    {orgs.length > 0 ? ` · in ${orgs.length} organization${orgs.length === 1 ? "" : "s"} (hidden)` : ""}
+                  </span>
+                </div>
               </div>
             </li>
             <li>
@@ -3768,7 +3644,7 @@ function useKnownSecretRefs(token: string, workspaces: Workspace[]): SecretRow[]
             if (!map.has(r)) map.set(r, new Set());
             map.get(r)?.add(`${ws.name}${what}`);
           };
-          add(s.root_token_ref, " (workspace root)");
+          add(s.root_token_ref, " (project root)");
           for (const repo of s.repos ?? []) add(repo.token_ref, ` / ${repo.name}`);
         }),
       );
@@ -3819,7 +3695,7 @@ function SecretsView({
   }
 
   async function remove(ref: string) {
-    if (!window.confirm(`Delete secret “${ref}”? Workspace settings keep the reference — launches will clone without credentials until a new value is saved.`)) return;
+    if (!window.confirm(`Delete secret “${ref}”? Project settings keep the reference — launches will clone without credentials until a new value is saved.`)) return;
     setError(null);
     try {
       await api.deleteSecret(token, ref);
@@ -3836,14 +3712,14 @@ function SecretsView({
       <h1>Secrets</h1>
       <p className="subtitle">
         Repository credentials in the credstore gear. Values are write-only; this view lists the
-        references known to workspace settings, probes their health, and rotates broken ones
+        references known to project settings, probes their health, and rotates broken ones
         (the store has no list API — anything saved outside the portal won't appear here).
       </p>
       <div className="card">
         {rows === null ? (
-          <p className="empty">Loading references from workspace settings…</p>
+          <p className="empty">Loading references from project settings…</p>
         ) : visible.length === 0 ? (
-          <p className="empty">No secret references found in any workspace settings.</p>
+          <p className="empty">No secret references found in any project settings.</p>
         ) : (
           <ul className="rows">
             {visible.map((r) => (
@@ -3880,7 +3756,7 @@ const CATEGORIES: { key: string; title: string; blurb: string }[] = [
   {
     key: "source_code",
     title: "Source code",
-    blurb: "Browse repositories and attach them to this workspace.",
+    blurb: "Browse repositories and attach them to this project.",
   },
   {
     key: "ai",
@@ -3944,7 +3820,7 @@ function ConnectorsView({
       <h1>Connectors</h1>
       <p className="subtitle">
         How repositories and model credentials enter <b>{ws.name}</b>: its own connections plus
-        those its organization shares with all of its workspaces. Configure one once, then pick
+        those shared with every project. Configure one once, then pick
         repositories from a list instead of pasting clone URLs. Tokens go to credstore — after you
         submit one the browser never sees it again.
       </p>
@@ -4036,7 +3912,7 @@ function AddConnector({
     return (
       <div className="card">
         <h2>Add connector</h2>
-        <p className="hint">Connect this workspace to an external tool or service.</p>
+        <p className="hint">Connect this project to an external tool or service.</p>
         {CATEGORIES.map(({ key, title, blurb }) => {
           const group = providers.filter((p) => p.category === key);
           if (group.length === 0) return null;
@@ -4115,16 +3991,16 @@ function AddConnector({
 
       <label>Available to</label>
       <select value={reach} onChange={(e) => setReach(e.target.value as Reach)}>
-        <option value="organization">{workspace.orgName} — all workspaces of this organization</option>
-        <option value="workspace">{workspace.name} — this workspace only</option>
+        <option value="organization">Shared — inherited by every project</option>
+        <option value="workspace">{workspace.name} — this project only</option>
         <option value="personal">Only me — private to my account</option>
       </select>
       <p className="hint">
         {reach === "organization"
-          ? "Stored on the organization and inherited by its workspaces; the token is readable across them."
+          ? "Stored once and inherited by every project; the token is readable across them."
           : reach === "workspace"
-            ? "Stored on this workspace; everyone in it can use the token."
-            : "Stored on this workspace, but the token stays readable only by you."}
+            ? "Stored on this project; everyone in it can use the token."
+            : "Stored on this project, but the token stays readable only by you."}
       </p>
 
       <label>Label</label>
@@ -4231,7 +4107,7 @@ function ConnectionList({
 
   const remove = (c: Connection, inherited: boolean) => {
     const warn = inherited
-      ? `"${c.label}" belongs to ${workspace.orgName} and is shared with its other workspaces. Remove it for everyone?`
+      ? `"${c.label}" is shared with your other projects. Remove it for everyone?`
       : `Remove connection "${c.label}" and its token?`;
     if (!window.confirm(warn)) return;
     void api
@@ -4252,7 +4128,7 @@ function ConnectionList({
     return (
       <div className="card">
         <h2>Connections</h2>
-        <p className="empty">Nothing connected for this workspace yet.</p>
+        <p className="empty">Nothing connected for this project yet.</p>
       </div>
     );
   }
@@ -4327,7 +4203,7 @@ function ConnectionList({
                                 : "not checked"}
                         </span>
                         <span className={`badge ${c.scope === "personal" ? "" : "workspace"}`}>
-                          {inherited ? `${c.scope} · from ${workspace.orgName}` : c.scope}
+                          {inherited ? `${c.scope} · shared` : c.scope}
                         </span>
                       </div>
                     </div>
@@ -4491,7 +4367,7 @@ function EditConnection({
       </div>
       <p className="hint" style={{ marginTop: 6 }}>
         The change is verified against the provider before anything is stored, with or without a
-        new token. The connection id is preserved, so workspace sources keep working.
+        new token. The connection id is preserved, so project sources keep working.
       </p>
       <div className="inline" style={{ marginTop: 6 }}>
         <button className="primary" disabled={!dirty || busy}>
@@ -4974,144 +4850,6 @@ function OrganizationsView({
           </ul>
         </div>
       )}
-    </>
-  );
-}
-
-/* ── Members ── */
-
-function MembersView({
-  token,
-  home,
-  orgs,
-  workspaces,
-  filters,
-  fixedTenantId,
-}: {
-  token: string;
-  home: Tenant | null;
-  orgs: Tenant[];
-  workspaces: Workspace[];
-  filters: Filters;
-  /** Admin-area scoping: lock the view to this tenant, hide the picker. */
-  fixedTenantId?: string | null;
-}) {
-  const all = [...(home ? [home] : []), ...orgs, ...workspaces];
-  const [tenantId, setTenantId] = useState<string>(fixedTenantId ?? "");
-  useEffect(() => {
-    if (fixedTenantId && fixedTenantId !== tenantId) setTenantId(fixedTenantId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fixedTenantId]);
-  const [users, setUsers] = useState<User[] | null>(null);
-  const [username, setUsername] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async (id: string) => {
-    setError(null);
-    setUsers(null);
-    try {
-      const page = await api.tenantUsers(token, id);
-      setUsers(page.items ?? []);
-    } catch (e) {
-      setError(errText(e));
-    }
-  }, [token]);
-
-  useEffect(() => {
-    if (tenantId) void load(tenantId);
-  }, [tenantId, load]);
-
-  async function invite(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    try {
-      await api.inviteUser(token, tenantId, {
-        username,
-        email: `${username}@example.com`,
-        display_name: username,
-      });
-      setUsername("");
-      await load(tenantId);
-    } catch (err) {
-      setError(errText(err));
-    }
-  }
-
-  const visibleUsers = (users ?? []).filter((u) =>
-    matches(filters.query, u.display_name, u.username, u.email),
-  );
-
-  return (
-    <>
-      <h1>Members</h1>
-      <p className="subtitle">
-        Control-plane citizens: provisioned through the pluggable IdP contract. Roles arrive as
-        Role Grants (member × role × scope) with the access-control milestone.
-      </p>
-      <div className="card">
-        {!fixedTenantId && (
-          <select value={tenantId} onChange={(e) => setTenantId(e.target.value)}>
-            <option value="">Select a tenant…</option>
-            {all.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name} ({shortTypeName(t.tenant_type)})
-              </option>
-            ))}
-          </select>
-        )}
-
-        {users && (
-          <>
-            {users.length === 0 ? (
-              <p className="empty" style={{ marginTop: 12 }}>No users in this tenant.</p>
-            ) : visibleUsers.length === 0 ? (
-              <p className="empty" style={{ marginTop: 12 }}>No users match the current filters.</p>
-            ) : (
-              <ul className="rows" style={{ marginTop: 12 }}>
-                {visibleUsers.map((u) => (
-                  <li key={u.id}>
-                    <div className="grow">
-                      <div className="name">{u.display_name ?? u.username}</div>
-                      <div className="sub">
-                        {u.username}
-                        {u.email ? ` · ${u.email}` : ""}
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {/* The invite target sets the user's HOME TENANT = their whole
-                access scope. Inviting into the platform root grants
-                platform-wide visibility — almost never what you want. */}
-            {(() => {
-              const target = all.find((t) => t.id === tenantId);
-              if (!target) return null;
-              const isRoot = target.tenant_type !== TENANT_TYPES.organization
-                && target.tenant_type !== TENANT_TYPES.workspace;
-              return (
-                <p className={isRoot ? "error" : "hint"} style={{ marginTop: 12 }}>
-                  Inviting into: <b>{target.name}</b> — this becomes the user's home tenant and
-                  access scope ({isRoot
-                    ? "⚠ the PLATFORM ROOT: the user will see every managed organization. Pick an organization or workspace unless you really mean a platform admin."
-                    : "they will see this tenant's subtree only"}).
-                </p>
-              );
-            })()}
-            <form className="inline" onSubmit={invite}>
-              <input
-                placeholder="username to invite"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-              />
-              <button className="primary" disabled={!username}>
-                Invite
-              </button>
-            </form>
-          </>
-        )}
-        {error && <div className="error">{error}</div>}
-      </div>
     </>
   );
 }

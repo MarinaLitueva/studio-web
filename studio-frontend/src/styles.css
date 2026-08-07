@@ -591,3 +591,75 @@ button.danger:hover:not(:disabled) { background: #b91c1c; border-color: #b91c1c;
 :root[data-theme="dark"] .sidebar nav button:hover { background: #222c44; }
 :root[data-theme="dark"] .hint code { background: #222c44; }
 :root[data-theme="dark"] button:hover:not(:disabled) { background: #222c44; }
+
+/* ── Concept v2: project portfolio & people tables ─────────────────────────────
+   A list of projects is a comparison, not a stack of cards: status, people and
+   recency line up in columns so scanning down one of them actually works. The
+   nesting is one indent deep on purpose — two nouns, not a file tree. */
+
+.ptable { width: 100%; border-collapse: collapse; font-size: 14px; }
+.ptable thead th {
+  text-align: left; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--muted); font-weight: 600; padding: 0 10px 8px; border-bottom: 1px solid var(--border);
+}
+.ptable tbody td { padding: 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.ptable tbody tr:last-child td { border-bottom: none; }
+.ptable tbody tr:hover td { background: color-mix(in srgb, var(--accent-soft) 55%, transparent); }
+.ptable tr.nested td { background: color-mix(in srgb, var(--bg) 55%, transparent); }
+.ptable tr.nested:hover td { background: color-mix(in srgb, var(--accent-soft) 45%, transparent); }
+.ptable td.sub { color: var(--muted); font-size: 13px; }
+
+.pcell { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.pcell.indent { padding-left: 26px; }
+.pcell .sub { color: var(--muted); font-size: 12px; }
+.pico { color: var(--muted); font-size: 13px; width: 14px; text-align: center; }
+.pico.nest { color: var(--accent); }
+
+.twisty {
+  border: none; background: none; padding: 0; width: 16px; color: var(--muted);
+  cursor: pointer; transition: transform 0.12s ease; line-height: 1;
+}
+.twisty.open { transform: rotate(90deg); }
+.twisty.empty { visibility: hidden; }
+.twisty:hover:not(:disabled) { background: none; color: var(--text); }
+
+.pname {
+  border: none; background: none; padding: 0; font: inherit; font-weight: 600;
+  color: var(--text); cursor: pointer; text-align: left;
+}
+.pname:hover:not(.plain) { color: var(--accent); background: none; text-decoration: underline; }
+.pname.plain { cursor: default; }
+
+.pactions { text-align: right; white-space: nowrap; }
+.pactions button { margin-left: 6px; }
+.ptable-foot {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+  margin-top: 10px; font-size: 12px; color: var(--muted);
+}
+.ptable.people td { vertical-align: middle; }
+.ptable.people .chips { margin: 0; }
+.ptable.people .chip { font-size: 12px; }
+
+.badge.ok { background: #ecfdf5; color: var(--ok); }
+.badge.warn { background: #fff7ed; color: #c2410c; }
+
+/* Project tabs: everything a project owns, on the project's own page. */
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; margin: 0.9rem 0 1rem;
+        border-bottom: 1px solid var(--border); }
+.tab {
+  border: none; background: none; padding: 8px 12px; font: inherit; color: var(--muted);
+  cursor: pointer; border-bottom: 2px solid transparent; border-radius: 0;
+}
+.tab:hover:not(:disabled) { color: var(--text); background: none; }
+.tab.on { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+
+/* An honest banner: says what is real and what is only a prototype overlay. */
+.notice {
+  background: #fff7ed; border: 1px solid #fed7aa; color: #7c2d12;
+  border-radius: var(--radius); padding: 10px 14px; font-size: 13px; margin-bottom: 1rem;
+}
+.notice .ghost { color: inherit; }
+
+:root[data-theme="dark"] .badge.ok { background: #10291f; }
+:root[data-theme="dark"] .badge.warn { background: #2e1f14; color: #fdba74; }
+:root[data-theme="dark"] .notice { background: #2a2013; border-color: #4a3418; color: #fed7aa; }
