@@ -93,6 +93,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # ghcr rejects any reference with an uppercase letter, and
+      # `github.repository` carries the owner's name exactly as registered —
+      # `AndrejK666/studio-web` here. GitHub expressions have no lowercase
+      # function, so it is done in the shell, and it has to overwrite the
+      # workflow-level IMAGE_PREFIX rather than define a second variable: the
+      # build steps below already read $IMAGE_PREFIX, and two names for one
+      # thing is how the wrong one gets used later.
+      - name: Lowercase the image prefix
+        run: |
+          set -euo pipefail
+          lower=$(printf '%s' "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE_PREFIX=ghcr.io/$lower" >> "$GITHUB_ENV"
+
       # A tag release gets the version and `latest`; anything else gets `edge`
       # and an immutable `sha-` tag. `latest` is deliberately NOT moved by a
       # main push: something has to keep meaning "the last release".
