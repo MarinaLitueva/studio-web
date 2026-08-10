@@ -16,9 +16,7 @@ use credstore_sdk::{
 use sea_orm::{ActiveValue, ColumnTrait, Condition, EntityTrait, QueryFilter};
 use time::OffsetDateTime;
 use toolkit_db::DBProvider;
-use toolkit_db::secure::{
-    SecureDeleteExt, SecureEntityExt, SecureInsertExt, SecureOnConflict,
-};
+use toolkit_db::secure::{SecureDeleteExt, SecureEntityExt, SecureInsertExt, SecureOnConflict};
 use toolkit_security::{AccessScope, SecurityContext};
 use tracing::{debug, warn};
 use uuid::Uuid;
@@ -97,7 +95,10 @@ impl CredStorePluginClientV1 for PgValueStore {
             .map_err(|e| unavailable("get", &e))?;
 
         let Some(row) = row else {
-            debug!(reference = key.as_ref(), "studio-credstore-pg: no stored value");
+            debug!(
+                reference = key.as_ref(),
+                "studio-credstore-pg: no stored value"
+            );
             return Ok(None);
         };
 

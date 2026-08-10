@@ -57,7 +57,12 @@ impl Mode {
     /// client that sends what it displays should not get a puzzling 400.
     #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
-        match s.trim().to_ascii_lowercase().replace([' ', '-'], "_").as_str() {
+        match s
+            .trim()
+            .to_ascii_lowercase()
+            .replace([' ', '-'], "_")
+            .as_str()
+        {
             "greenfield" | "new" | "build_something_new" => Some(Self::Greenfield),
             "modernize" | "legacy" | "modernize_legacy_code" => Some(Self::Modernize),
             _ => None,
@@ -192,14 +197,46 @@ pub struct StageSpec {
 /// `["intent","testing"]` are the same row rather than two different strings
 /// that compare unequal.
 pub const STAGES: [StageSpec; 8] = [
-    StageSpec { key: "intent", label: "Intent", required: true },
-    StageSpec { key: "brd", label: "BRD", required: false },
-    StageSpec { key: "prd", label: "PRD", required: false },
-    StageSpec { key: "prd_spec", label: "PRD-Spec", required: false },
-    StageSpec { key: "architecture", label: "Architecture", required: false },
-    StageSpec { key: "ui_design", label: "UI Design", required: false },
-    StageSpec { key: "user_stories", label: "User Stories", required: false },
-    StageSpec { key: "testing", label: "Testing", required: false },
+    StageSpec {
+        key: "intent",
+        label: "Intent",
+        required: true,
+    },
+    StageSpec {
+        key: "brd",
+        label: "BRD",
+        required: false,
+    },
+    StageSpec {
+        key: "prd",
+        label: "PRD",
+        required: false,
+    },
+    StageSpec {
+        key: "prd_spec",
+        label: "PRD-Spec",
+        required: false,
+    },
+    StageSpec {
+        key: "architecture",
+        label: "Architecture",
+        required: false,
+    },
+    StageSpec {
+        key: "ui_design",
+        label: "UI Design",
+        required: false,
+    },
+    StageSpec {
+        key: "user_stories",
+        label: "User Stories",
+        required: false,
+    },
+    StageSpec {
+        key: "testing",
+        label: "Testing",
+        required: false,
+    },
 ];
 
 /// Validation failures a caller can fix. Everything here maps to 400.
@@ -221,7 +258,11 @@ impl core::fmt::Display for ValidationError {
             Self::NameTooLong { max } => write!(f, "name must be at most {max} characters"),
             Self::UnknownStage { key } => {
                 let known: Vec<&str> = STAGES.iter().map(|s| s.key).collect();
-                write!(f, "unknown journey stage '{key}'; known stages: {}", known.join(", "))
+                write!(
+                    f,
+                    "unknown journey stage '{key}'; known stages: {}",
+                    known.join(", ")
+                )
             }
             Self::NoStages => write!(f, "at least one journey stage must be selected"),
             Self::GitUrlEmpty => write!(f, "git source requires a non-empty url"),
@@ -269,7 +310,9 @@ pub fn normalize_stages(raw: &[String]) -> Result<Vec<String>, ValidationError> 
     for key in raw {
         let key = key.trim();
         if !STAGES.iter().any(|s| s.key == key) {
-            return Err(ValidationError::UnknownStage { key: key.to_owned() });
+            return Err(ValidationError::UnknownStage {
+                key: key.to_owned(),
+            });
         }
     }
     let selected: Vec<String> = STAGES

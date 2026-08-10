@@ -12,9 +12,7 @@ use std::sync::Arc;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
-use credstore_sdk::{
-    CredStorePluginClientV1, OwnerId, SecretRef, SecretValue, TenantId,
-};
+use credstore_sdk::{CredStorePluginClientV1, OwnerId, SecretRef, SecretValue, TenantId};
 use toolkit_db::migration_runner::run_migrations_for_testing;
 use toolkit_db::sea_orm_migration::MigratorTrait;
 use toolkit_db::{ConnectOpts, DBProvider, connect_db};
@@ -117,7 +115,9 @@ async fn a_stored_value_reads_back() {
     let (store, _dsn) = setup_with_key(1).await;
     put_str(&store, TENANT_A, "studio-repo-7", "glpat-abc", None).await;
     assert_eq!(
-        get_str(&store, TENANT_A, "studio-repo-7", None).await.as_deref(),
+        get_str(&store, TENANT_A, "studio-repo-7", None)
+            .await
+            .as_deref(),
         Some("glpat-abc")
     );
 }
@@ -125,7 +125,11 @@ async fn a_stored_value_reads_back() {
 #[tokio::test]
 async fn a_missing_value_is_none_not_an_error() {
     let (store, _dsn) = setup_with_key(1).await;
-    assert!(get_str(&store, TENANT_A, "never-written", None).await.is_none());
+    assert!(
+        get_str(&store, TENANT_A, "never-written", None)
+            .await
+            .is_none()
+    );
 }
 
 #[tokio::test]
@@ -136,7 +140,9 @@ async fn put_overwrites_in_place_instead_of_colliding() {
     put_str(&store, TENANT_A, "anthropic-key", "sk-ant-old", None).await;
     put_str(&store, TENANT_A, "anthropic-key", "sk-ant-new", None).await;
     assert_eq!(
-        get_str(&store, TENANT_A, "anthropic-key", None).await.as_deref(),
+        get_str(&store, TENANT_A, "anthropic-key", None)
+            .await
+            .as_deref(),
         Some("sk-ant-new")
     );
 }
@@ -147,12 +153,22 @@ async fn delete_removes_the_value_and_a_second_delete_is_still_ok() {
     put_str(&store, TENANT_A, "studio-connection-1", "token", None).await;
     let key = sref("studio-connection-1");
 
-    store.delete(&ctx(), &TenantId(TENANT_A), &key, None).await.expect("delete");
-    assert!(get_str(&store, TENANT_A, "studio-connection-1", None).await.is_none());
+    store
+        .delete(&ctx(), &TenantId(TENANT_A), &key, None)
+        .await
+        .expect("delete");
+    assert!(
+        get_str(&store, TENANT_A, "studio-connection-1", None)
+            .await
+            .is_none()
+    );
 
     // The gear treats a missing backend value as already-deleted, and its
     // deprovisioning saga retries — a second delete must not fail.
-    store.delete(&ctx(), &TenantId(TENANT_A), &key, None).await.expect("idempotent delete");
+    store
+        .delete(&ctx(), &TenantId(TENANT_A), &key, None)
+        .await
+        .expect("idempotent delete");
 }
 
 #[tokio::test]
@@ -162,11 +178,15 @@ async fn one_tenant_cannot_read_anothers_value() {
     put_str(&store, TENANT_B, "shared-name", "tenant-b-secret", None).await;
 
     assert_eq!(
-        get_str(&store, TENANT_A, "shared-name", None).await.as_deref(),
+        get_str(&store, TENANT_A, "shared-name", None)
+            .await
+            .as_deref(),
         Some("tenant-a-secret")
     );
     assert_eq!(
-        get_str(&store, TENANT_B, "shared-name", None).await.as_deref(),
+        get_str(&store, TENANT_B, "shared-name", None)
+            .await
+            .as_deref(),
         Some("tenant-b-secret")
     );
 }
@@ -178,7 +198,9 @@ async fn the_private_and_tenant_key_classes_are_separate() {
 
     put_str(&store, TENANT_A, "pat", "owned-by-user", Some(&owner)).await;
     assert_eq!(
-        get_str(&store, TENANT_A, "pat", Some(&owner)).await.as_deref(),
+        get_str(&store, TENANT_A, "pat", Some(&owner))
+            .await
+            .as_deref(),
         Some("owned-by-user")
     );
     // owner_id = None selects the tenant class, which nobody has written.
@@ -186,7 +208,11 @@ async fn the_private_and_tenant_key_classes_are_separate() {
 
     // And a different owner does not see it either.
     let other = OwnerId(Uuid::from_u128(0xe5));
-    assert!(get_str(&store, TENANT_A, "pat", Some(&other)).await.is_none());
+    assert!(
+        get_str(&store, TENANT_A, "pat", Some(&other))
+            .await
+            .is_none()
+    );
 }
 
 #[tokio::test]
@@ -201,7 +227,11 @@ async fn deleting_the_private_class_leaves_the_tenant_class_alone() {
         .await
         .expect("delete private");
 
-    assert!(get_str(&store, TENANT_A, "pat", Some(&owner)).await.is_none());
+    assert!(
+        get_str(&store, TENANT_A, "pat", Some(&owner))
+            .await
+            .is_none()
+    );
     assert_eq!(
         get_str(&store, TENANT_A, "pat", None).await.as_deref(),
         Some("tenant-wide")
@@ -218,14 +248,18 @@ async fn a_changed_key_makes_old_rows_read_as_absent_and_a_rewrite_heals_them() 
 
     let rotated = attach(&dsn, 2, false).await;
     assert!(
-        get_str(&rotated, TENANT_A, "openai-key", None).await.is_none(),
+        get_str(&rotated, TENANT_A, "openai-key", None)
+            .await
+            .is_none(),
         "a value sealed under a different key must not decrypt"
     );
 
     // This is what studio-secrets-bootstrap does on the next boot.
     put_str(&rotated, TENANT_A, "openai-key", "sk-under-new-key", None).await;
     assert_eq!(
-        get_str(&rotated, TENANT_A, "openai-key", None).await.as_deref(),
+        get_str(&rotated, TENANT_A, "openai-key", None)
+            .await
+            .as_deref(),
         Some("sk-under-new-key")
     );
 }
@@ -237,9 +271,18 @@ async fn the_fence_key_reference_round_trips_under_the_nil_tenant() {
     // what stops the fence from being regenerated on every boot, so the nil
     // tenant must not be a special case anywhere in this gear.
     let (store, _dsn) = setup_with_key(1).await;
-    put_str(&store, Uuid::nil(), "cfs-internal-fence-key", "32-bytes-of-key", None).await;
+    put_str(
+        &store,
+        Uuid::nil(),
+        "cfs-internal-fence-key",
+        "32-bytes-of-key",
+        None,
+    )
+    .await;
     assert_eq!(
-        get_str(&store, Uuid::nil(), "cfs-internal-fence-key", None).await.as_deref(),
+        get_str(&store, Uuid::nil(), "cfs-internal-fence-key", None)
+            .await
+            .as_deref(),
         Some("32-bytes-of-key")
     );
 }

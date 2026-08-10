@@ -83,7 +83,9 @@ mod tests {
     /// uniform across all five files.
     fn gear_priority(profile: &str, gear: &str) -> Option<i16> {
         let header = format!("  {gear}:");
-        let mut lines = profile.lines().skip_while(|l| l.trim_end() != header.as_str());
+        let mut lines = profile
+            .lines()
+            .skip_while(|l| l.trim_end() != header.as_str());
         lines.next()?; // consume the gear header itself
         for line in lines {
             let trimmed = line.trim_start();

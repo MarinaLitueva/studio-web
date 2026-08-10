@@ -12,16 +12,27 @@ fn stages(keys: &[&str]) -> Vec<String> {
 #[test]
 fn a_source_determines_the_mode() {
     assert_eq!(ProjectSource::Idea { brief: None }.mode(), Mode::Greenfield);
-    assert_eq!(ProjectSource::Git { url: "u".into() }.mode(), Mode::Modernize);
     assert_eq!(
-        ProjectSource::Upload { file_id: Uuid::from_u128(1) }.mode(),
+        ProjectSource::Git { url: "u".into() }.mode(),
+        Mode::Modernize
+    );
+    assert_eq!(
+        ProjectSource::Upload {
+            file_id: Uuid::from_u128(1)
+        }
+        .mode(),
         Mode::Modernize
     );
 }
 
 #[test]
 fn mode_parses_what_the_creation_screen_displays() {
-    for s in ["greenfield", "new", "Build Something New", "BUILD-SOMETHING-NEW"] {
+    for s in [
+        "greenfield",
+        "new",
+        "Build Something New",
+        "BUILD-SOMETHING-NEW",
+    ] {
         assert_eq!(Mode::parse(s), Some(Mode::Greenfield), "{s}");
     }
     for s in ["modernize", "legacy", "Modernize Legacy Code"] {
@@ -96,10 +107,18 @@ fn duplicate_stages_collapse() {
 #[test]
 fn an_unknown_stage_is_rejected_and_the_message_lists_the_known_ones() {
     let err = normalize_stages(&stages(&["intent", "deployment"])).unwrap_err();
-    assert_eq!(err, ValidationError::UnknownStage { key: "deployment".into() });
+    assert_eq!(
+        err,
+        ValidationError::UnknownStage {
+            key: "deployment".into()
+        }
+    );
     let msg = err.to_string();
     assert!(msg.contains("deployment"), "{msg}");
-    assert!(msg.contains("user_stories"), "message should list the catalogue: {msg}");
+    assert!(
+        msg.contains("user_stories"),
+        "message should list the catalogue: {msg}"
+    );
 }
 
 #[test]
@@ -112,7 +131,11 @@ fn the_empty_selection_still_yields_the_required_stage() {
 
 #[test]
 fn the_catalogue_has_exactly_one_required_stage_and_unique_keys() {
-    let required: Vec<&str> = STAGES.iter().filter(|s| s.required).map(|s| s.key).collect();
+    let required: Vec<&str> = STAGES
+        .iter()
+        .filter(|s| s.required)
+        .map(|s| s.key)
+        .collect();
     assert_eq!(required, vec!["intent"]);
     let mut keys: Vec<&str> = STAGES.iter().map(|s| s.key).collect();
     let before = keys.len();
@@ -126,7 +149,10 @@ fn the_catalogue_has_exactly_one_required_stage_and_unique_keys() {
 #[test]
 fn names_are_trimmed_and_bounded() {
     assert_eq!(normalize_name("  Payments v2  ").unwrap(), "Payments v2");
-    assert_eq!(normalize_name("   ").unwrap_err(), ValidationError::NameEmpty);
+    assert_eq!(
+        normalize_name("   ").unwrap_err(),
+        ValidationError::NameEmpty
+    );
     assert_eq!(normalize_name("").unwrap_err(), ValidationError::NameEmpty);
     let long = "x".repeat(NAME_MAX + 1);
     assert_eq!(
@@ -147,20 +173,33 @@ fn a_git_source_needs_a_url() {
         ValidationError::GitUrlEmpty
     );
     assert_eq!(
-        normalize_source(ProjectSource::Git { url: "  https://x/y.git ".into() }).unwrap(),
-        ProjectSource::Git { url: "https://x/y.git".into() }
+        normalize_source(ProjectSource::Git {
+            url: "  https://x/y.git ".into()
+        })
+        .unwrap(),
+        ProjectSource::Git {
+            url: "https://x/y.git".into()
+        }
     );
 }
 
 #[test]
 fn a_blank_brief_normalises_to_absent() {
     assert_eq!(
-        normalize_source(ProjectSource::Idea { brief: Some("   ".into()) }).unwrap(),
+        normalize_source(ProjectSource::Idea {
+            brief: Some("   ".into())
+        })
+        .unwrap(),
         ProjectSource::Idea { brief: None }
     );
     assert_eq!(
-        normalize_source(ProjectSource::Idea { brief: Some(" an idea ".into()) }).unwrap(),
-        ProjectSource::Idea { brief: Some("an idea".into()) }
+        normalize_source(ProjectSource::Idea {
+            brief: Some(" an idea ".into())
+        })
+        .unwrap(),
+        ProjectSource::Idea {
+            brief: Some("an idea".into())
+        }
     );
 }
 
@@ -176,8 +215,18 @@ fn an_oversized_brief_is_rejected() {
 #[test]
 fn source_kind_is_absent_exactly_for_greenfield() {
     assert_eq!(ProjectSource::Idea { brief: None }.kind_smallint(), None);
-    assert!(ProjectSource::Git { url: "u".into() }.kind_smallint().is_some());
-    assert!(ProjectSource::Upload { file_id: Uuid::nil() }.kind_smallint().is_some());
+    assert!(
+        ProjectSource::Git { url: "u".into() }
+            .kind_smallint()
+            .is_some()
+    );
+    assert!(
+        ProjectSource::Upload {
+            file_id: Uuid::nil()
+        }
+        .kind_smallint()
+        .is_some()
+    );
 }
 
 /* ── the assembled request ── */
@@ -188,7 +237,9 @@ fn build_validates_every_field_and_derives_the_mode() {
         Uuid::from_u128(1),
         Uuid::from_u128(2),
         "  Payments v2  ",
-        ProjectSource::Git { url: " https://git/x ".into() },
+        ProjectSource::Git {
+            url: " https://git/x ".into(),
+        },
         &stages(&["architecture"]),
     )
     .unwrap();
@@ -196,7 +247,12 @@ fn build_validates_every_field_and_derives_the_mode() {
     assert_eq!(p.name, "Payments v2");
     assert_eq!(p.mode(), Mode::Modernize);
     assert_eq!(p.stages, stages(&["intent", "architecture"]));
-    assert_eq!(p.source, ProjectSource::Git { url: "https://git/x".into() });
+    assert_eq!(
+        p.source,
+        ProjectSource::Git {
+            url: "https://git/x".into()
+        }
+    );
     assert!(!p.id.is_nil());
 }
 

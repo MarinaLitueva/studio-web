@@ -98,7 +98,10 @@ impl ProjectService {
             metadata_schema: None,
         };
         match rg.create_type(ctx, request).await {
-            Ok(_) => info!(code = PROJECT_RG_TYPE, "studio-project: RG project type registered"),
+            Ok(_) => info!(
+                code = PROJECT_RG_TYPE,
+                "studio-project: RG project type registered"
+            ),
             // Almost always "already exists", which is the steady state. The
             // message is logged rather than matched: RG's canonical error codes
             // are richer than this call needs, and a wrong guess here would
@@ -142,7 +145,10 @@ impl ProjectService {
             };
             match rg.create_group(ctx, request).await {
                 Ok(group) => {
-                    if let Err(e) = self.repo.set_rg_group(project.tenant_id, project.id, group.id).await
+                    if let Err(e) = self
+                        .repo
+                        .set_rg_group(project.tenant_id, project.id, group.id)
+                        .await
                     {
                         // The group exists but we failed to remember it. Say so
                         // loudly with both ids: this is the one state a human
@@ -182,7 +188,10 @@ impl ProjectService {
     /// # Errors
     /// [`ServiceError::NotFound`] when the tenant has no such project.
     pub async fn get(&self, tenant_id: Uuid, id: Uuid) -> Result<Project, ServiceError> {
-        self.repo.find(tenant_id, id).await?.ok_or(ServiceError::NotFound)
+        self.repo
+            .find(tenant_id, id)
+            .await?
+            .ok_or(ServiceError::NotFound)
     }
 
     /// Apply a patch. Every field is optional; the status is checked against
