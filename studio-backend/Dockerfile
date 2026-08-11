@@ -3,7 +3,11 @@
 # .release/studio-backend before `docker build` — compiling the 90-crate
 # gears workspace inside a Dockerfile would need the sibling gears-rust
 # checkout in the build context and much longer builds.
-FROM debian:bookworm-slim
+# trixie, not bookworm: the binary is built on the ubuntu-24.04 runner
+# (glibc 2.39) and bookworm's glibc 2.36 cannot load it — the container
+# died at start with "version GLIBC_2.39 not found". trixie ships 2.41;
+# keep this base and release.yml's backend-binary runner in step.
+FROM debian:trixie-slim
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl \

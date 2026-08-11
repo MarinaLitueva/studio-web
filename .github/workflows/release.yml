@@ -30,7 +30,12 @@ env:
 
 jobs:
   backend-binary:
-    runs-on: ubuntu-latest
+    # Pinned, not `-latest`: the binary links the builder's glibc, and the
+    # runtime image (Dockerfile, debian:trixie-slim, glibc 2.41) must be at
+    # least as new. `ubuntu-latest` moving to a newer glibc than trixie would
+    # resurrect "version GLIBC_X.YY not found" at container start — bump the
+    # runner and the runtime base TOGETHER.
+    runs-on: ubuntu-24.04
     steps:
       # The gears revision is pinned in Cargo.toml, so a tag rebuilt next
       # week resolves the same sources as today.
