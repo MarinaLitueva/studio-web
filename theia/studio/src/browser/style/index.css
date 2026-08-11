@@ -1,0 +1,841 @@
+@import '@xyflow/react/dist/style.css';
+
+:root {
+    --studio-focus-ring: var(--theia-focusBorder);
+    --studio-surface: var(--theia-editorWidget-background);
+    --studio-border: var(--theia-panel-border);
+    --studio-muted: var(--theia-descriptionForeground);
+    --studio-text: var(--theia-ui-font-color1);
+}
+
+#widget-container h2 {
+    color: var(--studio-text);
+    font-size: 12px;
+    font-weight: 400;
+    padding: 10px;
+    text-transform: uppercase;
+}
+
+.studio-git-operations,
+.studio-workspace-graph,
+.studio-object-details,
+.studio-analyze,
+.studio-audit {
+    color: var(--studio-text);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    height: 100%;
+    padding: 12px;
+}
+
+.studio-git-operations__header h2,
+.studio-analyze__title,
+.studio-analyze__document-name,
+.studio-analyze__metric h3,
+.studio-analyze__chart-header h3,
+.studio-analyze__empty h3,
+.studio-audit__header h2 {
+    color: var(--studio-text);
+    margin: 0;
+}
+
+.studio-audit__eyebrow,
+.studio-analyze__eyebrow,
+.studio-analyze__document-label,
+.studio-analyze__metric-direction,
+.studio-analyze__chart-label,
+.studio-analyze__meta,
+.studio-git-operations__status,
+.studio-workspace-graph__status,
+.studio-object-details__meta,
+.studio-object-details__path,
+.studio-object-details p,
+.studio-audit__summary,
+.studio-audit__meta dt {
+    color: var(--studio-muted);
+    font-size: 11px;
+}
+
+.studio-git-operations__header h2,
+.studio-audit__header h2 {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.studio-git-operations__status,
+.studio-workspace-graph__toolbar,
+.studio-workspace-graph__status,
+.studio-object-details__meta,
+.studio-object-details__header,
+.studio-analyze__header,
+.studio-analyze__status-row,
+.studio-analyze__metric-top,
+.studio-analyze__chart-header,
+.studio-audit__header,
+.studio-audit__summary,
+.studio-audit__row-top,
+.studio-audit__path-group {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.studio-git-operations__list,
+.studio-audit__list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.studio-git-operations__row,
+.studio-object-details__detail-row,
+.studio-object-details__badge,
+.studio-analyze__document,
+.studio-analyze__chart-panel,
+.studio-analyze__metric,
+.studio-analyze__empty,
+.studio-audit__row {
+    background: var(--studio-surface);
+    border: 1px solid var(--studio-border);
+    border-radius: 12px;
+}
+
+.studio-git-operations__row,
+.studio-audit__row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px;
+}
+
+.studio-git-operations__main {
+    align-items: center;
+    display: flex;
+    gap: 8px;
+    justify-content: space-between;
+}
+
+.studio-git-operations__path,
+.studio-audit__path,
+.studio-audit__meta dd {
+    color: var(--studio-text);
+    font-size: 12px;
+    font-weight: 500;
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.studio-audit__sequence {
+    color: var(--studio-muted);
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.studio-git-operations__detail,
+.studio-git-operations__empty,
+.studio-audit__empty {
+    color: var(--studio-muted);
+    font-size: 11px;
+}
+
+.studio-git-operations__repository-header {
+    align-items: center;
+    column-gap: 4px;
+    display: flex;
+    flex-wrap: wrap;
+    min-width: 0;
+    row-gap: 4px;
+}
+
+.studio-git-operations__repository-label,
+.studio-git-operations__repository-branch,
+.studio-git-operations__repository-mode,
+.studio-git-operations__repository-status {
+    color: var(--studio-muted);
+    flex: none;
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.studio-git-operations__repository-label {
+    color: var(--studio-text);
+    font-weight: 600;
+}
+
+.studio-git-operations__repository-path {
+    color: var(--studio-muted);
+    flex: 1 1 auto;
+    font-size: 11px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.studio-status-badge,
+.studio-git-operations__badge,
+.studio-analyze__badge {
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 10px;
+    text-transform: uppercase;
+}
+
+.studio-status-badge--modified,
+.studio-git-operations__badge--committed,
+.studio-git-operations__badge--committed-local,
+.studio-analyze__badge--current {
+    background: color-mix(in srgb, var(--theia-successBackground) 60%, transparent);
+    color: var(--theia-successForeground);
+}
+
+.studio-status-badge--committed {
+    background: color-mix(in srgb, var(--theia-focusBorder) 20%, transparent);
+    color: var(--theia-focusBorder);
+}
+
+.studio-status-badge--pushing,
+.studio-git-operations__badge--pushing {
+    background: color-mix(in srgb, var(--theia-focusBorder) 18%, transparent);
+    color: var(--theia-focusBorder);
+}
+
+.studio-status-badge--pushed,
+.studio-git-operations__badge--pushed {
+    background: color-mix(in srgb, var(--theia-successBackground) 60%, transparent);
+    color: var(--theia-successForeground);
+}
+
+.studio-status-badge--pending,
+.studio-git-operations__badge--push-pending,
+.studio-analyze__badge--stale {
+    background: color-mix(in srgb, var(--theia-notificationsWarningIcon-foreground) 22%, transparent);
+    color: var(--theia-editorWarning-foreground);
+}
+
+.studio-status-badge--failed,
+.studio-git-operations__badge--failed {
+    background: color-mix(in srgb, var(--theia-errorBackground) 60%, transparent);
+    color: var(--theia-errorForeground);
+}
+
+.studio-status-badge--blocked,
+.studio-git-operations__badge--blocked {
+    background: color-mix(in srgb, var(--theia-notificationsWarningIcon-foreground) 18%, transparent);
+    color: var(--theia-editorWarning-foreground);
+}
+
+.studio-workspace-graph__toolbar input {
+    min-width: 220px;
+}
+
+.studio-workspace-graph__toolbar .theia-select {
+    min-width: 140px;
+}
+
+.studio-workspace-graph__checkbox {
+    align-items: center;
+    color: var(--studio-muted);
+    display: inline-flex;
+    font-size: 11px;
+    gap: 6px;
+}
+
+.studio-workspace-graph__toggle--active {
+    border-color: var(--studio-focus-ring);
+    color: var(--theia-activityBarBadge-foreground);
+}
+
+.studio-workspace-graph__canvas {
+    background: var(--studio-surface);
+    border: 1px solid var(--studio-border);
+    border-radius: 10px;
+    flex: 1;
+    min-height: 420px;
+    overflow: hidden;
+    position: relative;
+}
+
+.studio-workspace-graph__overlay {
+    background: color-mix(in srgb, var(--studio-surface) 92%, transparent);
+    border: 1px solid var(--studio-border);
+    border-radius: 10px;
+    padding: 12px;
+}
+
+.studio-workspace-graph__global-diagnostics {
+    background: color-mix(in srgb, var(--theia-notificationsWarningIcon-foreground) 8%, var(--studio-surface));
+    border: 1px solid color-mix(in srgb, var(--theia-editorWarning-foreground) 55%, var(--studio-border));
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+}
+
+.studio-workspace-graph__global-diagnostics-header,
+.studio-workspace-graph__global-diagnostic-heading {
+    align-items: center;
+    display: flex;
+    gap: 8px;
+    justify-content: space-between;
+}
+
+.studio-workspace-graph__global-diagnostics-header p {
+    color: var(--studio-muted);
+    font-size: 11px;
+    margin: 4px 0 0;
+}
+
+.studio-workspace-graph__global-diagnostics-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.studio-workspace-graph__global-diagnostic {
+    background: var(--studio-surface);
+    border: 1px solid var(--studio-border);
+    border-left: 3px solid var(--theia-editorWarning-foreground);
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    font-size: 11px;
+    gap: 4px;
+    padding: 8px 10px;
+}
+
+.studio-workspace-graph__global-diagnostic--error {
+    border-left-color: var(--theia-editorError-foreground);
+}
+
+.studio-workspace-graph__global-diagnostic-heading span,
+.studio-workspace-graph__global-diagnostic-location {
+    color: var(--studio-muted);
+    font-size: 10px;
+}
+
+.studio-workspace-graph__global-diagnostic-heading span {
+    text-transform: uppercase;
+}
+
+.studio-workspace-graph__global-diagnostic-location {
+    overflow-wrap: anywhere;
+}
+
+.studio-workspace-graph__global-diagnostics > .theia-button {
+    align-self: flex-start;
+}
+
+.studio-workspace-graph__node {
+    background: var(--studio-surface);
+    border: 1px solid var(--studio-border);
+    border-left: 3px solid var(--studio-focus-ring);
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    min-width: 220px;
+    width: 220px;
+    padding: 10px;
+}
+
+.studio-workspace-graph__node--selected {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--studio-focus-ring) 45%, transparent);
+}
+
+.studio-workspace-graph__node--dimmed {
+    opacity: 0.25;
+}
+
+.studio-workspace-graph__node--dirty {
+    border-left-color: var(--theia-editorWarning-foreground);
+}
+
+.studio-workspace-graph__node--error {
+    border-color: var(--theia-editorError-foreground);
+}
+
+.studio-workspace-graph__node--warning,
+.studio-object-details__badge--warning {
+    border-color: var(--theia-editorWarning-foreground);
+}
+
+.studio-workspace-graph__node-header,
+.studio-workspace-graph__node-flags,
+.studio-workspace-graph__node-meta {
+    align-items: center;
+    display: flex;
+    gap: 6px;
+    justify-content: space-between;
+}
+
+.studio-workspace-graph__node-meta {
+    color: var(--studio-muted);
+    font-size: 9px;
+    justify-content: flex-start;
+    margin-bottom: 7px;
+}
+
+.studio-workspace-graph__node-kind,
+.studio-workspace-graph__node-type,
+.studio-workspace-graph__node-pill {
+    color: var(--studio-muted);
+    font-size: 10px;
+    text-transform: uppercase;
+}
+
+.studio-workspace-graph__node-label {
+    color: var(--studio-text);
+    font-size: 12px;
+    font-weight: 600;
+    margin: 8px 0;
+    overflow-wrap: anywhere;
+}
+
+.studio-workspace-graph__edge {
+    transition: opacity 160ms ease, stroke-width 160ms ease;
+}
+
+.studio-workspace-graph__edge--connected {
+    filter: drop-shadow(0 0 3px color-mix(in srgb, var(--studio-focus-ring) 55%, transparent));
+}
+
+.studio-workspace-graph__category-bucket {
+    background: color-mix(in srgb, var(--studio-focus-ring) 4%, transparent);
+    border: 1px solid color-mix(in srgb, var(--studio-focus-ring) 18%, transparent);
+    border-radius: 12px;
+    box-sizing: border-box;
+    color: var(--studio-muted);
+    font-size: 10px;
+    height: 100%;
+    letter-spacing: 0.06em;
+    padding: 8px 10px;
+    text-transform: uppercase;
+    width: 100%;
+}
+
+.studio-workspace-graph__category-bucket > span {
+    background: color-mix(in srgb, var(--studio-surface) 84%, transparent);
+    border-radius: 4px;
+    padding: 2px 5px;
+}
+
+.studio-workspace-graph__category-band {
+    border: 1px dashed color-mix(in srgb, var(--studio-border) 75%, transparent);
+    border-radius: 14px;
+    box-sizing: border-box;
+    font-size: 10px;
+    font-weight: 700;
+    height: 100%;
+    letter-spacing: 0.08em;
+    padding: 10px 12px;
+    text-transform: uppercase;
+    width: 100%;
+}
+
+.studio-workspace-graph .react-flow__minimap {
+    background: var(--studio-surface);
+    border: 1px solid var(--studio-border);
+    border-radius: 8px;
+}
+
+.studio-object-details__detail-row,
+.studio-object-details__badge,
+.studio-analyze__document,
+.studio-analyze__chart-panel,
+.studio-analyze__empty,
+.studio-analyze__metric {
+    padding: 12px;
+}
+
+.studio-object-details__badge--error {
+    border-color: var(--theia-editorError-foreground);
+}
+
+.studio-analyze__action:focus-visible,
+.studio-audit__filter:focus-visible,
+.studio-audit:focus-visible {
+    outline: 2px solid var(--studio-focus-ring);
+    outline-offset: 2px;
+}
+
+.studio-analyze__badge--loading,
+.studio-analyze__badge--empty {
+    background: color-mix(in srgb, var(--studio-focus-ring) 18%, transparent);
+    color: var(--studio-text);
+}
+
+.studio-analyze__body {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+}
+
+.studio-analyze__document {
+    grid-column: span 4;
+}
+
+.studio-analyze__chart-panel {
+    grid-column: span 8;
+}
+
+.studio-analyze__document-uri {
+    color: var(--studio-muted);
+    font-size: 11px;
+    margin-top: 6px;
+    overflow-wrap: anywhere;
+}
+
+.studio-analyze__metrics {
+    display: grid;
+    gap: 12px;
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.studio-analyze__metric {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-height: 220px;
+    min-width: 0;
+}
+
+.studio-analyze__metric-button {
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--theia-widget-shadow) 10%, transparent);
+    cursor: pointer;
+    padding: 14px;
+    text-align: left;
+    transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+.studio-analyze__metric-button:hover {
+    border-color: color-mix(in srgb, var(--studio-focus-ring) 40%, var(--studio-border));
+    transform: translateY(-1px);
+}
+
+.studio-analyze__metric-button:focus-visible {
+    outline: 2px solid var(--studio-focus-ring);
+    outline-offset: 2px;
+}
+
+.studio-analyze__metric--selected {
+    border-color: color-mix(in srgb, var(--studio-focus-ring) 55%, var(--studio-border));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--studio-focus-ring) 35%, transparent), inset 0 1px 0 color-mix(in srgb, var(--studio-focus-ring) 12%, transparent);
+}
+
+.studio-analyze__metric-main,
+.studio-analyze__metric-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.studio-analyze__metric-summary {
+    align-items: flex-end;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.studio-analyze__metric-score {
+    color: var(--studio-text);
+    font-size: 28px;
+    font-weight: 700;
+}
+
+.studio-analyze__metric-level {
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 4px 9px;
+    text-transform: uppercase;
+}
+
+.studio-analyze__metric-level--good {
+    background: color-mix(in srgb, var(--theia-successBackground) 60%, transparent);
+    color: var(--theia-successForeground);
+}
+
+.studio-analyze__metric-level--attention {
+    background: color-mix(in srgb, var(--theia-notificationsWarningIcon-foreground) 22%, transparent);
+    color: var(--theia-editorWarning-foreground);
+}
+
+.studio-analyze__metric-level--risk {
+    background: color-mix(in srgb, var(--theia-errorBackground) 60%, transparent);
+    color: var(--theia-errorForeground);
+}
+
+.studio-analyze__metric-definition,
+.studio-analyze__metric-interpretation {
+    line-height: 1.45;
+    margin: 0;
+}
+
+.studio-analyze__metric-definition {
+    color: var(--studio-text);
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.studio-analyze__metric-interpretation {
+    color: var(--studio-muted);
+    font-size: 11px;
+}
+
+.studio-analyze__gauge {
+    display: grid;
+    gap: 10px;
+}
+
+.studio-analyze__gauge--vertical {
+    align-items: end;
+    grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.studio-analyze__gauge--horizontal {
+    align-items: center;
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.studio-analyze__gauge-track {
+    background:
+        linear-gradient(
+            to top,
+            color-mix(in srgb, var(--studio-border) 42%, transparent) 0,
+            color-mix(in srgb, var(--studio-border) 42%, transparent) 1px,
+            transparent 1px,
+            transparent 25%
+        ),
+        color-mix(in srgb, var(--studio-border) 10%, var(--studio-surface));
+    border: 1px solid color-mix(in srgb, var(--studio-border) 75%, transparent);
+    border-radius: 16px;
+    overflow: hidden;
+    position: relative;
+}
+
+.studio-analyze__gauge--vertical .studio-analyze__gauge-track {
+    height: 136px;
+    width: 34px;
+}
+
+.studio-analyze__gauge--horizontal .studio-analyze__gauge-track {
+    height: 24px;
+    width: 100%;
+}
+
+.studio-analyze__gauge-fill {
+    border-radius: 14px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    left: 0;
+    position: absolute;
+}
+
+.studio-analyze__gauge--vertical .studio-analyze__gauge-fill {
+    bottom: 0;
+    width: 100%;
+}
+
+.studio-analyze__gauge--horizontal .studio-analyze__gauge-fill {
+    height: 100%;
+    top: 0;
+}
+
+.studio-analyze__gauge-fill--good {
+    background: linear-gradient(180deg, #44d47d 0%, #218c50 100%);
+}
+
+.studio-analyze__gauge-fill--attention {
+    background: linear-gradient(180deg, #f6c453 0%, #ca8a04 100%);
+}
+
+.studio-analyze__gauge-fill--risk {
+    background: linear-gradient(180deg, #f87171 0%, #c2410c 100%);
+}
+
+.studio-analyze__gauge-scale {
+    color: var(--studio-muted);
+    display: flex;
+    font-size: 10px;
+    font-weight: 600;
+}
+
+.studio-analyze__gauge--vertical .studio-analyze__gauge-scale {
+    align-self: stretch;
+    flex-direction: column-reverse;
+    justify-content: space-between;
+}
+
+.studio-analyze__gauge--horizontal .studio-analyze__gauge-scale {
+    justify-content: space-between;
+}
+
+.studio-analyze__chart {
+    color: var(--studio-focus-ring);
+    width: 100%;
+}
+
+.studio-analyze__chart {
+    display: block;
+    min-height: 160px;
+}
+
+.studio-analyze__chart-surface {
+    fill: color-mix(in srgb, var(--studio-surface) 94%, transparent);
+    stroke: var(--studio-border);
+}
+
+.studio-analyze__chart-grid {
+    stroke: color-mix(in srgb, var(--studio-border) 60%, transparent);
+    stroke-dasharray: 4 4;
+}
+
+.studio-analyze__chart-line {
+    fill: none;
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.studio-analyze__chart-axis-title,
+.studio-analyze__chart-axis-label {
+    fill: var(--studio-muted);
+    font-size: 11px;
+}
+
+.studio-analyze__chart-axis-title {
+    font-weight: 600;
+}
+
+.studio-analyze__chart-axis-label--x {
+    text-anchor: middle;
+}
+
+.studio-analyze__chart-axis-label--y {
+    text-anchor: end;
+}
+
+.studio-analyze__chart-dot {
+    stroke: var(--studio-surface);
+    stroke-width: 2;
+}
+
+.studio-analyze__chart-line--good,
+.studio-analyze__chart-dot--good {
+    stroke: #22c55e;
+    fill: #22c55e;
+}
+
+.studio-analyze__chart-line--attention,
+.studio-analyze__chart-dot--attention {
+    stroke: #f59e0b;
+    fill: #f59e0b;
+}
+
+.studio-analyze__chart-line--risk,
+.studio-analyze__chart-dot--risk {
+    stroke: #ef4444;
+    fill: #ef4444;
+}
+
+.studio-analyze__empty {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    justify-content: center;
+    min-height: 180px;
+}
+
+.studio-analyze__empty p {
+    color: var(--studio-muted);
+    margin: 0;
+}
+
+.studio-audit__filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.studio-audit__filter {
+    align-items: center;
+    display: inline-flex;
+    gap: 8px;
+}
+
+.studio-audit__filter--active {
+    border-color: var(--studio-focus-ring);
+}
+
+.studio-audit__filter-count {
+    background: var(--theia-badge-background);
+    border-radius: 999px;
+    color: var(--theia-badge-foreground);
+    font-size: 10px;
+    min-width: 18px;
+    padding: 1px 6px;
+    text-align: center;
+}
+
+.studio-audit__meta {
+    display: grid;
+    gap: 8px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin: 0;
+}
+
+.studio-audit__meta div {
+    min-width: 0;
+}
+
+.studio-audit__meta dd {
+    font-family: var(--theia-monospace-font-family);
+    font-size: 11px;
+}
+
+@media (max-width: 900px) {
+    .studio-analyze__document,
+    .studio-analyze__chart-panel,
+    .studio-audit__meta {
+        grid-column: 1 / -1;
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 480px) {
+    .studio-analyze__metric {
+        min-height: 0;
+    }
+
+    .studio-analyze__metric-top {
+        align-items: flex-start;
+    }
+
+    .studio-analyze__metric-summary {
+        align-items: flex-start;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .react-flow__node,
+    .react-flow__edge,
+    .react-flow__viewport,
+    .studio-workspace-graph__node,
+    .studio-analyze,
+    .studio-analyze__metric,
+    .studio-analyze__chart,
+    .studio-analyze__chart-line,
+    .studio-analyze__chart-dot {
+        animation: none !important;
+        transition: none !important;
+    }
+}

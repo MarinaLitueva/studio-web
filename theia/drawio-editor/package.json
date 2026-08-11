@@ -1,0 +1,33 @@
+{
+  "name": "drawio-editor",
+  "private": true,
+  "keywords": [
+    "theia-extension"
+  ],
+  "version": "0.0.0",
+  "files": [
+    "lib",
+    "src",
+    "runtime"
+  ],
+  "dependencies": {
+    "@theia/core": "1.74.0",
+    "saxes": "6.0.0",
+    "yauzl": "2.10.0"
+  },
+  "devDependencies": {
+    "rimraf": "^5.0.0",
+    "typescript": "~5.4.5"
+  },
+  "scripts": {
+    "clean": "rimraf lib",
+    "build": "tsc",
+    "package:drawio-runtime": "node lib/node/drawio-runtime-packager.js"
+  },
+  "theiaExtensions": [
+    {
+      "frontend": "lib/browser/drawio-frontend-module",
+      "backend": "lib/node/drawio-backend-module"
+    }
+  ]
+}

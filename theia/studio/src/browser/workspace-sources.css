@@ -1,0 +1,214 @@
+.studio-workspace-sources {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 16px;
+    color: var(--theia-editor-foreground);
+    background: var(--theia-editorWidget-background);
+}
+
+.studio-workspace-sources__header,
+.studio-workspace-sources__row-top,
+.studio-workspace-sources__meta-row,
+.studio-workspace-sources__inline-actions,
+.studio-workspace-sources__status,
+.studio-workspace-sources__actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+}
+
+.studio-workspace-sources__eyebrow,
+.studio-workspace-sources__meta,
+.studio-workspace-sources__reason,
+.studio-workspace-sources__meta-row {
+    color: var(--theia-descriptionForeground);
+    font-size: 12px;
+}
+
+.studio-workspace-sources__panel,
+.studio-workspace-sources__card,
+.studio-workspace-sources__job,
+.studio-workspace-sources__row {
+    border: 1px solid var(--theia-panel-border);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--theia-editorWidget-background) 92%, var(--theia-foreground) 8%);
+}
+
+.studio-workspace-sources__panel,
+.studio-workspace-sources__card {
+    padding: 14px;
+}
+
+.studio-workspace-sources__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+}
+
+.studio-workspace-sources__list,
+.studio-workspace-sources__jobs {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.studio-workspace-sources__row,
+.studio-workspace-sources__job {
+    padding: 10px 12px;
+}
+
+.studio-workspace-sources__empty {
+    padding: 12px;
+    border: 1px dashed var(--theia-panel-border);
+    border-radius: 8px;
+    color: var(--theia-descriptionForeground);
+}
+
+.studio-workspace-sources__pill,
+.studio-workspace-sources__badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-height: 24px;
+    padding: 0 10px;
+    border-radius: 999px;
+    background: var(--theia-badge-background);
+    color: var(--theia-badge-foreground);
+    font-size: 12px;
+    text-transform: capitalize;
+}
+
+.studio-workspace-sources__pill--warning,
+.studio-workspace-sources__badge--missing,
+.studio-workspace-sources__badge--blocked,
+.studio-workspace-sources__badge--auth-required {
+    background: color-mix(in srgb, var(--theia-errorForeground) 24%, transparent);
+    color: var(--theia-errorForeground);
+}
+
+.studio-workspace-sources__badge--dirty,
+.studio-workspace-sources__badge--ahead,
+.studio-workspace-sources__badge--behind,
+.studio-workspace-sources__badge--diverged {
+    background: color-mix(in srgb, var(--theia-editorWarning-foreground) 24%, transparent);
+    color: var(--theia-editorWarning-foreground);
+}
+
+.studio-workspace-sources__badge--present {
+    background: color-mix(in srgb, var(--theia-editorInfo-foreground) 24%, transparent);
+    color: var(--theia-editorInfo-foreground);
+}
+
+.studio-workspace-sources__diagnostic-list {
+    margin: 10px 0 0;
+    padding-left: 18px;
+}
+
+.studio-workspace-sources__form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.studio-workspace-sources__field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.studio-workspace-sources__field--wide {
+    grid-column: 1 / -1;
+}
+
+.studio-workspace-sources__field input,
+.studio-workspace-sources__field select,
+.studio-workspace-sources__textarea {
+    width: 100%;
+    border: 1px solid var(--theia-panel-border);
+    border-radius: 8px;
+    background: var(--theia-input-background);
+    color: var(--theia-input-foreground);
+    padding: 8px 10px;
+}
+
+.studio-workspace-sources__textarea {
+    min-height: 320px;
+    resize: vertical;
+    font-family: var(--theia-editor-font-family);
+}
+
+.studio-workspace-sources__field-error,
+.studio-workspace-sources__dialog-error {
+    color: var(--theia-errorForeground);
+    font-size: 12px;
+}
+
+.studio-workspace-sources__modal-backdrop {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: color-mix(in srgb, var(--theia-editorWidget-background) 35%, black);
+    z-index: 1000;
+}
+
+.studio-workspace-sources__modal {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: min(860px, 100%);
+    max-height: min(88vh, 960px);
+    padding: 16px;
+    overflow: auto;
+    border: 1px solid var(--theia-panel-border);
+    border-radius: 12px;
+    background: var(--theia-editorWidget-background);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+}
+
+.studio-workspace-sources__modal-header,
+.studio-workspace-sources__modal-actions,
+.studio-workspace-sources__sync-preview {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.studio-workspace-sources__modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.studio-workspace-sources__conflict-box,
+.studio-workspace-sources__sync-preview {
+    padding: 12px;
+    border: 1px solid var(--theia-panel-border);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--theia-editorWidget-background) 94%, var(--theia-foreground) 6%);
+}
+
+.studio-workspace-sources button:focus-visible,
+.studio-workspace-sources input:focus-visible,
+.studio-workspace-sources select:focus-visible,
+.studio-workspace-sources textarea:focus-visible {
+    outline: 1px solid var(--theia-focusBorder);
+    outline-offset: 2px;
+}
+
+@media (max-width: 720px) {
+    .studio-workspace-sources__form-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .studio-workspace-sources__modal-backdrop {
+        padding: 12px;
+    }
+}

@@ -1,0 +1,35 @@
+{
+  "private": true,
+  "engines": {
+    "node": ">=22 <=24",
+    "npm": ">=10"
+  },
+  "scripts": {
+    "build:browser": "npm --prefix browser-app run bundle",
+    "build:electron": "npm --prefix electron-app run bundle",
+    "prepare": "lerna run prepare",
+    "postinstall": "theia check:theia-version && patch-package",
+    "start:browser": "npm --prefix browser-app run start --",
+    "start:electron": "npm --prefix electron-app start",
+    "test:e2e": "playwright test",
+    "test:e2e:studio-save-push": "playwright test tests/e2e/studio-save-push.spec.ts",
+    "watch:browser": "lerna run --parallel watch --ignore electron-app",
+    "watch:electron": "lerna run --parallel watch --ignore browser-app",
+    "test": "cd studio && npm test",
+    "validate:browser-e2e": "npm run build:browser && npm run test:e2e:studio-save-push",
+    "validate:electron-build": "npm run build:electron"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.0",
+    "lerna": "^8.2.4",
+    "patch-package": "^8.0.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "workspaces": [
+    "studio",
+    "drawio-editor",
+    "browser-app",
+    "electron-app"
+  ]
+}

@@ -1,0 +1,11 @@
+# Constructor Studio artifacts registry
+
+[[systems]]
+name = "Theia"
+slug = "theia"
+kit = ""
+artifacts = []
+codebase = [
+  { path = "markdown-editor/src", extensions = [".ts", ".tsx"] }
+]
+children = []

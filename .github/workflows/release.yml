@@ -30,7 +30,12 @@ env:
 
 jobs:
   backend-binary:
-    runs-on: ubuntu-latest
+    # Pinned, not `-latest`: the binary links the builder's glibc, and the
+    # runtime image (Dockerfile, debian:trixie-slim, glibc 2.41) must be at
+    # least as new. `ubuntu-latest` moving to a newer glibc than trixie would
+    # resurrect "version GLIBC_X.YY not found" at container start — bump the
+    # runner and the runtime base TOGETHER.
+    runs-on: ubuntu-24.04
     steps:
       # The gears revision is pinned in Cargo.toml, so a tag rebuilt next
       # week resolves the same sources as today.
@@ -46,7 +51,11 @@ jobs:
 
       - name: Build (release)
         working-directory: studio-backend
-        run: cargo build --release --locked
+        # --no-default-features drops the `llm` feature (mini-chat + oagw): the
+        # DMZ deploy ships no LLM key and no IDE sessions, and oagw's post_init
+        # would deadlock the first boot on a root tenant that account-management
+        # only seeds later (see the mini_chat/api_egress notes in Cargo.toml).
+        run: cargo build --release --locked --no-default-features
 
       - uses: actions/upload-artifact@v4
         with:
@@ -93,6 +102,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # ghcr rejects any reference with an uppercase letter, and
+      # `github.repository` carries the owner's name exactly as registered —
+      # `AndrejK666/studio-web` here. GitHub expressions have no lowercase
+      # function, so it is done in the shell, and it has to overwrite the
+      # workflow-level IMAGE_PREFIX rather than define a second variable: the
+      # build steps below already read $IMAGE_PREFIX, and two names for one
+      # thing is how the wrong one gets used later.
+      - name: Lowercase the image prefix
+        run: |
+          set -euo pipefail
+          lower=$(printf '%s' "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE_PREFIX=ghcr.io/$lower" >> "$GITHUB_ENV"
+
       # A tag release gets the version and `latest`; anything else gets `edge`
       # and an immutable `sha-` tag. `latest` is deliberately NOT moved by a
       # main push: something has to keep meaning "the last release".
@@ -134,6 +156,36 @@ jobs:
             docker push "$IMAGE_PREFIX/studio-frontend:$t"
           done
 
+      # The per-workspace Theia IDE session image (moved in from fabric-poc).
+      # Self-contained multi-stage build from theia/ — no artifact to download,
+      # it downloads Theia plugins at build time (needs network, ~10 min).
+      # studio-session pulls this by the `image:` in config/*.yaml.
+      - name: Build & push Theia session image
+        run: |
+          set -euo pipefail
+          args=()
+          for t in ${{ steps.tags.outputs.list }}; do
+            args+=(-t "$IMAGE_PREFIX/cf-studio-theia:$t")
+          done
+          docker build -f theia/Dockerfile "${args[@]}" theia
+          for t in ${{ steps.tags.outputs.list }}; do
+            docker push "$IMAGE_PREFIX/cf-studio-theia:$t"
+          done
+      # Custom Keycloak (real SSO, INFRA-3767). Self-contained: optimized build
+      # + the studio realm baked for --import-realm; social-provider secrets are
+      # NOT baked (resolved at runtime from the files-plaintext vault). Pulled
+      # in-cluster via the Harbor GHCR proxy, gated by Helm keycloak.enabled.
+      - name: Build & push Keycloak image
+        run: |
+          set -euo pipefail
+          args=()
+          for t in ${{ steps.tags.outputs.list }}; do
+            args+=(-t "$IMAGE_PREFIX/cf-studio-keycloak:$t")
+          done
+          docker build -f keycloak/Dockerfile "${args[@]}" keycloak
+          for t in ${{ steps.tags.outputs.list }}; do
+            docker push "$IMAGE_PREFIX/cf-studio-keycloak:$t"
+          done
       - name: Summary
         run: |
           {
@@ -141,6 +193,8 @@ jobs:
             for t in ${{ steps.tags.outputs.list }}; do
               echo "- \`$IMAGE_PREFIX/studio-backend:$t\`"
               echo "- \`$IMAGE_PREFIX/studio-frontend:$t\`"
+              echo "- \`$IMAGE_PREFIX/cf-studio-theia:$t\`"
+              echo "- \`$IMAGE_PREFIX/cf-studio-keycloak:$t\`"
             done
           } >> "$GITHUB_STEP_SUMMARY"
 

@@ -1,0 +1,28 @@
+diff --git a/node_modules/@theia/ai-codex/lib/node/codex-service-impl.js b/node_modules/@theia/ai-codex/lib/node/codex-service-impl.js
+index 11308dc..30de754 100644
+--- a/node_modules/@theia/ai-codex/lib/node/codex-service-impl.js
++++ b/node_modules/@theia/ai-codex/lib/node/codex-service-impl.js
+@@ -39,7 +39,8 @@ let CodexServiceImpl = class CodexServiceImpl {
+         try {
+             const dynamicImport = new Function('specifier', 'return import(specifier)');
+             const { Codex } = await dynamicImport('@openai/codex-sdk');
+-            const codex = new Codex();
++            const codexPathOverride = process.env.THEIA_CODEX_PATH;
++            const codex = new Codex(codexPathOverride ? { codexPathOverride } : undefined);
+             const sessionId = request.sessionId || streamId;
+             let thread = this.sessionThreads.get(sessionId);
+             if (!thread) {
+diff --git a/node_modules/@theia/ai-codex/src/node/codex-service-impl.ts b/node_modules/@theia/ai-codex/src/node/codex-service-impl.ts
+index c83f613..861f456 100644
+--- a/node_modules/@theia/ai-codex/src/node/codex-service-impl.ts
++++ b/node_modules/@theia/ai-codex/src/node/codex-service-impl.ts
+@@ -51,7 +51,8 @@ export class CodexServiceImpl implements CodexService {
+         try {
+             const dynamicImport = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<typeof import('@openai/codex-sdk')>;
+             const { Codex } = await dynamicImport('@openai/codex-sdk');
+-            const codex = new Codex();
++            const codexPathOverride = process.env.THEIA_CODEX_PATH;
++            const codex = new Codex(codexPathOverride ? { codexPathOverride } : undefined);
+ 
+             const sessionId = request.sessionId || streamId;
+             let thread = this.sessionThreads.get(sessionId);

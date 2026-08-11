@@ -1,0 +1,140 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "drawio-runtime-quarantined-war-30.0.4",
+  "documentNamespace": "https://constructor.fabric.local/spdx/drawio-runtime-quarantined-war-30.0.4",
+  "creationInfo": {
+    "created": "2026-07-29T00:00:00Z",
+    "creators": [
+      "Tool: Codex"
+    ]
+  },
+  "documentDescribes": [
+    "SPDXRef-Package-diagrams-net-war",
+    "SPDXRef-Package-diagrams-net-source",
+    "SPDXRef-Package-drawio-integration-archive",
+    "SPDXRef-File-draw-war",
+    "SPDXRef-File-license"
+  ],
+  "packages": [
+    {
+      "name": "diagrams.net",
+      "SPDXID": "SPDXRef-Package-diagrams-net-war",
+      "versionInfo": "30.0.4",
+      "downloadLocation": "https://github.com/jgraph/drawio/releases/download/v30.0.4/draw.war",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "summary": "Limited-scope acquisition SBOM entry for the quarantined retained upstream WAR artifact. This is not a full dependency SBOM."
+    },
+    {
+      "name": "diagrams.net-source-verification-input",
+      "SPDXID": "SPDXRef-Package-diagrams-net-source",
+      "versionInfo": "30.0.4",
+      "downloadLocation": "https://github.com/jgraph/drawio/archive/refs/tags/v30.0.4.tar.gz",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "summary": "Verification input only; not retained in repository."
+    },
+    {
+      "name": "jgraph/drawio-integration-verification-input",
+      "SPDXID": "SPDXRef-Package-drawio-integration-archive",
+      "versionInfo": "321f82a19dd7f619bddfe5e0866bf548d98bd8f4",
+      "downloadLocation": "https://github.com/jgraph/drawio-integration/archive/321f82a19dd7f619bddfe5e0866bf548d98bd8f4.tar.gz",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "summary": "Verification input only; not retained and not copied because the archive has no LICENSE."
+    }
+  ],
+  "files": [
+    {
+      "fileName": "./drawio-editor/runtime/artifacts/draw-30.0.4.war",
+      "SPDXID": "SPDXRef-File-draw-war",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "cb40abb5f750f549444c94c00de086218b47e30b33fbc4dd0476118afd8ec19d"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "licenseInfoInFiles": [
+        "NOASSERTION"
+      ],
+      "copyrightText": "NOASSERTION",
+      "comment": "Retained quarantined WAR artifact. This limited-scope acquisition SBOM does not enumerate unpacked contents or transitive dependencies."
+    },
+    {
+      "fileName": "./drawio-editor/runtime/licenses/diagrams-net-LICENSE.txt",
+      "SPDXID": "SPDXRef-File-license",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+        }
+      ],
+      "licenseConcluded": "Apache-2.0",
+      "licenseInfoInFiles": [
+        "Apache-2.0"
+      ],
+      "copyrightText": "NOASSERTION"
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-diagrams-net-war"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-diagrams-net-source"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-drawio-integration-archive"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-File-draw-war"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-File-license"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-diagrams-net-war",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-File-draw-war"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-diagrams-net-war",
+      "relationshipType": "GENERATED_FROM",
+      "relatedSpdxElement": "SPDXRef-Package-diagrams-net-source"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-diagrams-net-war",
+      "relationshipType": "OTHER",
+      "relatedSpdxElement": "SPDXRef-Package-drawio-integration-archive",
+      "comment": "Integration archive is a reviewed provenance input only and is not shipped in the repository."
+    }
+  ],
+  "annotations": [
+    {
+      "annotationDate": "2026-07-29T00:00:00Z",
+      "annotationType": "OTHER",
+      "annotator": "Tool: Codex",
+      "SPDXID": "SPDXRef-DOCUMENT",
+      "comment": "Scope is intentionally limited to the retained WAR, the retained license file, and upstream provenance inputs. This is a limited-scope acquisition SBOM, not a full dependency SBOM, and no dependency enumeration beyond audited retained files is claimed."
+    }
+  ]
+}
