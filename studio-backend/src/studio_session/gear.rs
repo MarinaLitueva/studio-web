@@ -9,6 +9,9 @@ use toolkit::{Gear, GearCtx};
 use tracing::{info, warn};
 
 use super::config::StudioSessionConfig;
+use super::docker::DockerDriver;
+use super::driver::SessionDriver;
+use super::k8s::KubernetesDriver;
 use super::rest;
 use super::service::SessionService;
 
@@ -48,17 +51,36 @@ impl Gear for StudioSessionGear {
             ports = format!("{}-{}", cfg.port_range_start, cfg.port_range_end),
             "studio-session: initializing"
         );
-        // No Docker daemon (k8s node, CI) must not fail the whole backend:
+        // Pick the driver by config. A driver that cannot reach its runtime
+        // (no Docker socket, no cluster) must NOT fail the whole backend —
         // boot with sessions unavailable instead.
-        let service = match SessionService::new(cfg) {
-            Ok(s) => s,
-            Err(e) => {
+        let driver: Arc<dyn SessionDriver> = match cfg.driver.as_str() {
+            "kubernetes" | "k8s" => match KubernetesDriver::connect(cfg.clone()).await {
+                Ok(d) => Arc::new(d),
+                Err(e) => {
+                    warn!(
+                        "studio-session: Kubernetes unavailable ({e:#}) — sessions disabled for this run"
+                    );
+                    return Ok(());
+                }
+            },
+            "docker" => match DockerDriver::connect(cfg.clone()) {
+                Ok(d) => Arc::new(d),
+                Err(e) => {
+                    warn!(
+                        "studio-session: Docker unavailable ({e:#}) — sessions disabled for this run"
+                    );
+                    return Ok(());
+                }
+            },
+            other => {
                 warn!(
-                    "studio-session: Docker unavailable ({e:#}) — sessions disabled for this run"
+                    "studio-session: unknown driver '{other}' — sessions disabled (use 'docker' or 'kubernetes')"
                 );
                 return Ok(());
             }
         };
+        let service = SessionService::new(cfg, driver);
 
         // credstore client: resolves repo PATs for private clones (optional —
         // sessions without tokens work regardless).

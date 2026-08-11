@@ -9,6 +9,19 @@ pub struct StudioSessionConfig {
     /// whole backend failing on a missing /var/run/docker.sock.
     #[serde(default = "default_enabled")]
     pub enabled: bool,
+    /// Which runtime launches sessions: `docker` (local daemon, the MVP) or
+    /// `kubernetes` (one Pod+Service per session in the backend's namespace,
+    /// reached through the backend's authenticated proxy). Default `docker`.
+    #[serde(default = "default_driver")]
+    pub driver: String,
+    /// Kubernetes driver: namespace to create session Pods in. Unset = the
+    /// backend's own namespace (from the mounted ServiceAccount token).
+    #[serde(default)]
+    pub k8s_namespace: Option<String>,
+    /// Kubernetes driver: name of a `dockerconfigjson` Secret in the namespace
+    /// for pulling the (private) session image. Unset = no pull secret.
+    #[serde(default)]
+    pub k8s_image_pull_secret: Option<String>,
     /// Docker image for a Theia session. Default: the CI-published one
     /// (fabric-poc/.github/workflows/theia-image.yml). Pulled automatically
     /// when absent; a locally-built `cf-studio-theia:latest` also works.
@@ -69,6 +82,9 @@ impl Default for StudioSessionConfig {
     fn default() -> Self {
         Self {
             enabled: default_enabled(),
+            driver: default_driver(),
+            k8s_namespace: None,
+            k8s_image_pull_secret: None,
             image: default_image(),
             always_pull: default_always_pull(),
             registry_user_env: default_registry_user_env(),
@@ -87,6 +103,9 @@ impl Default for StudioSessionConfig {
 
 fn default_enabled() -> bool {
     true
+}
+fn default_driver() -> String {
+    "docker".into()
 }
 fn default_image() -> String {
     "ghcr.io/constructorfabric/fabric-poc/cf-studio-theia:edge".into()

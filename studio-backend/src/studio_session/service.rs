@@ -3,24 +3,18 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, anyhow};
-use bollard::Docker;
-use bollard::container::{
-    Config as ContainerConfig, CreateContainerOptions, ListContainersOptions,
-    RemoveContainerOptions, StopContainerOptions,
-};
-use bollard::service::{HostConfig, PortBinding};
 use credstore_sdk::{CredStoreClientV1, SecretRef};
 use tokio::sync::RwLock;
 use toolkit_security::SecurityContext;
 use uuid::Uuid;
 
 use super::config::StudioSessionConfig;
+use super::driver::{LaunchSpec, LocalBind, SessionAddress, SessionDriver};
 
 const SESSION_LABEL: &str = "cf.studio.session";
 const WS_LABEL: &str = "cf.studio.workspace_id";
 const TENANT_LABEL: &str = "cf.studio.tenant_id";
 const PORT_LABEL: &str = "cf.studio.port";
-const THEIA_PORT: &str = "3003/tcp";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SessionState {
@@ -70,8 +64,10 @@ pub struct Session {
     pub id: Uuid,
     pub workspace_id: Uuid,
     pub tenant_id: Uuid,
-    pub container_id: String,
-    pub port: u16,
+    /// Driver handle: container id (Docker) or Pod name (Kubernetes).
+    pub handle: String,
+    /// Where the driver exposes this session.
+    pub address: SessionAddress,
     pub state: SessionState,
     pub created_at_epoch_secs: u64,
     /// Human-readable source summaries, e.g. "docs (git)".
@@ -85,7 +81,7 @@ pub struct Session {
 
 pub struct SessionService {
     cfg: StudioSessionConfig,
-    docker: Docker,
+    driver: Arc<dyn SessionDriver>,
     sessions: RwLock<HashMap<Uuid, Session>>,
     /// Resolves repo access tokens (PATs) stored as credstore secrets.
     credstore: RwLock<Option<Arc<dyn CredStoreClientV1>>>,
@@ -103,16 +99,14 @@ fn now_secs() -> u64 {
 }
 
 impl SessionService {
-    pub fn new(cfg: StudioSessionConfig) -> anyhow::Result<Arc<Self>> {
-        let docker = Docker::connect_with_local_defaults()
-            .context("cannot connect to the Docker daemon (is /var/run/docker.sock available?)")?;
-        Ok(Arc::new(Self {
+    pub fn new(cfg: StudioSessionConfig, driver: Arc<dyn SessionDriver>) -> Arc<Self> {
+        Arc::new(Self {
             cfg,
-            docker,
+            driver,
             sessions: RwLock::new(HashMap::new()),
             credstore: RwLock::new(None),
             pull_notify: tokio::sync::Notify::new(),
-        }))
+        })
     }
 
     pub async fn set_credstore(&self, client: Arc<dyn CredStoreClientV1>) {
@@ -174,52 +168,40 @@ impl SessionService {
         out
     }
 
-    pub fn session_url(&self, port: u16) -> String {
-        format!("http://{}:{port}/", self.cfg.public_host)
+    /// The URL the portal opens for a session, from its driver address.
+    /// Loopback (Docker): the published host port directly. Service
+    /// (Kubernetes): the backend's authenticated proxy path — the browser
+    /// never reaches the Pod except through a token check.
+    pub fn session_url(&self, session: &Session) -> String {
+        match &session.address {
+            SessionAddress::Loopback { port } => {
+                format!("http://{}:{port}/", self.cfg.public_host)
+            }
+            SessionAddress::Service { .. } => {
+                format!("/studio/{}/", session.id)
+            }
+        }
     }
 
-    async fn image_present(&self) -> bool {
-        self.docker.inspect_image(&self.cfg.image).await.is_ok()
-    }
-
-    /// One registry pull of the session image. NB: the Docker API ignores
-    /// `docker login`'s client-side credential store — private registries
-    /// need explicit credentials (env-driven, see
-    /// [`StudioSessionConfig::registry_credentials`]).
-    async fn pull_image(&self) -> anyhow::Result<()> {
-        let pull = self.docker.create_image(
-            Some(bollard::image::CreateImageOptions {
-                from_image: self.cfg.image.clone(),
-                ..Default::default()
-            }),
-            None,
-            self.cfg.registry_credentials(),
-        );
-        use futures_util::TryStreamExt;
-        pull.try_collect::<Vec<_>>()
-            .await
-            .map(|_| ())
-            .map_err(|e| anyhow!("{e}"))
-    }
-
-    /// Background image keeper: pulls the session image at boot and
-    /// re-pulls on demand (`pull_notify`, fired after each launch when
-    /// `always_pull` — the CURRENT launch uses the local copy, the NEXT one
-    /// gets the refreshed mutable tag). Retries every 30 s while the image
-    /// is absent. Launch requests never wait on this: a multi-minute pull
-    /// inside a request would trip the 30 s gateway deadline (HTTP 504).
+    /// Background image keeper: refreshes the session image at boot and on
+    /// demand (`pull_notify`, fired after each launch when `always_pull` — the
+    /// CURRENT launch uses the local copy, the NEXT one gets the refreshed
+    /// mutable tag). Retries every 30 s while the image is absent. Launch
+    /// requests never wait on this: a multi-minute pull inside a request would
+    /// trip the 30 s gateway deadline (HTTP 504). A no-op for drivers whose
+    /// runtime pulls images itself (Kubernetes).
     pub async fn image_keeper(svc: Arc<Self>) {
         loop {
-            let present = svc.image_present().await;
-            tracing::info!(image = %svc.cfg.image, refresh = present, "studio-session: pulling session image");
-            match svc.pull_image().await {
+            let present = svc.driver.image_present().await;
+            tracing::info!(image = %svc.cfg.image, refresh = present, "studio-session: refreshing session image");
+            match svc.driver.refresh_image().await {
                 Ok(()) => {
                     tracing::info!(image = %svc.cfg.image, "studio-session: image up to date");
                 }
                 Err(e) if present => {
                     tracing::warn!(
                         image = %svc.cfg.image,
-                        "studio-session: refresh pull failed ({e}) — the local copy stays in use"
+                        "studio-session: refresh failed ({e}) — the local copy stays in use"
                     );
                 }
                 Err(e) => {
@@ -228,7 +210,7 @@ impl SessionService {
                         "studio-session: image not available yet ({e}) — retrying in 30s. For the \
                          private ghcr image set STUDIO_REGISTRY_USER + STUDIO_REGISTRY_TOKEN \
                          (PAT with read:packages), or pull once manually (docker pull), or \
-                         build locally (fabric-poc/poc/theia)"
+                         build locally (theia/)"
                     );
                     tokio::time::sleep(Duration::from_secs(30)).await;
                     continue;
@@ -239,10 +221,10 @@ impl SessionService {
         }
     }
 
-    /// Launch-path image check: instant, never pulls inline. A missing
-    /// image means the keeper is still downloading — tell the user to retry.
+    /// Launch-path image check: instant, never pulls inline. A missing image
+    /// means the keeper is still downloading — tell the user to retry.
     pub async fn ensure_image(&self) -> anyhow::Result<()> {
-        if self.image_present().await {
+        if self.driver.image_present().await {
             if self.cfg.always_pull {
                 // Freshness for the NEXT launch; this one starts immediately.
                 self.pull_notify.notify_one();
@@ -302,28 +284,17 @@ impl SessionService {
                     .cloned()
             };
             if let Some(existing) = existing {
-                // Reuse only when the container is actually alive. It may
-                // have been removed out-of-band (docker rm -f, host cleanup)
-                // while the in-memory registry still lists the session —
-                // reusing then hands the portal a dead port.
-                let alive = match self
-                    .docker
-                    .inspect_container(
-                        &existing.container_id,
-                        None::<bollard::container::InspectContainerOptions>,
-                    )
-                    .await
-                {
-                    Ok(info) => info.state.as_ref().and_then(|s| s.running).unwrap_or(false),
-                    Err(_) => false,
-                };
-                if alive {
+                // Reuse only when the runtime is actually alive. It may have
+                // been removed out-of-band (docker rm -f, host cleanup) while
+                // the in-memory registry still lists the session — reusing then
+                // hands the portal a dead address.
+                if self.driver.is_running(&existing.handle).await {
                     return Ok((existing, true));
                 }
                 tracing::warn!(
                     session_id = %existing.id,
-                    container_id = %existing.container_id,
-                    "studio-session: registered session has no live container — discarding it and launching fresh"
+                    handle = %existing.handle,
+                    "studio-session: registered session has no live runtime — discarding it and launching fresh"
                 );
                 self.sessions.write().await.remove(&existing.id);
             }
@@ -419,7 +390,7 @@ impl SessionService {
         let name = format!("cf-studio-session-{workspace_id}");
 
         // Session gate token: random 256-bit, hex. The container's entry
-        // proxy refuses requests without it, so a guessed/leaked port on
+        // proxy refuses requests without it, so a guessed/leaked address on
         // the loopback no longer means a free IDE.
         let session_token = {
             let a = Uuid::new_v4().simple().to_string();
@@ -489,76 +460,40 @@ impl SessionService {
             (PORT_LABEL.into(), port.to_string()),
         ]);
 
-        // Workspace root + one bind per local source (at its target path).
-        let mut binds = vec![format!("{ws_dir}:/workspace")];
-        for r in repos.iter().filter(|r| r.kind == RepoKind::Local) {
-            let p = r.path.as_deref().unwrap_or("").trim();
-            let target = r
-                .target
-                .as_deref()
-                .map(str::trim)
-                .filter(|t| !t.is_empty())
-                .unwrap_or(&r.name);
-            binds.push(format!("{p}:/workspace/{target}"));
-        }
+        let local_binds: Vec<LocalBind> = repos
+            .iter()
+            .filter(|r| r.kind == RepoKind::Local)
+            .map(|r| {
+                let target = r
+                    .target
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|t| !t.is_empty())
+                    .unwrap_or(&r.name);
+                LocalBind {
+                    host_path: r.path.as_deref().unwrap_or("").trim().to_string(),
+                    target: target.to_string(),
+                }
+            })
+            .collect();
 
-        let host_config = HostConfig {
-            binds: Some(binds),
-            port_bindings: Some(HashMap::from([(
-                THEIA_PORT.to_string(),
-                Some(vec![PortBinding {
-                    host_ip: Some(self.cfg.bind_host.clone()),
-                    host_port: Some(port.to_string()),
-                }]),
-            )])),
-            ..Default::default()
+        let spec = LaunchSpec {
+            image: self.cfg.image.clone(),
+            env,
+            workspace_host_dir: ws_dir,
+            local_binds,
+            labels,
+            name,
+            port,
         };
-
-        // A dead container may still hold the deterministic name (entrypoint
-        // crash leaves it Exited; a stale one survives backend restarts).
-        // We only reach this point when no LIVE session exists for the
-        // workspace (the reuse path above checks liveness), so removing the
-        // name-holder is always safe.
-        if let Err(e) = self.remove_container(&name).await {
-            tracing::debug!("studio-session: no stale container '{name}' to clear ({e:#})");
-        } else {
-            tracing::warn!(
-                "studio-session: removed stale container '{name}' left over from a failed/killed session"
-            );
-        }
-
-        let created = self
-            .docker
-            .create_container(
-                Some(CreateContainerOptions {
-                    name: name.as_str(),
-                    platform: None,
-                }),
-                ContainerConfig {
-                    image: Some(self.cfg.image.clone()),
-                    env: Some(env),
-                    labels: Some(labels),
-                    host_config: Some(host_config),
-                    ..Default::default()
-                },
-            )
-            .await
-            .context(
-                "docker create failed (name conflict? a stale session container \
-                 from a previous run may need removing)",
-            )?;
-
-        self.docker
-            .start_container::<String>(&created.id, None)
-            .await
-            .context("docker start failed")?;
+        let launched = self.driver.launch(&spec).await?;
 
         let session = Session {
             id: session_id,
             workspace_id,
             tenant_id,
-            container_id: created.id,
-            port,
+            handle: launched.handle,
+            address: launched.address,
             state: SessionState::Starting,
             created_at_epoch_secs: now_secs(),
             session_token,
@@ -639,27 +574,49 @@ impl SessionService {
         Ok(())
     }
 
-    /// Refresh state: Starting → Running once the Theia port accepts TCP.
+    /// Refresh state: Starting → Running once the session port accepts a
+    /// connection (driver probe).
     pub async fn get(&self, tenant_id: Uuid, id: Uuid) -> Option<Session> {
-        let mut sessions = self.sessions.write().await;
-        let session = sessions.get_mut(&id)?;
-        if session.tenant_id != tenant_id {
-            return None; // tenant isolation: not yours == not found
-        }
-        if session.state == SessionState::Starting {
-            let addr = format!("127.0.0.1:{}", session.port);
-            let reachable = tokio::time::timeout(
-                Duration::from_millis(500),
-                tokio::net::TcpStream::connect(&addr),
-            )
-            .await
-            .map(|r| r.is_ok())
-            .unwrap_or(false);
-            if reachable {
-                session.state = SessionState::Running;
+        // Read the address under a short read lock, probe without the lock,
+        // then commit the transition under a write lock. Holding the write
+        // lock across the network probe would serialize every GET.
+        let (state, address) = {
+            let sessions = self.sessions.read().await;
+            let session = sessions.get(&id)?;
+            if session.tenant_id != tenant_id {
+                return None; // tenant isolation: not yours == not found
             }
+            (session.state.clone(), session.address.clone())
+        };
+        if state == SessionState::Starting && self.driver.is_reachable(&address).await {
+            let mut sessions = self.sessions.write().await;
+            if let Some(s) = sessions.get_mut(&id) {
+                if s.state == SessionState::Starting {
+                    s.state = SessionState::Running;
+                }
+                return Some(s.clone());
+            }
+            return None;
         }
-        Some(session.clone())
+        let sessions = self.sessions.read().await;
+        sessions
+            .get(&id)
+            .filter(|s| s.tenant_id == tenant_id)
+            .cloned()
+    }
+
+    /// Proxy lookup by session id ALONE. The browser opens the IDE in an
+    /// iframe and cannot carry the caller's platform token, so the tenant
+    /// check the REST API does is impossible here — the per-session gate token
+    /// (256-bit, handed only to the owner by the create call, enforced by the
+    /// session container's own entry gate) is the capability instead. This
+    /// returns just the driver address to proxy to.
+    pub async fn proxy_target(&self, id: Uuid) -> Option<SessionAddress> {
+        self.sessions
+            .read()
+            .await
+            .get(&id)
+            .map(|s| s.address.clone())
     }
 
     pub async fn list(&self, tenant_id: Uuid) -> Vec<Session> {
@@ -680,129 +637,61 @@ impl SessionService {
                 _ => return Ok(false),
             }
         };
-        self.remove_container(&session.container_id).await?;
+        self.driver.destroy(&session.handle).await?;
         self.sessions.write().await.remove(&id);
         Ok(true)
     }
 
-    async fn remove_container(&self, container_id: &str) -> anyhow::Result<()> {
-        let _ = self
-            .docker
-            .stop_container(container_id, Some(StopContainerOptions { t: 10 }))
-            .await; // already stopped is fine
-        self.docker
-            .remove_container(
-                container_id,
-                Some(RemoveContainerOptions {
-                    force: true,
-                    ..Default::default()
-                }),
-            )
-            .await
-            .context("docker rm failed")?;
-        Ok(())
-    }
-
     /// Next free port in the configured range (not used by known sessions).
+    /// Only the Docker driver publishes it; the Kubernetes driver targets the
+    /// fixed in-container port and ignores the value.
     async fn allocate_port(&self) -> anyhow::Result<u16> {
         let sessions = self.sessions.read().await;
-        let used: Vec<u16> = sessions.values().map(|s| s.port).collect();
+        let used: Vec<u16> = sessions
+            .values()
+            .filter_map(|s| match &s.address {
+                SessionAddress::Loopback { port } => Some(*port),
+                SessionAddress::Service { .. } => None,
+            })
+            .collect();
         (self.cfg.port_range_start..=self.cfg.port_range_end)
             .find(|p| !used.contains(p))
             .ok_or_else(|| anyhow!("no free session ports in the configured range"))
     }
 
-    /// Read `STUDIO_SESSION_TOKEN` back out of a running container's env.
-    ///
-    /// Returns an empty string when the container cannot be inspected or was
-    /// started without the variable (an older image): the session is then
-    /// adopted ungated, exactly as before, and a relaunch mints a fresh
-    /// token. Losing the token is not worth failing a whole adoption pass.
-    async fn adopted_token(&self, container_id: &str) -> String {
-        if container_id.is_empty() {
-            return String::new();
-        }
-        let inspected = match self.docker.inspect_container(container_id, None).await {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::warn!(
-                    container_id,
-                    "studio-session: cannot inspect adopted container ({e}) — \
-                     it will need a relaunch to be opened from the portal"
-                );
-                return String::new();
-            }
-        };
-        inspected
-            .config
-            .and_then(|c| c.env)
-            .unwrap_or_default()
-            .iter()
-            .find_map(|kv| kv.strip_prefix("STUDIO_SESSION_TOKEN=").map(str::to_string))
-            .unwrap_or_default()
-    }
-
-    /// Adopt labeled containers left over from a previous backend run, so a
-    /// restart does not orphan running IDE sessions.
+    /// Adopt sessions left over from a previous backend run, so a restart
+    /// does not orphan running IDE sessions.
     pub async fn adopt_existing(&self) -> anyhow::Result<usize> {
-        let containers = self
-            .docker
-            .list_containers(Some(ListContainersOptions {
-                all: true,
-                filters: HashMap::from([("label".to_string(), vec![format!("{SESSION_LABEL}=1")])]),
-                ..Default::default()
-            }))
-            .await
-            .context("docker ps failed")?;
-
-        let mut adopted = 0;
+        let adopted = self.driver.list_adoptable().await?;
         let mut sessions = self.sessions.write().await;
-        for c in containers {
-            let labels = c.labels.unwrap_or_default();
-            let (Some(ws), Some(tenant), Some(port)) = (
-                labels.get(WS_LABEL).and_then(|v| v.parse::<Uuid>().ok()),
-                labels
-                    .get(TENANT_LABEL)
-                    .and_then(|v| v.parse::<Uuid>().ok()),
-                labels.get(PORT_LABEL).and_then(|v| v.parse::<u16>().ok()),
-            ) else {
-                continue;
-            };
-            let running = c.state.as_deref() == Some("running");
-            let container_id = c.id.clone().unwrap_or_default();
-            // Recover the gate token the container was started with. Without
-            // it the portal builds a URL with no ?token=, the in-container
-            // gate answers "403 — session token required", and the only way
-            // back in is to destroy a perfectly healthy session. `docker ps`
-            // does not carry env, so this costs one inspect per adopted
-            // container — a handful, once, at startup.
-            //
-            // This reads a value that is already in the container's env and
-            // visible to anyone who can talk to the same daemon, so it hands
-            // out nothing new: the alternative was simply losing it.
-            let session_token = self.adopted_token(&container_id).await;
+        let mut count = 0;
+        for a in adopted {
             let id = Uuid::new_v4();
             sessions.insert(
                 id,
                 Session {
                     id,
-                    workspace_id: ws,
-                    tenant_id: tenant,
-                    container_id,
-                    port,
-                    state: if running {
+                    workspace_id: a.workspace_id,
+                    tenant_id: a.tenant_id,
+                    handle: a.handle,
+                    address: a.address,
+                    state: if a.running {
                         SessionState::Running
                     } else {
                         SessionState::Stopped
                     },
-                    created_at_epoch_secs: c.created.map(|v| v as u64).unwrap_or_else(now_secs),
+                    created_at_epoch_secs: if a.created_at_epoch_secs == 0 {
+                        now_secs()
+                    } else {
+                        a.created_at_epoch_secs
+                    },
                     sources: Vec::new(),
-                    session_token,
+                    session_token: a.session_token,
                 },
             );
-            adopted += 1;
+            count += 1;
         }
-        Ok(adopted)
+        Ok(count)
     }
 
     /// Reaper pass: stop sessions past max_session_secs. Returns reaped count.
@@ -821,7 +710,7 @@ impl SessionService {
             .collect();
         let mut reaped = 0;
         for s in expired {
-            if self.remove_container(&s.container_id).await.is_ok() {
+            if self.driver.destroy(&s.handle).await.is_ok() {
                 self.sessions.write().await.remove(&s.id);
                 reaped += 1;
             }

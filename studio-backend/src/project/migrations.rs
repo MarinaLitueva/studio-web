@@ -127,8 +127,16 @@ CREATE TABLE IF NOT EXISTS studio_projects (
             if matches!(backend, sea_orm::DatabaseBackend::MySql) {
                 return Err(DbErr::Custom(MYSQL_NOT_SUPPORTED.to_owned()));
             }
-            conn_exec(manager, "DROP INDEX IF EXISTS ix_studio_projects_tenant_status;").await?;
-            conn_exec(manager, "DROP INDEX IF EXISTS ux_studio_projects_tenant_name;").await?;
+            conn_exec(
+                manager,
+                "DROP INDEX IF EXISTS ix_studio_projects_tenant_status;",
+            )
+            .await?;
+            conn_exec(
+                manager,
+                "DROP INDEX IF EXISTS ux_studio_projects_tenant_name;",
+            )
+            .await?;
             conn_exec(manager, "DROP TABLE IF EXISTS studio_projects;").await?;
             Ok(())
         }

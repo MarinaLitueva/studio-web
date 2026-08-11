@@ -23,9 +23,17 @@ backend:
   auth:
     existingSecret: "studio-web-idp"
   # Application secrets (keys: llm_api_key [required], fs_signing_seed
-  # [required], s2s_client_secret [optional], idp_admin_secret [optional]).
+  # [required], credstore_key [strongly recommended: base64 of 32 bytes,
+  # `openssl rand -base64 32`; without it user-typed secrets die with every
+  # pod restart], s2s_client_secret [optional], idp_admin_secret [optional]).
   appSecrets:
     existingSecret: "studio-web-app"
+  # Interim token auth (INFRA-3767): while no OIDC realm exists, the k8s
+  # profile runs static-authn and needs a Secret with key `admin_token`.
+  # The k8s profile REQUIRES the variable, so leaving this empty fails the
+  # boot naming STUDIO_ADMIN_TOKEN. Drop when a real IdP takes over.
+  devAuth:
+    existingSecret: "studio-web-dev-auth"
   # LLM egress endpoint (non-secret half; the key lives in appSecrets).
   # Any OpenAI-compatible provider; defaults = Groq free tier.
   llm:
@@ -44,6 +52,21 @@ backend:
     minReplicas: 1
     maxReplicas: 4
     targetCPUUtilizationPercentage: 80
+  # IDE sessions (studio-session Kubernetes driver, ADR-0003). Off by default;
+  # the config profile also has to select driver=kubernetes. When on, the
+  # backend gets a namespaced Role over pods/services (sessions-rbac.yaml) and
+  # a NetworkPolicy opens egress for session Pods (sessions-netpol.yaml).
+  # autoscaling MUST stay single-replica while on: the session registry is
+  # in-memory per pod, so a second backend replica cannot see the first's
+  # sessions (a DB-backed registry is the follow-up).
+  sessions:
+    enabled: false
+    kubeApiEgress: true
+    networkPolicy:
+      enabled: true
+      # Git hosts the session entrypoint may clone from (CIDRs, since a bare
+      # NetworkPolicy cannot name FQDNs). Empty = DNS only (no external clone).
+      egressCidrs: []
 
 frontend:
   image:
@@ -70,6 +93,12 @@ ingress:
 serviceAccount:
   create: true
   name: ""
+
+# ghcr packages published by GITHUB_TOKEN start PRIVATE, so a fresh cluster
+# needs either public packages or a dockerconfigjson Secret referenced here:
+#   imagePullSecrets:
+#     - name: ghcr-pull
+imagePullSecrets: []
 
 # Non-root is enforced; the concrete uid comes from each image (backend:
 # the `studio` system user, frontend: nginx-unprivileged uid 101) — pinning

@@ -230,7 +230,9 @@ fn source_from(req: &CreateProjectRequest) -> Result<ProjectSource, CanonicalErr
                         .to_owned(),
                 ));
             }
-            Ok(ProjectSource::Idea { brief: req.brief.clone() })
+            Ok(ProjectSource::Idea {
+                brief: req.brief.clone(),
+            })
         }
         Mode::Modernize => {
             if req.brief.is_some() {
@@ -241,7 +243,9 @@ fn source_from(req: &CreateProjectRequest) -> Result<ProjectSource, CanonicalErr
                 ));
             }
             match (req.git_url.as_deref(), req.file_id) {
-                (Some(url), None) => Ok(ProjectSource::Git { url: url.to_owned() }),
+                (Some(url), None) => Ok(ProjectSource::Git {
+                    url: url.to_owned(),
+                }),
                 (None, Some(file_id)) => Ok(ProjectSource::Upload { file_id }),
                 (Some(_), Some(_)) => Err(invalid(
                     "git_url and file_id are mutually exclusive — a project has one source"
@@ -344,7 +348,13 @@ async fn patch_project(
     };
 
     let project = svc
-        .update(tenant, id, req.name.as_deref(), req.stages.as_deref(), status)
+        .update(
+            tenant,
+            id,
+            req.name.as_deref(),
+            req.stages.as_deref(),
+            status,
+        )
         .await
         .map_err(|e| to_api(e, &id.to_string()))?;
     Ok(Json(to_dto(project)))

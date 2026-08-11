@@ -247,7 +247,7 @@ gears:
   #
   # Values are sealed with AES-256-GCM under STUDIO_CREDSTORE_KEY (base64,
   # 32 bytes -> `openssl rand -base64 32`). The key is deliberately NOT in this
-  # file: the config loader does not expand ${VAR} anyway, and a literal key
+  # file: it arrives via the env var named by key_env below, and a literal key
   # here would travel in the image and show up in --print-config.
   #
   # Key unset      -> WARN, this gear stands down, static-credstore-plugin wins
@@ -286,11 +286,10 @@ gears:
         # via studio-secrets-bootstrap (STUDIO_LLM_API_KEY /
         # STUDIO_ANTHROPIC_API_KEY), which re-PUTs them on every start.
         #
-        # Do NOT write "${STUDIO_LLM_API_KEY}" here expecting expansion: only
-        # database DSNs are expanded (toolkit_utils::var_expand is wired into
-        # the DB layer, not the config loader), so a placeholder would be
-        # stored verbatim as the key and fail at the provider with a puzzling
-        # 401. Empty is the honest "not configured yet".
+        # Keep the values empty even though the whole file IS env-expanded at
+        # load since #65: studio-secrets-bootstrap stays the single seeding
+        # path, and a key baked into the effective config would also show up
+        # in --print-config. Empty is the honest "not configured yet".
         - key: "openai-key"
           value: ""
         # Anthropic key for the Claude Code agent in IDE sessions. Not
@@ -422,7 +421,7 @@ gears:
 
   studio-session:
     config:
-      image: "ghcr.io/constructorfabric/fabric-poc/cf-studio-theia:edge"
+      image: "ghcr.io/constructorfabric/studio-web/cf-studio-theia:edge"
       always_pull: true
       workspaces_root: "/srv/cf-studio-workspaces"
       bind_host: "127.0.0.1"

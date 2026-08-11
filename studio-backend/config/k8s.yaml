@@ -251,7 +251,7 @@ gears:
   #
   # Values are sealed with AES-256-GCM under STUDIO_CREDSTORE_KEY (base64,
   # 32 bytes -> `openssl rand -base64 32`). The key is deliberately NOT in this
-  # file: the config loader does not expand ${VAR} anyway, and a literal key
+  # file: it arrives via the env var named by key_env below, and a literal key
   # here would travel in the image and show up in --print-config.
   #
   # Key unset      -> WARN, this gear stands down, static-credstore-plugin wins
@@ -332,9 +332,8 @@ gears:
       vendor: "constructorfabric"
       priority: 100
       model_catalog:
-        # NB: this plugin's config does NOT expand ${VAR} (gears feedback
-        # item) — provider_model_id is a literal. Keep it in sync with the
-        # provider configured above / STUDIO_LLM_HOST.
+        # NB: provider_model_id is a literal model name. Keep it in sync
+        # with the provider configured above / STUDIO_LLM_HOST.
         - id: "studio-default"
           provider_model_id: "llama-3.3-70b-versatile"
           display_name: "Studio assistant"
@@ -398,7 +397,7 @@ gears:
 
   # ── Studio's own gear: per-workspace Theia IDE sessions in containers ──
   # Requires: Docker daemon on the host and the Theia image built once:
-  #   cd ../fabric-poc/poc/theia && docker build -t cf-studio-theia:latest .
+  #   cd theia && docker build -t cf-studio-theia:latest .
   # ── Projects (ADR-0005) ──
   # Two creation shapes (greenfield / modernize), journey stages with a
   # mandatory Intent, and a forward-only status ladder — the reasons this is a
@@ -417,7 +416,18 @@ gears:
 
   studio-session:
     config:
-      enabled: false   # no Docker in-cluster; Pod driver = future ADR-0003 step
+      # IDE sessions via the Kubernetes Pod driver (ADR-0003). Needs the
+      # backend Role over pods/services (Helm backend.sessions.enabled=true)
+      # and a browser reachable through the /studio proxy.
+      enabled: true
+      driver: "kubernetes"
+      # kyverno on this cluster admits only harbor.constr.dev images, so the
+      # session image goes through the ghcr proxy project (same as the backend
+      # and frontend). No pull secret needed — Harbor handles the upstream.
+      image: "harbor.constr.dev/proxy-ghcr.io/constructorfabric/studio-web/cf-studio-theia:edge"
+      # Namespace is auto-detected from the mounted ServiceAccount token;
+      # k8s_namespace / k8s_image_pull_secret override only if ever needed.
+      git_mode: "disabled"
 
   # ── Self-heal for config-seeded credstore secrets ──
   # Re-seeds the references declared above from the environment on every start.
@@ -454,11 +464,48 @@ gears:
       developer_message_settings: "system"    # safest across providers
       api_key_env: "STUDIO_LLM_API_KEY"
 
-  # static-authn-plugin is link-time active here too; pinned BELOW the OIDC
-  # plugin so it never wins the vendor selection in this profile.
+  # TEMPORARILY IN CHARGE (INFRA-3767): no environment has a usable OIDC
+  # realm yet (the central IdP still needs a studio client registered), so
+  # token auth runs this deploy — priority 50 beats oidc-authn-plugin (100).
+  # The portal's "Developer sign-in (static token)" form takes the token.
+  # When the real realm lands: put this back to 1000, reseal studio-web-idp
+  # with the real issuer, and drop the studio-web-dev-auth Secret.
+  #
+  # The token VALUE arrives via the environment (Secret studio-web-dev-auth,
+  # chart backend.devAuth) — required on purpose: a token-auth deploy without
+  # a token would be a portal nobody can enter, discovered only by clicking.
   static-authn-plugin:
     config:
       vendor: "constructorfabric"
-      priority: 1000   # LOWER number wins vendor selection; oidc (100) is in charge here
+      priority: 50     # LOWER number wins vendor selection; oidc (100) stands by
       mode: static_tokens
-      tokens: []
+      tokens:
+        # Platform admin, same subject the dev/postgres profiles use.
+        - token: "${STUDIO_ADMIN_TOKEN}"
+          identity:
+            subject_id: "00000000-0000-0000-0000-00000000a001"
+            subject_tenant_id: "00000000-0000-0000-0000-000000000001"
+            token_scopes: ["*"]
+            subject_type: "gts.cf.core.security.subject_user.v1~"
+        # Test users (INFRA-3767 interim): several distinct logins, each its own
+        # token, all platform admins on the root tenant. Tokens come from the
+        # studio-web-test-users Secret (chart backend deployment). Drop these when
+        # Keycloak SSO replaces token auth.
+        - token: "${STUDIO_TEST_USER_1_TOKEN}"
+          identity:
+            subject_id: "00000000-0000-0000-0000-00000000a002"
+            subject_tenant_id: "00000000-0000-0000-0000-000000000001"
+            token_scopes: ["*"]
+            subject_type: "gts.cf.core.security.subject_user.v1~"
+        - token: "${STUDIO_TEST_USER_2_TOKEN}"
+          identity:
+            subject_id: "00000000-0000-0000-0000-00000000a003"
+            subject_tenant_id: "00000000-0000-0000-0000-000000000001"
+            token_scopes: ["*"]
+            subject_type: "gts.cf.core.security.subject_user.v1~"
+        - token: "${STUDIO_TEST_USER_3_TOKEN}"
+          identity:
+            subject_id: "00000000-0000-0000-0000-00000000a004"
+            subject_tenant_id: "00000000-0000-0000-0000-000000000001"
+            token_scopes: ["*"]
+            subject_type: "gts.cf.core.security.subject_user.v1~"

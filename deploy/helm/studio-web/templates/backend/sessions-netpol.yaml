@@ -1,0 +1,61 @@
+{{- if and .Values.backend.sessions.enabled .Values.backend.sessions.networkPolicy.enabled }}
+# Session Pods (label cf.studio.session=1) are created bare, so the cluster's
+# default-deny-egress leaves them with no network at all — not even DNS, let
+# alone the git clone the entrypoint does on start. This opens exactly what a
+# session needs: DNS, and egress to clone sources. Ingress is left to the
+# cluster default (the backend proxy reaches the Service in-namespace, which
+# same-namespace policies already permit).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "studio-web.fullname" . }}-session-egress
+  labels: {{- include "studio-web.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      cf.studio.session: "1"
+  policyTypes: ["Egress"]
+  egress:
+    # DNS.
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    {{- with .Values.backend.sessions.networkPolicy.egressCidrs }}
+    # Git source hosts (and any allowed clone targets).
+    - to:
+        {{- range . }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - port: 443
+          protocol: TCP
+        - port: 22
+          protocol: TCP
+    {{- end }}
+{{- if .Values.backend.sessions.kubeApiEgress }}
+---
+# The Kubernetes session driver talks to the API server to create/list/delete
+# session Pods and Services. The cluster's Cilium egress policy for the backend
+# allows DNS + the IdP + the LLM host, but NOT the apiserver, so the driver's
+# first call times out ("Connect deadline elapsed") and sessions never launch.
+# Cilium policies are additive; this opens exactly the apiserver, nothing more.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ include "studio-web.fullname" . }}-kube-api-egress
+  labels: {{- include "studio-web.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/component: backend
+      app.kubernetes.io/name: {{ include "studio-web.name" . }}
+  egress:
+    - toEntities:
+        - kube-apiserver
+{{- end }}
+{{- end }}

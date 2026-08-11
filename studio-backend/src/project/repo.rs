@@ -10,7 +10,9 @@ use sea_orm::sea_query::Expr;
 use sea_orm::{ActiveValue, ColumnTrait, Condition, EntityTrait, QueryFilter};
 use time::OffsetDateTime;
 use toolkit_db::DBProvider;
-use toolkit_db::secure::{ScopeError, SecureDeleteExt, SecureEntityExt, SecureInsertExt, SecureUpdateExt};
+use toolkit_db::secure::{
+    ScopeError, SecureDeleteExt, SecureEntityExt, SecureInsertExt, SecureUpdateExt,
+};
 use toolkit_security::AccessScope;
 use uuid::Uuid;
 
@@ -160,8 +162,10 @@ impl ProjectRepo {
             return self.find(tenant_id, id).await;
         }
         let conn = self.db.conn()?;
-        let mut update = entity::Entity::update_many()
-            .col_expr(entity::Column::UpdatedAt, Expr::value(OffsetDateTime::now_utc()));
+        let mut update = entity::Entity::update_many().col_expr(
+            entity::Column::UpdatedAt,
+            Expr::value(OffsetDateTime::now_utc()),
+        );
         if let Some(name) = name {
             update = update.col_expr(entity::Column::Name, Expr::value(name));
         }
@@ -197,7 +201,10 @@ impl ProjectRepo {
         let conn = self.db.conn()?;
         entity::Entity::update_many()
             .col_expr(entity::Column::RgGroupId, Expr::value(group_id))
-            .col_expr(entity::Column::UpdatedAt, Expr::value(OffsetDateTime::now_utc()))
+            .col_expr(
+                entity::Column::UpdatedAt,
+                Expr::value(OffsetDateTime::now_utc()),
+            )
             .filter(Condition::all().add(entity::Column::Id.eq(id)))
             .secure()
             .scope_with(&scope(tenant_id))
@@ -233,7 +240,10 @@ fn to_domain(m: entity::Model) -> Result<Project, RepoError> {
     let mode = Mode::from_smallint(m.mode)
         .ok_or_else(|| RepoError::Db(format!("studio_projects.mode out of domain: {}", m.mode)))?;
     let status = Status::from_smallint(m.status).ok_or_else(|| {
-        RepoError::Db(format!("studio_projects.status out of domain: {}", m.status))
+        RepoError::Db(format!(
+            "studio_projects.status out of domain: {}",
+            m.status
+        ))
     })?;
 
     // Reconstruct the sum type from the flattened columns. The CHECK constraint

@@ -54,15 +54,28 @@ async fn a_greenfield_project_round_trips() {
     let new = new_project(
         WS_A,
         "Payments v2",
-        ProjectSource::Idea { brief: Some("an idea".into()) },
+        ProjectSource::Idea {
+            brief: Some("an idea".into()),
+        },
     );
     let created = repo.insert(&new).await.unwrap();
 
     assert_eq!(created.name, "Payments v2");
     assert_eq!(created.status, Status::Draft, "projects start as drafts");
-    assert_eq!(created.stages, vec!["intent".to_owned(), "architecture".to_owned()]);
-    assert_eq!(created.source, ProjectSource::Idea { brief: Some("an idea".into()) });
-    assert!(created.rg_group_id.is_none(), "the members group is attached afterwards");
+    assert_eq!(
+        created.stages,
+        vec!["intent".to_owned(), "architecture".to_owned()]
+    );
+    assert_eq!(
+        created.source,
+        ProjectSource::Idea {
+            brief: Some("an idea".into())
+        }
+    );
+    assert!(
+        created.rg_group_id.is_none(),
+        "the members group is attached afterwards"
+    );
 
     let found = repo.find(WS_A, created.id).await.unwrap().unwrap();
     assert_eq!(found, created);
@@ -71,9 +84,20 @@ async fn a_greenfield_project_round_trips() {
 #[tokio::test]
 async fn a_git_modernization_round_trips() {
     let repo = setup().await;
-    let new = new_project(WS_A, "Legacy CRM", ProjectSource::Git { url: "https://git/x".into() });
+    let new = new_project(
+        WS_A,
+        "Legacy CRM",
+        ProjectSource::Git {
+            url: "https://git/x".into(),
+        },
+    );
     let created = repo.insert(&new).await.unwrap();
-    assert_eq!(created.source, ProjectSource::Git { url: "https://git/x".into() });
+    assert_eq!(
+        created.source,
+        ProjectSource::Git {
+            url: "https://git/x".into()
+        }
+    );
     let found = repo.find(WS_A, created.id).await.unwrap().unwrap();
     assert_eq!(found.source, created.source);
 }
@@ -90,12 +114,20 @@ async fn an_uploaded_modernization_keeps_only_the_file_id() {
 #[tokio::test]
 async fn a_name_is_unique_inside_a_workspace_but_not_across_them() {
     let repo = setup().await;
-    repo.insert(&new_project(WS_A, "Payments v2", ProjectSource::Idea { brief: None }))
-        .await
-        .unwrap();
+    repo.insert(&new_project(
+        WS_A,
+        "Payments v2",
+        ProjectSource::Idea { brief: None },
+    ))
+    .await
+    .unwrap();
 
     let clash = repo
-        .insert(&new_project(WS_A, "Payments v2", ProjectSource::Idea { brief: None }))
+        .insert(&new_project(
+            WS_A,
+            "Payments v2",
+            ProjectSource::Idea { brief: None },
+        ))
         .await;
     assert!(
         matches!(clash, Err(RepoError::DuplicateName)),
@@ -103,16 +135,24 @@ async fn a_name_is_unique_inside_a_workspace_but_not_across_them() {
     );
 
     // Another workspace may well have its own "Payments v2".
-    repo.insert(&new_project(WS_B, "Payments v2", ProjectSource::Idea { brief: None }))
-        .await
-        .expect("same name in a different workspace is fine");
+    repo.insert(&new_project(
+        WS_B,
+        "Payments v2",
+        ProjectSource::Idea { brief: None },
+    ))
+    .await
+    .expect("same name in a different workspace is fine");
 }
 
 #[tokio::test]
 async fn one_workspace_cannot_read_anothers_project() {
     let repo = setup().await;
     let created = repo
-        .insert(&new_project(WS_A, "Secret plan", ProjectSource::Idea { brief: None }))
+        .insert(&new_project(
+            WS_A,
+            "Secret plan",
+            ProjectSource::Idea { brief: None },
+        ))
         .await
         .unwrap();
 
@@ -128,18 +168,36 @@ async fn one_workspace_cannot_read_anothers_project() {
 async fn list_returns_the_workspace_projects() {
     let repo = setup().await;
     let a = repo
-        .insert(&new_project(WS_A, "One", ProjectSource::Idea { brief: None }))
+        .insert(&new_project(
+            WS_A,
+            "One",
+            ProjectSource::Idea { brief: None },
+        ))
         .await
         .unwrap();
     let b = repo
-        .insert(&new_project(WS_A, "Two", ProjectSource::Idea { brief: None }))
+        .insert(&new_project(
+            WS_A,
+            "Two",
+            ProjectSource::Idea { brief: None },
+        ))
         .await
         .unwrap();
-    repo.insert(&new_project(WS_B, "Elsewhere", ProjectSource::Idea { brief: None }))
-        .await
-        .unwrap();
+    repo.insert(&new_project(
+        WS_B,
+        "Elsewhere",
+        ProjectSource::Idea { brief: None },
+    ))
+    .await
+    .unwrap();
 
-    let mut ids: Vec<Uuid> = repo.list(WS_A).await.unwrap().into_iter().map(|p| p.id).collect();
+    let mut ids: Vec<Uuid> = repo
+        .list(WS_A)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|p| p.id)
+        .collect();
     ids.sort_unstable();
     let mut want = vec![a.id, b.id];
     want.sort_unstable();
@@ -150,7 +208,13 @@ async fn list_returns_the_workspace_projects() {
 async fn update_changes_only_what_it_is_given() {
     let repo = setup().await;
     let created = repo
-        .insert(&new_project(WS_A, "Before", ProjectSource::Idea { brief: Some("keep me".into()) }))
+        .insert(&new_project(
+            WS_A,
+            "Before",
+            ProjectSource::Idea {
+                brief: Some("keep me".into()),
+            },
+        ))
         .await
         .unwrap();
 
@@ -165,11 +229,20 @@ async fn update_changes_only_what_it_is_given() {
     assert_eq!(renamed.status, Status::Draft);
 
     let restaged = repo
-        .update(WS_A, created.id, None, Some(&["intent".to_owned(), "testing".to_owned()]), None)
+        .update(
+            WS_A,
+            created.id,
+            None,
+            Some(&["intent".to_owned(), "testing".to_owned()]),
+            None,
+        )
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(restaged.stages, vec!["intent".to_owned(), "testing".to_owned()]);
+    assert_eq!(
+        restaged.stages,
+        vec!["intent".to_owned(), "testing".to_owned()]
+    );
     assert_eq!(restaged.name, "After", "name untouched");
 
     let activated = repo
@@ -184,10 +257,18 @@ async fn update_changes_only_what_it_is_given() {
 async fn an_empty_update_is_a_read() {
     let repo = setup().await;
     let created = repo
-        .insert(&new_project(WS_A, "Untouched", ProjectSource::Idea { brief: None }))
+        .insert(&new_project(
+            WS_A,
+            "Untouched",
+            ProjectSource::Idea { brief: None },
+        ))
         .await
         .unwrap();
-    let same = repo.update(WS_A, created.id, None, None, None).await.unwrap().unwrap();
+    let same = repo
+        .update(WS_A, created.id, None, None, None)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(same, created);
 }
 
@@ -205,23 +286,38 @@ async fn updating_a_missing_project_reports_it_rather_than_inventing_one() {
 #[tokio::test]
 async fn a_rename_onto_an_existing_name_is_a_conflict() {
     let repo = setup().await;
-    repo.insert(&new_project(WS_A, "Taken", ProjectSource::Idea { brief: None }))
-        .await
-        .unwrap();
+    repo.insert(&new_project(
+        WS_A,
+        "Taken",
+        ProjectSource::Idea { brief: None },
+    ))
+    .await
+    .unwrap();
     let other = repo
-        .insert(&new_project(WS_A, "Free", ProjectSource::Idea { brief: None }))
+        .insert(&new_project(
+            WS_A,
+            "Free",
+            ProjectSource::Idea { brief: None },
+        ))
         .await
         .unwrap();
 
     let clash = repo.update(WS_A, other.id, Some("Taken"), None, None).await;
-    assert!(matches!(clash, Err(RepoError::DuplicateName)), "got {clash:?}");
+    assert!(
+        matches!(clash, Err(RepoError::DuplicateName)),
+        "got {clash:?}"
+    );
 }
 
 #[tokio::test]
 async fn the_members_group_is_recorded_after_the_fact() {
     let repo = setup().await;
     let created = repo
-        .insert(&new_project(WS_A, "With members", ProjectSource::Idea { brief: None }))
+        .insert(&new_project(
+            WS_A,
+            "With members",
+            ProjectSource::Idea { brief: None },
+        ))
         .await
         .unwrap();
     let group = Uuid::from_u128(0x9909);
@@ -235,7 +331,11 @@ async fn the_members_group_is_recorded_after_the_fact() {
 async fn delete_removes_once_and_reports_the_second_attempt() {
     let repo = setup().await;
     let created = repo
-        .insert(&new_project(WS_A, "Doomed", ProjectSource::Idea { brief: None }))
+        .insert(&new_project(
+            WS_A,
+            "Doomed",
+            ProjectSource::Idea { brief: None },
+        ))
         .await
         .unwrap();
 
@@ -248,7 +348,11 @@ async fn delete_removes_once_and_reports_the_second_attempt() {
 async fn one_workspace_cannot_delete_anothers_project() {
     let repo = setup().await;
     let created = repo
-        .insert(&new_project(WS_A, "Mine", ProjectSource::Idea { brief: None }))
+        .insert(&new_project(
+            WS_A,
+            "Mine",
+            ProjectSource::Idea { brief: None },
+        ))
         .await
         .unwrap();
     assert!(!repo.delete(WS_B, created.id).await.unwrap());
@@ -268,14 +372,23 @@ async fn the_database_refuses_a_modernization_with_nothing_to_modernize() {
 
     use crate::project::entity;
 
-    let dsn = format!("sqlite:file:shape_{}?mode=memory&cache=shared", Uuid::new_v4());
+    let dsn = format!(
+        "sqlite:file:shape_{}?mode=memory&cache=shared",
+        Uuid::new_v4()
+    );
     let db = connect_db(
         &dsn,
-        ConnectOpts { max_conns: Some(1), min_conns: Some(1), ..Default::default() },
+        ConnectOpts {
+            max_conns: Some(1),
+            min_conns: Some(1),
+            ..Default::default()
+        },
     )
     .await
     .unwrap();
-    run_migrations_for_testing(&db, Migrator::migrations()).await.unwrap();
+    run_migrations_for_testing(&db, Migrator::migrations())
+        .await
+        .unwrap();
     let provider = DBProvider::<RepoError>::new(db);
     let conn = provider.conn().unwrap();
 

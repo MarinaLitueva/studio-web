@@ -121,9 +121,9 @@ fn to_dto(svc: &SessionService, s: Session) -> SessionDto {
     // in-container proxy swaps it for an HttpOnly cookie and redirects to
     // the clean path. Only callers who may read the session get it here.
     let url = if s.session_token.is_empty() {
-        svc.session_url(s.port)
+        svc.session_url(&s)
     } else {
-        format!("{}?token={}", svc.session_url(s.port), s.session_token)
+        format!("{}?token={}", svc.session_url(&s), s.session_token)
     };
     SessionDto {
         id: s.id,
@@ -349,6 +349,46 @@ pub fn register_routes(
         .error_404(openapi)
         .error_500(openapi)
         .register(router, openapi);
+
+    // Browser → session reverse proxy (Kubernetes driver). These are `.public()`
+    // on purpose: the browser opens the IDE in an iframe with no platform token,
+    // so the api-gateway must NOT auth-gate them — the session container's own
+    // 256-bit gate (?token -> cookie) is the auth (see proxy.rs). `.public()`
+    // (vs a raw route) is what lands the path in the gateway's public-route set;
+    // a raw route is still caught by require_auth_by_default and 401s. The
+    // handler mounts as a plain `get`/`post`, so the WebSocket upgrade passes
+    // through untouched. Theia loads at the trailing-slash root and every asset/
+    // WS path under it; GET carries the page + WS upgrade, POST the RPC services.
+    for (method, is_root) in [(true, true), (true, false), (false, true), (false, false)] {
+        let (path, tag) = if is_root {
+            ("/studio-session/v1/ide/{id}/", "ide-root")
+        } else {
+            ("/studio-session/v1/ide/{id}/{*rest}", "ide-asset")
+        };
+        let base = if method {
+            OperationBuilder::get(path)
+        } else {
+            OperationBuilder::post(path)
+        };
+        let op = base
+            .operation_id(format!(
+                "studio_session.ide_proxy.{}.{}",
+                if method { "get" } else { "post" },
+                tag
+            ))
+            .summary("Reverse proxy to a Kubernetes IDE session")
+            .tag("StudioSessions")
+            .public();
+        router = if is_root {
+            op.handler(super::proxy::ide_proxy_root)
+                .text_response(StatusCode::OK, "IDE session stream", "text/html")
+                .register(router, openapi)
+        } else {
+            op.handler(super::proxy::ide_proxy_rest)
+                .text_response(StatusCode::OK, "IDE session stream", "text/html")
+                .register(router, openapi)
+        };
+    }
 
     router.layer(Extension(Sessions(service)))
 }
