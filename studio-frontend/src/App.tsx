@@ -3053,6 +3053,129 @@ function AskAI({ token, ws }: { token: string; ws: Workspace }) {
    graph object inside a workspace's context, not a control-plane citizen.
    Hence no top-level Projects view: they live on the Workspace Dashboard. */
 
+/** Pick a repository through one of the project's connectors and hand back its
+ *  clone URL — so a modernization's source can be chosen from a list instead of
+ *  pasting a URL. Uses the same connections + list-repositories the Sources tab
+ *  does; auth for private repos is resolved by the workspace at launch. */
+function NestedRepoPicker({
+  token,
+  workspace,
+  onPick,
+}: {
+  token: string;
+  workspace: Workspace;
+  onPick: (url: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [connections, setConnections] = useState<Connection[] | null>(null);
+  const [connId, setConnId] = useState("");
+  const [search, setSearch] = useState("");
+  const [repos, setRepos] = useState<RemoteRepo[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open || connections) return;
+    void api.connections(token, workspace.id).then(
+      (c) => {
+        setConnections(c.items);
+        if (c.items[0]) setConnId(c.items[0].id);
+      },
+      (e) => setErr(errText(e)),
+    );
+  }, [open, connections, token, workspace.id]);
+
+  const load = useCallback(
+    async (q: string) => {
+      if (!connId) return;
+      setErr(null);
+      setRepos(null);
+      try {
+        const r = await api.connectionRepositories(token, connId, workspace.id, q);
+        setRepos(r.items);
+      } catch (e) {
+        setErr(errText(e));
+        setRepos([]);
+      }
+    },
+    [token, connId, workspace.id],
+  );
+
+  useEffect(() => {
+    if (open && connId) void load("");
+  }, [open, connId, load]);
+
+  if (!open) {
+    return (
+      <button type="button" className="ghost" style={{ marginTop: 6 }} onClick={() => setOpen(true)}>
+        Pick from a connector…
+      </button>
+    );
+  }
+
+  return (
+    <div className="nested" style={{ marginTop: 6 }}>
+      {err && <p className="error">{err}</p>}
+      {connections && connections.length === 0 ? (
+        <p className="empty">
+          No connectors on this project yet — add one on the Sources tab, then pick a repository here.
+        </p>
+      ) : (
+        <>
+          <div className="row">
+            <select value={connId} onChange={(e) => setConnId(e.target.value)}>
+              {(connections ?? []).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label} ({c.provider})
+                </option>
+              ))}
+            </select>
+            <input
+              className="grow"
+              placeholder="Search repositories…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void load(search);
+              }}
+            />
+            <button type="button" onClick={() => void load(search)}>
+              Search
+            </button>
+            <button type="button" className="ghost" onClick={() => setOpen(false)}>
+              Cancel
+            </button>
+          </div>
+          {repos === null ? (
+            <p className="empty">Loading repositories…</p>
+          ) : repos.length === 0 ? (
+            <p className="empty">Nothing reachable with this connector.</p>
+          ) : (
+            <ul className="rows">
+              {repos.map((r) => (
+                <li key={r.id}>
+                  <div className="grow">
+                    <div className="name">{r.full_path}</div>
+                    <div className="sub">{r.default_branch ?? "default branch"}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onPick(r.clone_url);
+                      setOpen(false);
+                    }}
+                  >
+                    Use
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function WorkspaceProjectsCard({
   token,
   ws,
@@ -3304,6 +3427,8 @@ function WorkspaceProjectsCard({
                       onChange={(e) => setGitUrl(e.target.value)}
                     />
                   </div>
+                  {/* Or pick from a connector instead of pasting a URL. */}
+                  <NestedRepoPicker token={token} workspace={ws} onPick={setGitUrl} />
                   {/* Deliberately visible and disabled rather than absent: the
                       backend accepts a file_id, but file-storage moves bytes
                       through a data-plane sidecar that this deployment does not
