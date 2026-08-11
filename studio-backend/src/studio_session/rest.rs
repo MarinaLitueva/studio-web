@@ -121,9 +121,9 @@ fn to_dto(svc: &SessionService, s: Session) -> SessionDto {
     // in-container proxy swaps it for an HttpOnly cookie and redirects to
     // the clean path. Only callers who may read the session get it here.
     let url = if s.session_token.is_empty() {
-        svc.session_url(s.port)
+        svc.session_url(&s)
     } else {
-        format!("{}?token={}", svc.session_url(s.port), s.session_token)
+        format!("{}?token={}", svc.session_url(&s), s.session_token)
     };
     SessionDto {
         id: s.id,

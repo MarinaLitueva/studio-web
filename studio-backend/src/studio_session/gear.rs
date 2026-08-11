@@ -9,6 +9,7 @@ use toolkit::{Gear, GearCtx};
 use tracing::{info, warn};
 
 use super::config::StudioSessionConfig;
+use super::docker::DockerDriver;
 use super::rest;
 use super::service::SessionService;
 
@@ -48,10 +49,12 @@ impl Gear for StudioSessionGear {
             ports = format!("{}-{}", cfg.port_range_start, cfg.port_range_end),
             "studio-session: initializing"
         );
-        // No Docker daemon (k8s node, CI) must not fail the whole backend:
-        // boot with sessions unavailable instead.
-        let service = match SessionService::new(cfg) {
-            Ok(s) => s,
+        // Pick the driver. Today only the Docker driver exists; connecting to
+        // the daemon can fail (k8s node, CI) and must NOT fail the whole
+        // backend — boot with sessions unavailable instead. The Kubernetes
+        // driver slots in here behind the same `Arc<dyn SessionDriver>`.
+        let driver = match DockerDriver::connect(cfg.clone()) {
+            Ok(d) => Arc::new(d),
             Err(e) => {
                 warn!(
                     "studio-session: Docker unavailable ({e:#}) — sessions disabled for this run"
@@ -59,6 +62,7 @@ impl Gear for StudioSessionGear {
                 return Ok(());
             }
         };
+        let service = SessionService::new(cfg, driver);
 
         // credstore client: resolves repo PATs for private clones (optional —
         // sessions without tokens work regardless).
