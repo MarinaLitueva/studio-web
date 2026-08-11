@@ -401,8 +401,8 @@ gears:
               audio_translation: false
 
   # ── Studio's own gear: per-workspace Theia IDE sessions in containers ──
-  # Requires a Docker daemon. The CI-published image (fabric-poc
-  # .github/workflows/theia-image.yml) is pulled/refreshed automatically —
+  # Requires a Docker daemon. The CI-published image (built by
+  # .github/workflows/release.yml job `images`) is pulled/refreshed automatically —
   # `docker login ghcr.io` once if the package is private. Local hacking on
   # the image: build cf-studio-theia:latest and point `image:` at it
   # (set always_pull: false to stop the refresh from shadowing it).
@@ -424,7 +424,7 @@ gears:
 
   studio-session:
     config:
-      image: "ghcr.io/constructorfabric/fabric-poc/cf-studio-theia:edge"
+      image: "ghcr.io/constructorfabric/studio-web/cf-studio-theia:edge"
       always_pull: true
       workspaces_root: "~/.cf-studio-workspaces"
       bind_host: "127.0.0.1"      # loopback only — the Theia PoC has no auth

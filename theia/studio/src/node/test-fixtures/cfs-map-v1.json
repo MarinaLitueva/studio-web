@@ -1,0 +1,240 @@
+{
+  "version": "1.0",
+  "generated_at": "2026-07-30T00:00:00Z",
+  "workspace": {
+    "primary": "docs",
+    "sources": [
+      {
+        "name": "docs",
+        "path": "/workspace/docs",
+        "reachable": true,
+        "role": "artifacts"
+      },
+      {
+        "name": "code",
+        "path": "/workspace/code",
+        "reachable": true,
+        "role": "codebase"
+      }
+    ]
+  },
+  "scan": {
+    "artifacts_toml": ".cf-studio/config/artifacts.toml",
+    "systems_scanned": 2,
+    "systems_docs_only": 1,
+    "skip_dirs": [
+      ".git"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "docs:docs/spec.md",
+      "rel_path": "docs/spec.md",
+      "source": "docs",
+      "kind": "markdown",
+      "language": "markdown",
+      "category": "requirements",
+      "category_origin": "registry",
+      "content": "# Login",
+      "loc": 8,
+      "cpt_defs": [
+        "cpt-auth-login"
+      ],
+      "cpt_uses": []
+    },
+    {
+      "id": "code:src/login.ts",
+      "rel_path": "src/login.ts",
+      "source": "code",
+      "kind": "source",
+      "language": "typescript",
+      "category": "implementation",
+      "category_origin": "parent-dir",
+      "content": "export function login() {}",
+      "loc": 12,
+      "cpt_defs": [],
+      "cpt_uses": [
+        {
+          "cpt_id": "cpt-auth-login",
+          "line": 4,
+          "snippet": "// @cpt-auth-login",
+          "marker_kind": "scope"
+        },
+        {
+          "cpt_id": "cpt-auth-missing",
+          "line": 9,
+          "snippet": "// @cpt-auth-missing",
+          "marker_kind": "block-begin"
+        }
+      ]
+    },
+    {
+      "id": "phantom:cpt-auth-missing",
+      "rel_path": null,
+      "source": null,
+      "kind": "phantom-cpt",
+      "language": null,
+      "category": "phantom",
+      "category_origin": "phantom",
+      "content": null,
+      "loc": 0,
+      "cpt_defs": [
+        "cpt-auth-missing"
+      ],
+      "cpt_uses": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "file-link:docs:docs/spec.md:code:src/login.ts",
+      "from": "docs:docs/spec.md",
+      "to": "code:src/login.ts",
+      "type": "file-link",
+      "refs": [
+        {
+          "cpt_id": null,
+          "line": 6,
+          "snippet": "[implementation](../../code/src/login.ts)",
+          "def_line": null,
+          "def_snippet": null
+        }
+      ],
+      "cross_repo": true,
+      "dangling": false
+    },
+    {
+      "id": "cpt-impl:code:src/login.ts:docs:docs/spec.md",
+      "from": "code:src/login.ts",
+      "to": "docs:docs/spec.md",
+      "type": "cpt-impl",
+      "refs": [
+        {
+          "cpt_id": "cpt-auth-login",
+          "line": 4,
+          "snippet": "// @cpt-auth-login",
+          "def_line": 3,
+          "def_snippet": "<!-- @cpt-auth-login -->"
+        }
+      ],
+      "cross_repo": true,
+      "dangling": false
+    },
+    {
+      "id": "cpt-doc:code:src/login.ts:phantom:cpt-auth-missing",
+      "from": "code:src/login.ts",
+      "to": "phantom:cpt-auth-missing",
+      "type": "cpt-doc",
+      "refs": [
+        {
+          "cpt_id": "cpt-auth-missing",
+          "line": 9,
+          "snippet": "// @cpt-auth-missing",
+          "def_line": null,
+          "def_snippet": null
+        }
+      ],
+      "cross_repo": false,
+      "dangling": true
+    }
+  ],
+  "dangling_cpt_uses": [
+    {
+      "cpt_id": "cpt-auth-missing",
+      "node_id": "code:src/login.ts",
+      "line": 9,
+      "snippet": "// @cpt-auth-missing"
+    }
+  ],
+  "categories": {
+    "requirements": {
+      "node_count": 1,
+      "origin_counts": {
+        "registry": 1
+      },
+      "style": {
+        "color": "#123456",
+        "background": "#eef3f8"
+      }
+    },
+    "implementation": {
+      "node_count": 1,
+      "origin_counts": {
+        "parent-dir": 1
+      },
+      "style": {
+        "color": "#654321",
+        "background": "#f8f3ee"
+      }
+    },
+    "phantom": {
+      "node_count": 1,
+      "origin_counts": {
+        "phantom": 1
+      },
+      "style": {
+        "color": "#990000",
+        "background": "#ffeeee"
+      }
+    }
+  },
+  "layout": {
+    "vis_nodes": [
+      {
+        "id": "docs:docs/spec.md",
+        "x": 10,
+        "y": 20,
+        "label": "spec.md",
+        "shape": "document",
+        "category": "requirements",
+        "group": "docs"
+      },
+      {
+        "id": "code:src/login.ts",
+        "x": 210,
+        "y": 120,
+        "label": "login.ts",
+        "shape": "source",
+        "category": "implementation",
+        "group": "code"
+      },
+      {
+        "id": "phantom:cpt-auth-missing",
+        "x": 410,
+        "y": 220,
+        "label": "cpt-auth-missing",
+        "shape": "phantom",
+        "category": "phantom",
+        "group": "phantom"
+      }
+    ],
+    "bucket_rects": {
+      "docs": {
+        "id": "docs",
+        "x": 0,
+        "y": 0,
+        "w": 180,
+        "h": 100,
+        "label": "Docs"
+      }
+    },
+    "category_bands": {
+      "requirements": {
+        "x": 0,
+        "y": 0,
+        "w": 190,
+        "h": 110,
+        "label": "Requirements",
+        "fill": "#eef3f8",
+        "stroke": "#123456",
+        "title_color": "#123456"
+      },
+      "implementation": {
+        "x": 200,
+        "y": 100,
+        "w": 190,
+        "h": 110,
+        "label": "Implementation"
+      }
+    }
+  }
+}

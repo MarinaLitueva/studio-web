@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "runtimeVersion": "30.0.4",
+  "target": "browser",
+  "lifecycle": {
+    "status": "blocked",
+    "reason": "Acquisition and integrity audit completed, but the raw upstream WAR remains quarantined and Phase 0 compatibility is still blocked."
+  },
+  "upstream": {
+    "identity": "diagrams.net",
+    "version": "30.0.4",
+    "sourceArchiveSha256": "3196a93468ff901546054d0f19edd55fe972bc6c546da327b6f3db51d533e084",
+    "recipePath": "acquisition/RECIPE.md"
+  },
+  "retainedArtifact": {
+    "path": "artifacts/draw-30.0.4.war",
+    "sha256": "cb40abb5f750f549444c94c00de086218b47e30b33fbc4dd0476118afd8ec19d"
+  },
+  "provenance": {
+    "integration": {
+      "identity": "jgraph/drawio-integration",
+      "commit": "321f82a19dd7f619bddfe5e0866bf548d98bd8f4",
+      "archiveSha256": "6910df1e6c39e7093f2da1ef0b2955ce8b4c6bfbcaac31185a279af517224a1f"
+    }
+  },
+  "compliance": {
+    "licensePath": "licenses/diagrams-net-LICENSE.txt",
+    "sbomPath": "sbom/drawio-30.0.4.spdx.json"
+  },
+  "security": {
+    "acquisitionAudit": {
+      "path": "audits/drawio-30.0.4-acquisition-audit.md",
+      "sha256": "bcc107cc5c868f6a4b4641218fc595b0345225f6daa765cc2a81873ff46e5527",
+      "verdict": "pass"
+    },
+    "csp": "default-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'; img-src 'self'; font-src 'self'; media-src 'self'; script-src 'self'; style-src 'self'",
+    "exactTargetOriginRequired": true,
+    "networkOrigins": [],
+    "unsafeExceptions": [],
+    "phase0HostSecurityGate": {
+      "authority": "required",
+      "exceptionMetadataOverride": false,
+      "formallyActivated": false
+    }
+  }
+}

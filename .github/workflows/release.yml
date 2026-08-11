@@ -156,6 +156,22 @@ jobs:
             docker push "$IMAGE_PREFIX/studio-frontend:$t"
           done
 
+      # The per-workspace Theia IDE session image (moved in from fabric-poc).
+      # Self-contained multi-stage build from theia/ — no artifact to download,
+      # it downloads Theia plugins at build time (needs network, ~10 min).
+      # studio-session pulls this by the `image:` in config/*.yaml.
+      - name: Build & push Theia session image
+        run: |
+          set -euo pipefail
+          args=()
+          for t in ${{ steps.tags.outputs.list }}; do
+            args+=(-t "$IMAGE_PREFIX/cf-studio-theia:$t")
+          done
+          docker build -f theia/Dockerfile "${args[@]}" theia
+          for t in ${{ steps.tags.outputs.list }}; do
+            docker push "$IMAGE_PREFIX/cf-studio-theia:$t"
+          done
+
       - name: Summary
         run: |
           {
@@ -163,6 +179,7 @@ jobs:
             for t in ${{ steps.tags.outputs.list }}; do
               echo "- \`$IMAGE_PREFIX/studio-backend:$t\`"
               echo "- \`$IMAGE_PREFIX/studio-frontend:$t\`"
+              echo "- \`$IMAGE_PREFIX/cf-studio-theia:$t\`"
             done
           } >> "$GITHUB_STEP_SUMMARY"
 

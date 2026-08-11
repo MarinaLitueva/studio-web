@@ -1,0 +1,144 @@
+{
+  "schemaVersion": 1,
+  "snapshot": {
+    "schemaVersion": 1,
+    "identity": {
+      "workspaceId": "demo-workspace",
+      "configPath": "/workspace/.cf-workspace.toml",
+      "configFileName": ".cf-workspace.toml"
+    },
+    "config": {
+      "revision": "rev-17",
+      "schemaVersion": 1,
+      "rawTomlAvailable": true,
+      "resolveWorkdir": "workspace-sources",
+      "resolveNamespace": {
+        "github.com": "{org}/{repo}"
+      },
+      "resolveRootUri": "file:///workspace/workspace-sources",
+      "canonicalResolveRootUri": "file:///workspace/workspace-sources",
+      "lastLoadedAt": "2026-07-29T09:00:00.000Z",
+      "lastSavedAt": "2026-07-29T09:05:00.000Z"
+    },
+    "state": "ready",
+    "configuredSources": [
+      {
+        "sourceId": "studio",
+        "label": "studio",
+        "localPath": "/workspace/workspace-sources/example/studio",
+        "ref": "main",
+        "remoteUrl": "https://github.com/example/studio.git",
+        "provider": "github",
+        "defaultBranch": "main",
+        "configured": true,
+        "authoritative": true,
+        "include": "member"
+      }
+    ],
+    "observedSources": [
+      {
+        "sourceId": "studio",
+        "status": "present",
+        "syncEligibility": "safe",
+        "isPresent": true,
+        "isDirty": false,
+        "isDiverged": false,
+        "isNested": false,
+        "hasBlockingIssue": false,
+        "currentRevision": "4f2f5a1"
+      }
+    ],
+    "suggestions": [
+      {
+        "suggestionId": "suggestion-docs",
+        "kind": "containing-repository",
+        "candidateId": "candidate-docs",
+        "label": "docs",
+        "localPath": "/workspace/docs",
+        "rootPath": "/workspace/docs",
+        "disposition": "ignored-locally",
+        "reason": "User ignored this candidate locally after a bounded scan."
+      }
+    ],
+    "latestScan": {
+      "requestId": "scan-3",
+      "generatedAt": "2026-07-29T09:04:00.000Z",
+      "rootsScanned": [
+        "/workspace"
+      ],
+      "bounded": true,
+      "maxDepth": 3,
+      "maxEntries": 100,
+      "candidates": [
+        {
+          "candidateId": "candidate-docs",
+          "label": "docs",
+          "localPath": "/workspace/docs",
+          "rootPath": "/workspace/docs",
+          "provider": "github",
+          "remoteUrl": "https://github.com/example/docs.git",
+          "ref": "main",
+          "containingRepositoryId": "docs",
+          "ignoredLocally": true
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "scan-bounded",
+          "severity": "info",
+          "scope": "scan",
+          "message": "Scan stopped at the configured limit."
+        }
+      ]
+    },
+    "jobs": [
+      {
+        "jobId": "job-sync-1",
+        "kind": "save-sync",
+        "state": "awaiting-confirmation",
+        "phase": "awaiting-confirmation",
+        "startedAt": "2026-07-29T09:05:00.000Z",
+        "updatedAt": "2026-07-29T09:05:30.000Z",
+        "progress": {
+          "completedSources": 0,
+          "totalSources": 1
+        },
+        "preview": {
+          "jobId": "job-sync-1",
+          "requiresConfirmation": true,
+          "saveConfig": true,
+          "impactedSourceIds": [
+            "studio"
+          ],
+          "reasons": [
+            "Workspace sources will be synchronized after saving the canonical config."
+          ]
+        },
+        "sourcePreviews": [
+          {
+            "sourceId": "studio",
+            "status": "present",
+            "eligibility": "safe",
+            "forceRequired": false
+          }
+        ]
+      }
+    ],
+    "migration": {
+      "mode": "canonical-active",
+      "status": "completed",
+      "transactionId": "txn-44",
+      "recoveryState": "available",
+      "rollbackAvailable": true
+    },
+    "diagnostics": [
+      {
+        "code": "canonical-active",
+        "severity": "info",
+        "scope": "migration",
+        "message": "The canonical workspace config is active."
+      }
+    ]
+  },
+  "notModified": false
+}

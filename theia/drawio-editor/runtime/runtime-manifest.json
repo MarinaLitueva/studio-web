@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "runtimeVersion": "30.0.4",
+  "runtimeIdentity": "diagrams.net",
+  "integrationIdentity": "jgraph/drawio-integration",
+  "offline": true,
+  "allowedNetworkOrigins": [],
+  "entrypoint": "blocked.html",
+  "assets": [
+    {
+      "path": "blocked.html",
+      "sha256": "fd6e32a815e559fdeba1ea54c2e8cb3c7c4dd52108ae8e2855384aaaa8966753"
+    },
+    {
+      "path": "COMPATIBILITY.md",
+      "sha256": "33cada64359703cfc61bb6aa6b29b4805189e79c8300a5f49c8dcd3824396aaa"
+    },
+    {
+      "path": "licenses/diagrams-net-LICENSE.txt",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    }
+  ],
+  "licenseFiles": [
+    "licenses/diagrams-net-LICENSE.txt"
+  ],
+  "security": {
+    "uniqueOriginRequired": true,
+    "csp": "default-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'; img-src 'self'; font-src 'self'; media-src 'self'; script-src 'self'; style-src 'self'",
+    "sandbox": [
+      "allow-scripts"
+    ]
+  },
+  "protocol": {
+    "hostToEditor": [
+      "load",
+      "export"
+    ],
+    "editorToHost": [
+      "init",
+      "save",
+      "export",
+      "exit"
+    ]
+  },
+  "compatibility": {
+    "status": "blocked",
+    "gate": "phase-0-fail-closed",
+    "decisionRequired": "Do not enable a native Draw.io editor until the upstream or approved local package satisfies the offline CSP, sandbox, and message-origin contract recorded in COMPATIBILITY.md.",
+    "blockedBy": [
+      "upstream index.html uses inline style content",
+      "observed bootstrap CSP permits unsafe-inline styling, wildcard media classes, and network access",
+      "observed upstream JavaScript includes eval or Function patterns",
+      "official integration wrapper uses wildcard postMessage targets"
+    ]
+  },
+  "provenance": {
+    "diagramsNet": {
+      "version": "30.0.4",
+      "sourceArchiveSha256": "3196a93468ff901546054d0f19edd55fe972bc6c546da327b6f3db51d533e084",
+      "releaseArtifact": "draw.war",
+      "releaseArtifactBytes": 52723743,
+      "unpackedWebappApproxBytes": 149000000,
+      "licenseSource": "jgraph/drawio@v30.0.4/LICENSE"
+    },
+    "integration": {
+      "identity": "jgraph/drawio-integration",
+      "commit": "321f82a19dd7f619bddfe5e0866bf548d98bd8f4",
+      "archiveSha256": "6910df1e6c39e7093f2da1ef0b2955ce8b4c6bfbcaac31185a279af517224a1f",
+      "copiedSource": false,
+      "copiedSourceReason": "archive has no LICENSE"
+    },
+    "phase": "0",
+    "usability": "blocked"
+  }
+}

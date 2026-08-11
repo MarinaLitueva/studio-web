@@ -1,0 +1,12 @@
+# Constructor Studio project configuration
+
+version = "1.0"
+project_root = ".."
+
+[install]
+version_source = "project_config"
+runtime_tracking = "ignored"
+agent_tracking = "ignored"
+kit_tracking = "tracked"
+
+[kits]

@@ -1,0 +1,39 @@
+diff --git a/node_modules/@theia/ai-claude-code/lib/node/claude-code-service-impl.js b/node_modules/@theia/ai-claude-code/lib/node/claude-code-service-impl.js
+index 828f58d..f85ae5f 100644
+--- a/node_modules/@theia/ai-claude-code/lib/node/claude-code-service-impl.js
++++ b/node_modules/@theia/ai-claude-code/lib/node/claude-code-service-impl.js
+@@ -192,6 +192,14 @@ let ClaudeCodeServiceImpl = class ClaudeCodeServiceImpl {
+         return dynamicImport(importPath);
+     }
+     resolveClaudeCodePath() {
++        const override = process.env.THEIA_CLAUDE_CODE_PATH;
++        if (override) {
++            if (!(0, fs_1.existsSync)(override)) {
++                throw new Error((0, core_1.nls).localize('theia/ai/claude-code/configuredPathNotFound', 'Configured Claude Code SDK path not found: {0}', override));
++            }
++            const resolvedPath = (0, fs_1.realpathSync)(override);
++            return path.basename(resolvedPath) === 'sdk.mjs' ? path.dirname(resolvedPath) : resolvedPath;
++        }
+         try {
+             const globalPath = (0, child_process_1.execSync)('npm root -g', { encoding: 'utf8' }).trim();
+             return path.join(globalPath, '@anthropic-ai/claude-agent-sdk');
+diff --git a/node_modules/@theia/ai-claude-code/src/node/claude-code-service-impl.ts b/node_modules/@theia/ai-claude-code/src/node/claude-code-service-impl.ts
+index 962407c..6144ee9 100644
+--- a/node_modules/@theia/ai-claude-code/src/node/claude-code-service-impl.ts
++++ b/node_modules/@theia/ai-claude-code/src/node/claude-code-service-impl.ts
+@@ -239,6 +239,15 @@ export class ClaudeCodeServiceImpl implements ClaudeCodeService {
+     }
+ 
+     protected resolveClaudeCodePath(): string {
++        const override = process.env.THEIA_CLAUDE_CODE_PATH;
++        if (override) {
++            if (!existsSync(override)) {
++                throw new Error(nls.localize('theia/ai/claude-code/configuredPathNotFound',
++                    'Configured Claude Code SDK path not found: {0}', override));
++            }
++            const resolvedPath = realpathSync(override);
++            return path.basename(resolvedPath) === 'sdk.mjs' ? path.dirname(resolvedPath) : resolvedPath;
++        }
+         try {
+             const globalPath = execSync('npm root -g', { encoding: 'utf8' }).trim();
+             return path.join(globalPath, '@anthropic-ai/claude-agent-sdk');

@@ -1,0 +1,18 @@
+{
+  "version": "2.0",
+  "generated_at": "2026-07-30T00:00:00Z",
+  "workspace": {
+    "primary": "docs",
+    "sources": []
+  },
+  "scan": {
+    "artifacts_toml": null,
+    "systems_scanned": 0,
+    "systems_docs_only": 0,
+    "skip_dirs": []
+  },
+  "nodes": [],
+  "edges": [],
+  "dangling_cpt_uses": [],
+  "categories": {}
+}

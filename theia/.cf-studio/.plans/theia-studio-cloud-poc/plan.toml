@@ -1,0 +1,168 @@
+[meta]
+cfs_cmd = "cfs"
+cf_studio_path = "/Volumes/coding/cf-work/workspace-sources/constructorfabric/fabric-poc/poc/theia/.cf-studio"
+project_root = "/Volumes/coding/cf-work/workspace-sources/constructorfabric/fabric-poc/poc/theia"
+domain_model = "/Volumes/coding/cf-work/workspace-sources/constructorfabric/fabric-poc/docs/domain-model.md"
+ui_reference = "/Volumes/coding/cf-work/workspace-sources/constructorfabric/fabric-poc/poc/ui-1"
+created_by_workflow = "cf-plan"
+
+[plan]
+task = "Implement a secure single-user cloud Studio proof of concept on Eclipse Theia"
+type = "implement"
+target = "studio, browser-app, and supporting tests"
+created = "2026-07-27"
+total_phases = 9
+lifecycle = "manual"
+lifecycle_status = "complete"
+plan_dir = "/Volumes/coding/cf-work/workspace-sources/constructorfabric/fabric-poc/poc/theia/.cf-studio/.plans/theia-studio-cloud-poc"
+active_plan_dir = "/Volumes/coding/cf-work/workspace-sources/constructorfabric/fabric-poc/poc/theia/.cf-studio/.plans/theia-studio-cloud-poc"
+execution_status = "completed"
+dispatch_group_id = "theia-studio-cloud-poc-phase-compilers-20260727"
+validation_status = "pass"
+validated_on = "2026-07-27"
+validated_phase_files = 9
+validation_pass_rate = "100%"
+validation_structural = "pass"
+validation_interactive_questions = "pass"
+validation_rules_coverage = "pass"
+validation_context_completeness = "pass"
+validation_phase_independence = "pass"
+validation_budget_compliance = "pass"
+validation_lifecycle_handoff = "pass"
+decision_count = 50
+open_question_count = 4
+input_signature = ""
+browser_target = "functional"
+electron_target = "compile-only"
+git_commit_mode = "commit"
+validation_commands = [
+  "npm test",
+  "npm run build:browser",
+  "npm run build:electron",
+]
+
+[[phases]]
+number = 1
+title = "Compose the safe browser application"
+slug = "application-composition"
+type = "implement"
+depends_on = []
+brief_file = "brief-01-application-composition.md"
+phase_file = "phase-01-application-composition.md"
+input_files = ["package.json", "browser-app/package.json", "electron-app/package.json", "studio/package.json", "package-lock.json", "node_modules/@theia/cli/lib/download-plugins.js"]
+output_files = ["browser-app/package.json", "electron-app/package.json", "studio/package.json", "package-lock.json"]
+outputs = ["out/phase-01-application-composition.md"]
+inputs = []
+status = "done"
+
+[[phases]]
+number = 2
+title = "Establish runtime configuration and workspace protocol"
+slug = "runtime-workspace-protocol"
+type = "implement"
+depends_on = [1]
+brief_file = "brief-02-runtime-workspace-protocol.md"
+phase_file = "phase-02-runtime-workspace-protocol.md"
+input_files = ["studio/package.json", "studio/src/browser/studio-frontend-module.ts", "node_modules/@theia/workspace/src/node/workspace-backend-module.ts", "node_modules/@theia/core/src/common/messaging/handler.ts", "node_modules/@theia/core/src/common/messaging/proxy-factory.ts", "node_modules/@theia/core/src/common/uri.ts", "node_modules/@theia/core/src/node/backend-application-config-provider.ts", "node_modules/@theia/core/src/node/env-variables/env-variables-server.ts", "node_modules/@theia/core/src/node/", "/Volumes/coding/cf-work/workspace-sources/constructorfabric/fabric-poc/docs/domain-model.md"]
+output_files = ["studio/package.json", "studio/src/common/studio-protocol.ts", "studio/src/browser/studio-frontend-module.ts", "studio/src/node/studio-backend-module.ts", "studio/src/node/studio-runtime-config.ts", "studio/src/node/workspace-boundary.ts", "studio/src/node/studio-runtime-config.test.ts", "studio/src/node/workspace-boundary.test.ts"]
+outputs = ["out/phase-02-runtime-workspace-protocol.md"]
+inputs = ["out/phase-01-application-composition.md"]
+status = "done"
+
+[[phases]]
+number = 3
+title = "Implement the operation journal and repository queue"
+slug = "operation-journal-queue"
+type = "implement"
+depends_on = [2]
+brief_file = "brief-03-operation-journal-queue.md"
+phase_file = "phase-03-operation-journal-queue.md"
+input_files = ["studio/package.json", "studio/configs/jest.config.ts", "studio/src/common/studio-protocol.ts", "studio/src/node/studio-runtime-config.ts", "studio/src/node/workspace-boundary.ts", "studio/src/node/studio-backend-module.ts"]
+output_files = ["studio/src/common/studio-protocol.ts", "studio/src/node/operation-journal.ts", "studio/src/node/repository-operation-queue.ts", "studio/src/node/operation-journal.test.ts", "studio/src/node/repository-operation-queue.test.ts"]
+outputs = ["out/phase-03-operation-journal-queue.md"]
+inputs = ["out/phase-02-runtime-workspace-protocol.md"]
+status = "done"
+
+[[phases]]
+number = 4
+title = "Implement the safe Git publish pipeline"
+slug = "git-publish-pipeline"
+type = "implement"
+depends_on = [3]
+brief_file = "brief-04-git-publish-pipeline.md"
+phase_file = "phase-04-git-publish-pipeline.md"
+input_files = ["studio/src/common/studio-protocol.ts", "studio/src/node/studio-runtime-config.ts", "studio/src/node/workspace-boundary.ts", "studio/src/node/operation-journal.ts", "studio/src/node/repository-operation-queue.ts", "studio/src/node/studio-backend-module.ts"]
+output_files = ["studio/src/node/git-executor.ts", "studio/src/node/git-publish-service.ts", "studio/src/node/git-publish-service.test.ts", "studio/src/node/studio-backend-module.ts"]
+outputs = ["out/phase-04-git-publish-pipeline.md"]
+inputs = ["out/phase-03-operation-journal-queue.md"]
+status = "done"
+
+[[phases]]
+number = 5
+title = "Connect Theia Save to Git Operations UI"
+slug = "save-git-operations-ui"
+type = "implement"
+depends_on = [4]
+brief_file = "brief-05-save-git-operations-ui.md"
+phase_file = "phase-05-save-git-operations-ui.md"
+input_files = ["studio/src/browser/", "node_modules/@theia/core/src/browser/saveable.ts", "node_modules/@theia/core/src/browser/saveable-service.ts", "node_modules/@theia/filesystem/src/browser/filesystem-saveable-service.ts", "node_modules/@theia/core/src/browser/status-bar/status-bar-types.ts", "node_modules/@theia/core/src/browser/status-bar/", "/Volumes/coding/cf-work/workspace-sources/constructorfabric/fabric-poc/poc/ui-1/src/components", "/Volumes/coding/cf-work/workspace-sources/constructorfabric/fabric-poc/poc/ui-1/src/types"]
+output_files = ["studio/src/browser/studio-saveable-service.ts", "studio/src/browser/studio-saveable-service.test.ts", "studio/src/browser/git-operations-widget.tsx", "studio/src/browser/git-operations-widget.test.tsx", "studio/src/browser/git-operations-contribution.ts", "studio/src/browser/studio-frontend-module.ts", "studio/src/browser/style/index.css"]
+outputs = ["out/phase-05-save-git-operations-ui.md"]
+inputs = ["out/phase-04-git-publish-pipeline.md"]
+status = "done"
+
+[[phases]]
+number = 6
+title = "Build commit-addressed workspace graph snapshots"
+slug = "graph-indexer"
+type = "implement"
+depends_on = [4]
+brief_file = "brief-06-graph-indexer.md"
+phase_file = "phase-06-graph-indexer.md"
+input_files = ["studio/package.json", "studio/configs/jest.config.ts", "studio/src/node/studio-backend-module.ts", "studio/src/node/studio-runtime-config.ts", "studio/src/node/workspace-boundary.ts", "node_modules/typescript/lib/typescript.js", "/Volumes/coding/cf-work/workspace-sources/constructorfabric/fabric-poc/docs/domain-model.md", "/Volumes/coding/cf-work/workspace-sources/constructorfabric/fabric-poc/poc/ui-1/src/components/graph/ObjectGraph.tsx", "/Volumes/coding/cf-work/workspace-sources/constructorfabric/fabric-poc/poc/ui-1/src/types/domain.ts"]
+output_files = ["studio/src/common/graph-model.ts", "studio/src/node/workspace-graph-service.ts", "studio/src/node/graph-parsers.ts", "studio/src/node/workspace-graph-service.test.ts", "studio/src/node/studio-backend-module.ts"]
+outputs = ["out/phase-06-graph-indexer.md"]
+inputs = ["out/phase-04-git-publish-pipeline.md"]
+status = "done"
+
+[[phases]]
+number = 7
+title = "Add graph views and Monaco navigation"
+slug = "graph-editor-ui"
+type = "implement"
+depends_on = [5, 6]
+brief_file = "brief-07-graph-editor-ui.md"
+phase_file = "phase-07-graph-editor-ui.md"
+input_files = ["studio/src/browser/", "node_modules/@theia/core/src/browser/", "node_modules/@theia/editor/src/browser/", "/Volumes/coding/cf-work/workspace-sources/constructorfabric/fabric-poc/poc/ui-1/src/components/graph", "/Volumes/coding/cf-work/workspace-sources/constructorfabric/fabric-poc/poc/ui-1/src/components/files", "/Volumes/coding/cf-work/workspace-sources/constructorfabric/fabric-poc/poc/ui-1/src/components/layout"]
+output_files = ["studio/src/browser/workspace-graph-widget.tsx", "studio/src/browser/workspace-graph-widget.test.tsx", "studio/src/browser/workspace-graph-contribution.ts", "studio/src/browser/object-details-widget.tsx", "studio/src/browser/graph-open-handler.ts", "studio/src/browser/graph-open-handler.test.ts", "studio/src/browser/studio-frontend-module.ts", "studio/src/browser/style/index.css"]
+outputs = ["out/phase-07-graph-editor-ui.md"]
+inputs = ["out/phase-05-save-git-operations-ui.md", "out/phase-06-graph-indexer.md"]
+status = "done"
+
+[[phases]]
+number = 8
+title = "Add audit, layout restoration, and Studio polish"
+slug = "audit-layout-polish"
+type = "implement"
+depends_on = [5, 7]
+brief_file = "brief-08-audit-layout-polish.md"
+phase_file = "phase-08-audit-layout-polish.md"
+input_files = ["studio/src/browser/", "node_modules/@theia/core/src/browser/frontend-application-contribution.ts", "node_modules/@theia/core/src/browser/shell/application-shell.ts", "node_modules/@theia/core/src/browser/shell/shell-layout-restorer.ts", "node_modules/@theia/core/src/browser/storage-service.ts", "node_modules/@theia/core/src/browser/status-bar/status-bar-types.ts", "node_modules/@theia/core/src/browser/", "/Volumes/coding/cf-work/workspace-sources/constructorfabric/fabric-poc/poc/ui-1/src/components"]
+output_files = ["studio/src/browser/audit-widget.tsx", "studio/src/browser/audit-widget.test.tsx", "studio/src/browser/audit-contribution.ts", "studio/src/browser/studio-contribution.ts", "studio/src/browser/studio-contribution.test.ts", "studio/src/browser/studio-frontend-module.ts", "studio/src/browser/style/index.css"]
+outputs = ["out/phase-08-audit-layout-polish.md"]
+inputs = ["out/phase-05-save-git-operations-ui.md", "out/phase-07-graph-editor-ui.md"]
+status = "done"
+
+[[phases]]
+number = 9
+title = "Integrate, harden, document, and validate the PoC"
+slug = "integration-hardening"
+type = "implement"
+depends_on = [1, 2, 3, 4, 5, 6, 7, 8]
+brief_file = "brief-09-integration-hardening.md"
+phase_file = "phase-09-integration-hardening.md"
+input_files = ["package.json", "package-lock.json", "README.md", "browser-app/package.json", "electron-app/package.json", "studio/package.json", "studio/src/browser/", "studio/src/common/", "studio/src/node/", "node_modules/@theia/core/src/browser/open-with-service.ts", "node_modules/@theia/core/src/browser/saveable-service.ts", "node_modules/@theia/filesystem/src/browser/filesystem-saveable-service.ts"]
+output_files = ["package.json", "package-lock.json", "playwright.config.ts", "tests/e2e/studio-save-push.spec.ts", "README.md", "studio/src/browser/workspace-graph-widget.tsx", "studio/src/browser/workspace-graph-widget.test.tsx", "studio/src/common/graph-model.ts", "studio/src/node/workspace-graph-service.ts", "studio/src/node/workspace-graph-service.test.ts", "studio/src/browser/graph-open-handler.ts", "studio/src/browser/graph-open-handler.test.ts", "studio/src/browser/studio-saveable-service.ts", "studio/src/browser/studio-saveable-service.test.ts", "studio/src/browser/studio-frontend-module.ts", "studio/src/browser/analyze-controller.ts", "studio/src/browser/analyze-controller.test.ts", "studio/src/browser/analyze-widget.tsx", "studio/src/browser/analyze-widget.test.tsx", "studio/src/browser/style/index.css", "studio/src/node/git-publish-service.ts", "studio/src/node/git-publish-service.test.ts"]
+outputs = ["out/phase-09-integration-hardening.md"]
+inputs = ["out/phase-01-application-composition.md", "out/phase-02-runtime-workspace-protocol.md", "out/phase-03-operation-journal-queue.md", "out/phase-04-git-publish-pipeline.md", "out/phase-05-save-git-operations-ui.md", "out/phase-06-graph-indexer.md", "out/phase-07-graph-editor-ui.md", "out/phase-08-audit-layout-polish.md"]
+status = "done"

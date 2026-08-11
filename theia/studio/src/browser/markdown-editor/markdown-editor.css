@@ -1,0 +1,150 @@
+.studio-markdown-editor-widget {
+    height: 100%;
+}
+
+.studio-markdown-editor-shell,
+.studio-markdown-editor-root {
+    height: 100%;
+}
+
+.studio-markdown-editor-shell {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.studio-markdown-editor-root {
+    flex: 1;
+    min-height: 0;
+}
+
+.studio-markdown-editor {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.studio-markdown-editor .mdxeditor-toolbar {
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--theia-widget-border);
+    background: var(--theia-editor-background);
+}
+
+.studio-markdown-editor .mdxeditor-root-contenteditable {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+}
+
+.studio-markdown-editor-conflict-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--theia-widget-border);
+    background: color-mix(in srgb, var(--theia-notificationsWarningIcon-foreground) 22%, transparent);
+    color: var(--theia-editorWarning-foreground);
+}
+
+.studio-markdown-editor-conflict-copy {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+}
+
+.studio-markdown-editor-conflict-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.studio-markdown-editor-conflict-actions button,
+.studio-markdown-editor-conflict-dismiss {
+    border: 1px solid color-mix(in srgb, var(--theia-editorWarning-foreground) 35%, transparent);
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    padding: 4px 10px;
+    cursor: pointer;
+}
+
+.studio-markdown-editor-conflict-dismiss {
+    padding: 4px 8px;
+    font-weight: 700;
+}
+
+.studio-markdown-editor-content {
+    padding: 16px 20px 48px;
+}
+
+.studio-markdown-editor-content [data-cf-studio-markdown-comment] {
+    display: none;
+}
+
+.studio-markdown-editor-loading {
+    padding: 16px;
+}
+
+.studio-markdown-mermaid-block {
+    border: 1px solid var(--theia-widget-border);
+    border-radius: 6px;
+    background: var(--theia-editor-background);
+    overflow: hidden;
+}
+
+.studio-markdown-mermaid-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--theia-widget-border);
+    background: var(--theia-editor-background);
+}
+
+.studio-markdown-mermaid-toolbar button {
+    border: 1px solid var(--theia-widget-border);
+    border-radius: 4px;
+    background: var(--theia-button-background);
+    color: var(--theia-button-foreground);
+    padding: 4px 10px;
+    cursor: pointer;
+}
+
+.studio-markdown-mermaid-label {
+    margin-right: auto;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.studio-markdown-mermaid-preview,
+.studio-markdown-mermaid-editor {
+    overflow: auto;
+    padding: 12px;
+}
+
+.studio-markdown-mermaid-editor .cm-editor {
+    min-height: 180px;
+}
+
+.studio-markdown-mermaid-svg {
+    min-width: max-content;
+}
+
+.studio-markdown-mermaid-svg svg {
+    display: block;
+    max-width: 100%;
+    height: auto;
+}
+
+.studio-markdown-mermaid-status,
+.studio-markdown-mermaid-error {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--theia-descriptionForeground);
+}

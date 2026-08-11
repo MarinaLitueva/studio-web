@@ -397,7 +397,7 @@ gears:
 
   # ── Studio's own gear: per-workspace Theia IDE sessions in containers ──
   # Requires: Docker daemon on the host and the Theia image built once:
-  #   cd ../fabric-poc/poc/theia && docker build -t cf-studio-theia:latest .
+  #   cd theia && docker build -t cf-studio-theia:latest .
   # ── Projects (ADR-0005) ──
   # Two creation shapes (greenfield / modernize), journey stages with a
   # mandatory Intent, and a forward-only status ladder — the reasons this is a
