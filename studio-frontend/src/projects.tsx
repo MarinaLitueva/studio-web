@@ -87,11 +87,6 @@ function rootStatus(nested: Project[] | undefined): { label: string; tone: strin
   return { label: "draft", tone: "warn" };
 }
 
-function nestedSummary(p: Project): string {
-  const shape = p.mode === "modernize" ? p.git_url || "uploaded archive" : "new build";
-  return `${shape} · ${p.stages.length} stage${p.stages.length === 1 ? "" : "s"}`;
-}
-
 export function ProjectsPortfolio({
   token,
   roots,
@@ -307,7 +302,7 @@ export function ProjectsPortfolio({
                           <div className="sub">
                             {children.length === 0
                               ? "no nested projects yet"
-                              : `${children.length} nested project${children.length === 1 ? "" : "s"}`}
+                              : `+${children.length} nested project${children.length === 1 ? "" : "s"}`}
                             {root.self_managed ? " · self-managed" : ""}
                           </div>
                         </div>
@@ -354,7 +349,7 @@ export function ProjectsPortfolio({
                                   >
                                     {p.name}
                                   </button>
-                                  <div className="sub">{nestedSummary(p)}</div>
+                                  <div className="sub">Child of {root.name}</div>
                                 </div>
                               </div>
                             </td>

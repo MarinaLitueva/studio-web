@@ -395,10 +395,11 @@ const NAV_SECTIONS: {
     items: [
       { id: "projects", icon: "grid", label: "Projects" },
       { id: "people", icon: "users", label: "People" },
-      // Shared credential catalogue. It is owned by the hidden organization —
+      // Shared connector catalogue. It is owned by the hidden organization —
       // which is exactly why it sits here and not inside one project: every
-      // project of the org inherits it.
-      { id: "connectors", icon: "plug", label: "Integrations" },
+      // project of the org inherits it. Labelled "Connections" to match the
+      // sidebar in the product mockups.
+      { id: "connectors", icon: "plug", label: "Connections" },
       { id: "chats", icon: "chat", label: "Chats" },
       { id: "files", icon: "file", label: "Files" },
     ],
@@ -1261,8 +1262,11 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
             <ConnectorsView token={token} workspace={orgAsSpace} filters={filters} />
           ) : (
             <div className="card">
-              <h2>Integrations</h2>
-              <p className="empty">No tenant to hold the shared catalogue yet.</p>
+              <h2>Connections</h2>
+              <p className="empty">
+                No shared catalogue tenant yet — you can still add a connector inside a project on
+                its Sources tab.
+              </p>
             </div>
           ))}
         {/* The tenant hierarchy renders only inside the Admin area, under the flag. */}
@@ -4081,7 +4085,9 @@ function ConnectorsView({
         </div>
       )}
 
-      {!disabled && (
+      {/* Only inside a real project (which passes onOpenStudio) — not on the
+          top-level shared Connections catalogue, which owns no repositories. */}
+      {!disabled && onOpenStudio && (
         <ProjectSources
           token={token}
           workspace={ws}
