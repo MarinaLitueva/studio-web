@@ -4,6 +4,7 @@ import { env as runtimeEnv } from "./env";
 import { errText, matches } from "./format";
 import { ProjectsPortfolio } from "./projects";
 import { PeopleView } from "./people";
+import { StudioAI } from "./studio-ai";
 import {
   api,
   ApiError,
@@ -1141,6 +1142,8 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
       </div>
 
       <div className="content" style={activeSpace ? { display: "none" } : undefined}>
+        {/* Floating assistant, bottom-right, on every portal screen (mockups). */}
+        <StudioAI token={token} />
         {error && <div className="error">{error}</div>}
         {adminOpen ? (
           <>
