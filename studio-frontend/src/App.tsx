@@ -3766,9 +3766,12 @@ function AddConnector({
   const [baseUrl, setBaseUrl] = useState("");
   const [pat, setPat] = useState("");
   const [reveal, setReveal] = useState(false);
-  // Organization by default: one PAT for gitlab.constr.dev is an organization
-  // asset, and re-entering it per workspace is how credentials get stale.
-  const [reach, setReach] = useState<Reach>("organization");
+  // This project by default. A project admin owns their project but not the
+  // hidden organization above it, so defaulting to org-scope made the very
+  // first "Test & save" fail on a write they aren't allowed — the connector
+  // never landed. Org-shared stays one explicit choice away for the case where
+  // one PAT really is an organization asset shared across every project.
+  const [reach, setReach] = useState<Reach>("workspace");
   const [busy, setBusy] = useState<"probe" | "save" | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -3779,7 +3782,7 @@ function AddConnector({
     setBaseUrl("");
     setPat("");
     setReveal(false);
-    setReach("organization");
+    setReach("workspace");
     setResult(null);
     setError(null);
   };
@@ -3876,8 +3879,8 @@ function AddConnector({
 
       <label>Available to</label>
       <select value={reach} onChange={(e) => setReach(e.target.value as Reach)}>
-        <option value="organization">Shared — inherited by every project</option>
         <option value="workspace">{workspace.name} — this project only</option>
+        <option value="organization">Shared — inherited by every project</option>
         <option value="personal">Only me — private to my account</option>
       </select>
       <p className="hint">
