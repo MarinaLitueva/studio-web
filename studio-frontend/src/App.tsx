@@ -796,8 +796,8 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
             product family — API docs and the IdP admin are the real others. */}
         <div className="wordmark product-switch">
           <button className="product-button" onClick={() => setProductMenu((v) => !v)}>
-            <div className="logo">S</div>
-            <strong>Studio</strong>
+            <div className="logo">CS</div>
+            <strong>Constructor Studio</strong>
             <span className="chev">▾</span>
           </button>
           <button
