@@ -487,3 +487,25 @@ gears:
             subject_tenant_id: "00000000-0000-0000-0000-000000000001"
             token_scopes: ["*"]
             subject_type: "gts.cf.core.security.subject_user.v1~"
+        # Test users (INFRA-3767 interim): several distinct logins, each its own
+        # token, all platform admins on the root tenant. Tokens come from the
+        # studio-web-test-users Secret (chart backend deployment). Drop these when
+        # Keycloak SSO replaces token auth.
+        - token: "${STUDIO_TEST_USER_1_TOKEN}"
+          identity:
+            subject_id: "00000000-0000-0000-0000-00000000a002"
+            subject_tenant_id: "00000000-0000-0000-0000-000000000001"
+            token_scopes: ["*"]
+            subject_type: "gts.cf.core.security.subject_user.v1~"
+        - token: "${STUDIO_TEST_USER_2_TOKEN}"
+          identity:
+            subject_id: "00000000-0000-0000-0000-00000000a003"
+            subject_tenant_id: "00000000-0000-0000-0000-000000000001"
+            token_scopes: ["*"]
+            subject_type: "gts.cf.core.security.subject_user.v1~"
+        - token: "${STUDIO_TEST_USER_3_TOKEN}"
+          identity:
+            subject_id: "00000000-0000-0000-0000-00000000a004"
+            subject_tenant_id: "00000000-0000-0000-0000-000000000001"
+            token_scopes: ["*"]
+            subject_type: "gts.cf.core.security.subject_user.v1~"
