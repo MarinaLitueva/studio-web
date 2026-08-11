@@ -176,6 +176,11 @@ jobs:
       # NOT baked (resolved at runtime from the files-plaintext vault). Pulled
       # in-cluster via the Harbor GHCR proxy, gated by Helm keycloak.enabled.
       - name: Build & push Keycloak image
+        # Skipped where the keycloak/ build context is absent (the concept
+        # branch has no keycloak/ dir — that work lives on the keycloak branch):
+        # main still builds it, branches without it skip instead of failing the
+        # whole image job. Re-enables itself automatically once keycloak/ lands.
+        if: hashFiles('keycloak/Dockerfile') != ''
         run: |
           set -euo pipefail
           args=()
