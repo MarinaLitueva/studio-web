@@ -1765,7 +1765,9 @@ function ProjectDetail({
               onOpenProject={() => setTab("overview")}
             />
           )}
-          {tab === "integrations" && <ConnectorsView token={token} workspace={root} filters={filters} />}
+          {tab === "integrations" && (
+            <ConnectorsView token={token} workspace={root} filters={filters} onOpenStudio={onOpenStudio} />
+          )}
           {tab === "secrets" && <SecretsView token={token} workspaces={[root]} filters={filters} />}
         </div>
       </div>
@@ -3795,21 +3797,117 @@ const CATEGORIES: { key: string; title: string; blurb: string }[] = [
  *  the credstore sharing mode of the token (who may read it). */
 type Reach = "organization" | "workspace" | "personal";
 
+/** The project's current sources (workspace repos) with detach + Open in IDE, so
+ *  the Sources tab shows the RESULT of attaching, not only the connectors. */
+function ProjectSources({
+  token,
+  workspace: ws,
+  tick,
+  onChanged,
+  onOpenStudio,
+}: {
+  token: string;
+  workspace: Workspace;
+  /** Bumped whenever a repo is attached elsewhere on this tab — triggers reload. */
+  tick: number;
+  onChanged: () => void;
+  onOpenStudio?: (ws: Workspace) => void;
+}) {
+  const [repos, setRepos] = useState<RepoEntry[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const reload = useCallback(async () => {
+    const s = await api.workspaceSettings(token, ws.id).catch(() => null);
+    setRepos(s?.repos ?? []);
+  }, [token, ws.id]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload, tick]);
+
+  const detach = async (name: string) => {
+    setBusy(name);
+    setErr(null);
+    try {
+      const s = (await api.workspaceSettings(token, ws.id)) ?? {};
+      await api.putWorkspaceSettings(token, ws.id, {
+        ...s,
+        repos: (s.repos ?? []).filter((r) => r.name !== name),
+      });
+      await reload();
+      onChanged();
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const count = repos?.length ?? 0;
+
+  return (
+    <div className="card">
+      <div className="card-head">
+        <h2>Project sources{count > 0 ? ` · ${count}` : ""}</h2>
+        {count > 0 && onOpenStudio && (
+          <button className="primary" onClick={() => onOpenStudio(ws)}>
+            Open in IDE
+          </button>
+        )}
+      </div>
+      {err && <p className="error">{err}</p>}
+      {repos === null ? (
+        <p className="empty">Loading sources…</p>
+      ) : repos.length === 0 ? (
+        <p className="empty">
+          No repositories attached yet — add a connector below, open it, and pick repositories. They
+          are cloned into the workspace when you launch the IDE.
+        </p>
+      ) : (
+        <ul className="rows">
+          {repos.map((r) => (
+            <li key={r.name}>
+              <div className="grow">
+                <div className="name">{r.name}</div>
+                <div className="sub">
+                  {r.source}
+                  {r.url ? ` · ${r.url}` : ""}
+                  {r.branch ? ` · ${r.branch}` : ""}
+                </div>
+              </div>
+              <button className="ghost" disabled={busy === r.name} onClick={() => void detach(r.name)}>
+                {busy === r.name ? "…" : "Detach"}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function ConnectorsView({
   token,
   workspace: ws,
   filters,
+  onOpenStudio,
 }: {
   token: string;
   /** From the account switcher — this page no longer asks again. */
   workspace: Workspace;
   filters: Filters;
+  onOpenStudio?: (ws: Workspace) => void;
 }) {
   const [providers, setProviders] = useState<ConnectorProvider[] | null>(null);
   const [connections, setConnections] = useState<Connection[] | null>(null);
   const [disabled, setDisabled] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  // Bumped when a repo is attached/detached anywhere on the tab, so the sources
+  // panel and the connector browser's "attached" flags stay in sync.
+  const [sourcesTick, setSourcesTick] = useState(0);
+  const bumpSources = () => setSourcesTick((t) => t + 1);
 
   const reload = useCallback(async () => {
     if (!ws) return;
@@ -3859,6 +3957,16 @@ function ConnectorsView({
       )}
 
       {!disabled && (
+        <ProjectSources
+          token={token}
+          workspace={ws}
+          tick={sourcesTick}
+          onChanged={bumpSources}
+          onOpenStudio={onOpenStudio}
+        />
+      )}
+
+      {!disabled && (
         <AddConnector
           token={token}
           workspace={ws}
@@ -3879,6 +3987,8 @@ function ConnectorsView({
             matches(filters.query, c.label, c.provider, c.base_url),
           )}
           loading={connections === null}
+          sourcesTick={sourcesTick}
+          onSourcesChanged={bumpSources}
           onChanged={() => void reload()}
           onNote={setNote}
         />
@@ -4091,6 +4201,8 @@ function ConnectionList({
   providers,
   connections,
   loading,
+  sourcesTick,
+  onSourcesChanged,
   onChanged,
   onNote,
 }: {
@@ -4099,6 +4211,8 @@ function ConnectionList({
   providers: ConnectorProvider[];
   connections: Connection[];
   loading: boolean;
+  sourcesTick: number;
+  onSourcesChanged: () => void;
   onChanged: () => void;
   onNote: (s: string) => void;
 }) {
@@ -4283,6 +4397,8 @@ function ConnectionList({
                         token={token}
                         connection={c}
                         workspace={workspace}
+                        sourcesTick={sourcesTick}
+                        onSourcesChanged={onSourcesChanged}
                         onNote={onNote}
                       />
                     )}
@@ -4410,11 +4526,16 @@ function RepoBrowser({
   token,
   connection,
   workspace,
+  sourcesTick,
+  onSourcesChanged,
   onNote,
 }: {
   token: string;
   connection: Connection;
   workspace: Workspace;
+  /** Reload the attached set when sources change elsewhere on the tab. */
+  sourcesTick: number;
+  onSourcesChanged: () => void;
   onNote: (s: string) => void;
 }) {
   const [search, setSearch] = useState("");
@@ -4449,7 +4570,7 @@ function RepoBrowser({
   useEffect(() => {
     void load("");
     void loadAttached();
-  }, [load, loadAttached]);
+  }, [load, loadAttached, sourcesTick]);
 
   const picks = (repos ?? []).filter((r) => checked[r.id]);
 
@@ -4500,6 +4621,7 @@ function RepoBrowser({
       );
       setChecked({});
       void loadAttached();
+      onSourcesChanged();
     } catch (e) {
       onNote(errText(e));
     } finally {
