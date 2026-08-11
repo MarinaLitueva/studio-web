@@ -1674,12 +1674,24 @@ function ProjectsView({
  *  it the unit of work rather than a container you have to select first. */
 type ProjectTab = "overview" | "nested" | "people" | "integrations" | "secrets";
 
-const PROJECT_TABS: { id: ProjectTab; label: string }[] = [
-  { id: "overview", label: "Overview" },
-  { id: "nested", label: "Nested projects" },
-  { id: "people", label: "People" },
-  { id: "integrations", label: "Integrations" },
-  { id: "secrets", label: "Secrets" },
+/** Left workbench nav, grouped like the mockups. Ids are unchanged (the content
+ *  switch below still keys off them); only the labels and layout moved. */
+const PROJECT_NAV: { group: string; items: { id: ProjectTab; label: string }[] }[] = [
+  {
+    group: "Project",
+    items: [
+      { id: "overview", label: "Overview" },
+      { id: "nested", label: "Nested projects" },
+      { id: "people", label: "Team" },
+    ],
+  },
+  {
+    group: "Project setup",
+    items: [
+      { id: "integrations", label: "Sources" },
+      { id: "secrets", label: "Secrets" },
+    ],
+  },
 ];
 
 function ProjectDetail({
@@ -1719,35 +1731,44 @@ function ProjectDetail({
         </div>
       </div>
 
-      <div className="tabs">
-        {PROJECT_TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            className={tab === t.id ? "tab on" : "tab"}
-            onClick={() => setTab(t.id)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <div className="workbench">
+        <nav className="wb-nav">
+          {PROJECT_NAV.map((g) => (
+            <div key={g.group} className="wb-group">
+              <div className="wb-group-title">{g.group}</div>
+              {g.items.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  className={tab === t.id ? "wb-item on" : "wb-item"}
+                  onClick={() => setTab(t.id)}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          ))}
+        </nav>
 
-      {tab === "overview" && (
-        <WorkspaceDashboard token={token} ws={root} embedded onBack={onBack} onOpenStudio={onOpenStudio} />
-      )}
-      {tab === "nested" && (
-        <WorkspaceProjectsCard token={token} ws={root} onChanged={onChanged} onOpen={onOpenNested} />
-      )}
-      {tab === "people" && (
-        <PeopleView
-          token={token}
-          roots={[root]}
-          query={filters.query}
-          onOpenProject={() => setTab("overview")}
-        />
-      )}
-      {tab === "integrations" && <ConnectorsView token={token} workspace={root} filters={filters} />}
-      {tab === "secrets" && <SecretsView token={token} workspaces={[root]} filters={filters} />}
+        <div className="wb-content">
+          {tab === "overview" && (
+            <WorkspaceDashboard token={token} ws={root} embedded onBack={onBack} onOpenStudio={onOpenStudio} />
+          )}
+          {tab === "nested" && (
+            <WorkspaceProjectsCard token={token} ws={root} onChanged={onChanged} onOpen={onOpenNested} />
+          )}
+          {tab === "people" && (
+            <PeopleView
+              token={token}
+              roots={[root]}
+              query={filters.query}
+              onOpenProject={() => setTab("overview")}
+            />
+          )}
+          {tab === "integrations" && <ConnectorsView token={token} workspace={root} filters={filters} />}
+          {tab === "secrets" && <SecretsView token={token} workspaces={[root]} filters={filters} />}
+        </div>
+      </div>
     </>
   );
 }

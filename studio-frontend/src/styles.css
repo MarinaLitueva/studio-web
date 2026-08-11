@@ -777,3 +777,25 @@ button.danger:hover:not(:disabled) { background: #b91c1c; border-color: #b91c1c;
 /* Folder glyph in the project name cell — muted, inherits row color. */
 .pico .folder { color: var(--muted); vertical-align: -2px; }
 .prow.root:hover .pico .folder { color: var(--accent); }
+
+/* Project workbench: a left sub-nav rail + content, like the mockup's project
+   pages. Grouped (Project / Project setup), active item as a violet pill. */
+.workbench { display: flex; gap: 22px; align-items: flex-start; margin-top: 1rem; }
+.wb-nav { flex: 0 0 190px; position: sticky; top: 1rem; display: flex; flex-direction: column; gap: 14px; }
+.wb-group { display: flex; flex-direction: column; gap: 2px; }
+.wb-group-title {
+  font-size: 10px; letter-spacing: 0.07em; text-transform: uppercase;
+  color: var(--muted); font-weight: 600; padding: 0 10px 4px;
+}
+.wb-item {
+  text-align: left; border: none; background: none; color: var(--text);
+  padding: 8px 10px; border-radius: 8px; font: inherit; font-size: 14px; cursor: pointer;
+}
+.wb-item:hover:not(:disabled) { background: #f4f3fb; }
+.wb-item.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.wb-content { flex: 1; min-width: 0; }
+.wb-content > :first-child { margin-top: 0; }
+@media (max-width: 760px) {
+  .workbench { flex-direction: column; }
+  .wb-nav { position: static; flex-direction: row; flex-wrap: wrap; }
+}
