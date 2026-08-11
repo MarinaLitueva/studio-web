@@ -14,9 +14,59 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import type { FormEvent } from "react";
-import { api, TENANT_TYPES, type Project } from "./api";
+import type { CSSProperties, FormEvent } from "react";
+import { api, TENANT_TYPES, type Project, type User } from "./api";
 import { errText, matches, relTime } from "./format";
+
+/** Initials + a stable hue from a name — the mockups' colored member discs. */
+function initials(name: string): string {
+  const parts = name.trim().split(/[\s._@-]+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+function hueOf(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
+  return h;
+}
+/** Overlapping member avatars (real users from tenantUsers), +N overflow. */
+function Avatars({ users }: { users?: User[] }) {
+  if (!users) return <span className="sub">…</span>;
+  if (users.length === 0) return <span className="sub">—</span>;
+  return (
+    <span className="avatars">
+      {users.slice(0, 3).map((u) => {
+        const label = u.display_name || u.username;
+        return (
+          <span
+            key={u.id}
+            className="avatar"
+            style={{ "--hue": hueOf(label) } as CSSProperties}
+            title={label}
+          >
+            {initials(label)}
+          </span>
+        );
+      })}
+      {users.length > 3 && <span className="avatars-more">+{users.length - 3}</span>}
+    </span>
+  );
+}
+
+/** A small folder glyph for the project name cell (root vs nested). */
+function FolderIcon() {
+  return (
+    <svg className="folder" width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <path
+        d="M1.6 4.4A1.4 1.4 0 0 1 3 3h2.8l1.4 1.4H13A1.4 1.4 0 0 1 14.4 5.8v5.0A1.4 1.4 0 0 1 13 12.2H3A1.4 1.4 0 0 1 1.6 10.8z"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
 
 /** The AM tenant behind a root project — structurally what App.tsx holds. */
 export interface RootProject {
@@ -69,7 +119,7 @@ export function ProjectsPortfolio({
   onChanged: () => void;
 }) {
   const [nested, setNested] = useState<Record<string, Project[]>>({});
-  const [people, setPeople] = useState<Record<string, number>>({});
+  const [people, setPeople] = useState<Record<string, User[]>>({});
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
@@ -95,15 +145,15 @@ export function ProjectsPortfolio({
             () => [] as Project[],
           ),
           api.tenantUsers(token, id).then(
-            (p) => (p.items ?? []).length,
-            () => 0,
+            (p) => p.items ?? [],
+            () => [] as User[],
           ),
         ]);
         return [id, projects, users] as const;
       }),
     );
     setNested(Object.fromEntries(entries.map(([id, p]) => [id, p])));
-    setPeople(Object.fromEntries(entries.map(([id, , n]) => [id, n])));
+    setPeople(Object.fromEntries(entries.map(([id, , u]) => [id, u])));
   }, [token, ids]);
 
   useEffect(() => {
@@ -248,7 +298,7 @@ export function ProjectsPortfolio({
                           ▸
                         </button>
                         <span className="pico" aria-hidden>
-                          ▣
+                          <FolderIcon />
                         </span>
                         <div>
                           <button type="button" className="pname" onClick={() => onOpen(root)}>
@@ -271,7 +321,9 @@ export function ProjectsPortfolio({
                         {st.label}
                       </span>
                     </td>
-                    <td>{people[root.id] ?? "…"}</td>
+                    <td>
+                      <Avatars users={people[root.id]} />
+                    </td>
                     <td className="sub">{latest ? relTime(latest) : "—"}</td>
                     <td className="pactions">
                       <button onClick={() => onOpen(root)}>Open</button>
