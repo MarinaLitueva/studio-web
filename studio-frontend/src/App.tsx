@@ -4422,6 +4422,15 @@ function RepoBrowser({
   const [error, setError] = useState<string | null>(null);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
+  // Clone URLs already attached to this project — so a repo can't be added twice.
+  const [attached, setAttached] = useState<Set<string>>(new Set());
+
+  const loadAttached = useCallback(async () => {
+    const s = await api.workspaceSettings(token, workspace.id).catch(() => null);
+    setAttached(
+      new Set((s?.repos ?? []).map((r) => r.url).filter((u): u is string => Boolean(u))),
+    );
+  }, [token, workspace.id]);
 
   const load = useCallback(
     async (q: string) => {
@@ -4439,7 +4448,8 @@ function RepoBrowser({
 
   useEffect(() => {
     void load("");
-  }, [load]);
+    void loadAttached();
+  }, [load, loadAttached]);
 
   const picks = (repos ?? []).filter((r) => checked[r.id]);
 
@@ -4489,6 +4499,7 @@ function RepoBrowser({
           `cloned on the next session launch.`,
       );
       setChecked({});
+      void loadAttached();
     } catch (e) {
       onNote(errText(e));
     } finally {
@@ -4518,23 +4529,31 @@ function RepoBrowser({
         <p className="empty">Nothing reachable with this credential.</p>
       ) : (
         <ul className="rows">
-          {repos.map((r) => (
-            <li key={r.id}>
-              <input
-                type="checkbox"
-                checked={Boolean(checked[r.id])}
-                onChange={(e) => setChecked((c) => ({ ...c, [r.id]: e.target.checked }))}
-              />
-              <div className="grow">
-                <div className="name">{r.full_path}</div>
-                <div className="sub">
-                  {r.default_branch ?? "default branch"}
-                  {r.description ? ` · ${r.description}` : ""}
+          {repos.map((r) => {
+            const isAttached = attached.has(r.clone_url);
+            return (
+              <li key={r.id} className={isAttached ? "attached" : undefined}>
+                <input
+                  type="checkbox"
+                  disabled={isAttached}
+                  checked={isAttached || Boolean(checked[r.id])}
+                  onChange={(e) => setChecked((c) => ({ ...c, [r.id]: e.target.checked }))}
+                />
+                <div className="grow">
+                  <div className="name">{r.full_path}</div>
+                  <div className="sub">
+                    {r.default_branch ?? "default branch"}
+                    {r.description ? ` · ${r.description}` : ""}
+                  </div>
                 </div>
-              </div>
-              {r.visibility && <span className="badge">{r.visibility}</span>}
-            </li>
-          ))}
+                {isAttached ? (
+                  <span className="badge ok">attached</span>
+                ) : (
+                  r.visibility && <span className="badge">{r.visibility}</span>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
 
