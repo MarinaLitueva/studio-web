@@ -26,10 +26,15 @@ spec:
           # Runtime env.js (window.__STUDIO_ENV__) — one image per release,
           # per-environment values injected at container start.
           env:
-            # In-pod /cf proxy target — nginx refuses to start if the
-            # upstream host doesn't resolve, so it must be the real Service.
+            # In-pod proxy target for nginx's /cf and /studio locations. This is
+            # the backend SERVICE, so it must use the Service PORT (80), NOT
+            # .Values.backend.port (8090, the container port). The Service is
+            # `port: 80 -> targetPort: http(8090)`; dialing :8090 hits no Service
+            # listener and the /studio IDE proxy blackholes (connect hangs → the
+            # portal iframe times out). The Ingress reaches the backend by port
+            # NAME so it was never exposed to this; the /studio nginx hop is.
             - name: BACKEND_HOST
-              value: "{{ include "studio-web.fullname" . }}-backend:{{ .Values.backend.port }}"
+              value: "{{ include "studio-web.fullname" . }}-backend:80"
             - name: STUDIO_OIDC_ISSUER
               valueFrom: { secretKeyRef: { name: {{ .Values.backend.auth.existingSecret }}, key: issuer_url } }
             - name: STUDIO_OIDC_CLIENT_ID
