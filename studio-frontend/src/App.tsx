@@ -1759,7 +1759,13 @@ function ProjectDetail({
             <WorkspaceDashboard token={token} ws={root} embedded onBack={onBack} onOpenStudio={onOpenStudio} />
           )}
           {tab === "nested" && (
-            <WorkspaceProjectsCard token={token} ws={root} onChanged={onChanged} onOpen={onOpenNested} />
+            <WorkspaceProjectsCard
+              token={token}
+              ws={root}
+              onChanged={onChanged}
+              onOpen={onOpenNested}
+              onOpenStudio={onOpenStudio}
+            />
           )}
           {tab === "people" && (
             <PeopleView
@@ -1770,7 +1776,7 @@ function ProjectDetail({
             />
           )}
           {tab === "integrations" && (
-            <ConnectorsView token={token} workspace={root} filters={filters} onOpenStudio={onOpenStudio} />
+            <ConnectorsView token={token} workspace={root} filters={filters} />
           )}
           {tab === "secrets" && <SecretsView token={token} workspaces={[root]} filters={filters} />}
         </div>
@@ -2586,6 +2592,7 @@ function WorkspaceProjectsCard({
   ws,
   onChanged,
   onOpen,
+  onOpenStudio,
 }: {
   token: string;
   ws: Workspace;
@@ -2593,6 +2600,8 @@ function WorkspaceProjectsCard({
   /** Drill into the project level. Absent when the card is embedded somewhere
    *  that has no navigation of its own. */
   onOpen?: (p: Project) => void;
+  /** Launch the IDE for this project — used by the Project sources panel. */
+  onOpenStudio?: (ws: Workspace) => void;
 }) {
   const wsId = ws.id;
   const [projects, setProjects] = useState<Project[] | null>(null);
@@ -2860,6 +2869,10 @@ function WorkspaceProjectsCard({
         )}
         {error && <div className="error">{error}</div>}
       </div>
+
+      {/* Sources back the projects above (a modernization clones one on launch),
+          so they live on this tab now — with their own connector picker. */}
+      <ProjectSources token={token} workspace={ws} onOpenStudio={onOpenStudio} />
 
       {openProject && openProject.members_group_id && (
         <ProjectMembers
@@ -3329,18 +3342,68 @@ type Reach = "organization" | "workspace" | "personal";
 
 /** The project's current sources (workspace repos) with detach + Open in IDE, so
  *  the Sources tab shows the RESULT of attaching, not only the connectors. */
+/** Attach chosen remote repositories to a workspace as sources (the repos a
+ *  session clones on launch). Shared by the Sources-tab repository browser and
+ *  the Nested-projects "Pick from a connector…" picker so both build identical
+ *  RepoEntry rows — same name sanitisation, same provider→source mapping, same
+ *  server-side token reference. Returns how many were added. */
+async function attachReposToWorkspace(
+  token: string,
+  ws: Workspace,
+  connection: Connection,
+  picks: RemoteRepo[],
+): Promise<number> {
+  const current = (await api.workspaceSettings(token, ws.id)) ?? {};
+  const existing = current.repos ?? [];
+  const taken = new Set(existing.map((r) => r.name));
+  const added: RepoEntry[] = [];
+  for (const r of picks) {
+    // Directory name must be [a-z0-9_-]+. De-duplicate against what the
+    // workspace already has rather than shadowing an existing source.
+    const base =
+      r.name
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, "-")
+        .replace(/^-+|-+$/g, "") || `repo-${r.id}`;
+    let candidate = base;
+    let n = 2;
+    while (taken.has(candidate)) candidate = `${base}-${n++}`;
+    taken.add(candidate);
+    added.push({
+      name: candidate,
+      // github/gitlab compose a provider URL; anything else (bitbucket,
+      // self-hosted) is a plain git clone URL — don't mislabel it gitlab.
+      source:
+        connection.provider === "github"
+          ? "github"
+          : connection.provider === "gitlab"
+            ? "gitlab"
+            : "git",
+      url: r.clone_url,
+      branch: r.default_branch,
+      // studio-session resolves this from credstore itself, so the token
+      // stays server-side end to end.
+      token_ref: connection.secret_ref,
+    });
+  }
+  await api.putWorkspaceSettings(token, ws.id, {
+    ...current,
+    repos: [...existing, ...added],
+  });
+  return added.length;
+}
+
+/** The repositories attached to a project — the sources a session clones on
+ *  launch. Lives on the Nested projects tab (next to the projects they feed):
+ *  it lists what is attached, lets you detach, and adds new sources by picking
+ *  them straight from one of the project's connectors. */
 function ProjectSources({
   token,
   workspace: ws,
-  tick,
-  onChanged,
   onOpenStudio,
 }: {
   token: string;
   workspace: Workspace;
-  /** Bumped whenever a repo is attached elsewhere on this tab — triggers reload. */
-  tick: number;
-  onChanged: () => void;
   onOpenStudio?: (ws: Workspace) => void;
 }) {
   const [repos, setRepos] = useState<RepoEntry[] | null>(null);
@@ -3354,7 +3417,7 @@ function ProjectSources({
 
   useEffect(() => {
     void reload();
-  }, [reload, tick]);
+  }, [reload]);
 
   const detach = async (name: string) => {
     setBusy(name);
@@ -3366,7 +3429,6 @@ function ProjectSources({
         repos: (s.repos ?? []).filter((r) => r.name !== name),
       });
       await reload();
-      onChanged();
     } catch (e) {
       setErr(errText(e));
     } finally {
@@ -3386,14 +3448,15 @@ function ProjectSources({
           </button>
         )}
       </div>
+      <p className="hint">
+        Repositories cloned into the workspace when a session launches. Add one by picking it from a
+        connector — set connectors up on the Sources tab.
+      </p>
       {err && <p className="error">{err}</p>}
       {repos === null ? (
         <p className="empty">Loading sources…</p>
       ) : repos.length === 0 ? (
-        <p className="empty">
-          No repositories attached yet — add a connector below, open it, and pick repositories. They
-          are cloned into the workspace when you launch the IDE.
-        </p>
+        <p className="empty">No repositories attached yet — pick one from a connector below.</p>
       ) : (
         <ul className="rows">
           {repos.map((r) => (
@@ -3413,6 +3476,173 @@ function ProjectSources({
           ))}
         </ul>
       )}
+
+      <SourceAttachPicker token={token} workspace={ws} onAttached={() => void reload()} />
+    </div>
+  );
+}
+
+/** "Pick from a connector…" on the Project sources panel: choose a connection,
+ *  search its repositories, tick some, attach them as sources. The same clone
+ *  URLs the Sources-tab browser produces — this just puts the affordance next
+ *  to the sources list itself. */
+function SourceAttachPicker({
+  token,
+  workspace: ws,
+  onAttached,
+}: {
+  token: string;
+  workspace: Workspace;
+  onAttached: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [connections, setConnections] = useState<Connection[] | null>(null);
+  const [connId, setConnId] = useState("");
+  const [search, setSearch] = useState("");
+  const [repos, setRepos] = useState<RemoteRepo[] | null>(null);
+  const [checked, setChecked] = useState<Record<string, boolean>>({});
+  const [attached, setAttached] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const loadAttached = useCallback(async () => {
+    const s = await api.workspaceSettings(token, ws.id).catch(() => null);
+    setAttached(new Set((s?.repos ?? []).map((r) => r.url).filter((u): u is string => Boolean(u))));
+  }, [token, ws.id]);
+
+  useEffect(() => {
+    if (!open || connections) return;
+    void api.connections(token, ws.id).then(
+      (c) => {
+        setConnections(c.items);
+        if (c.items[0]) setConnId(c.items[0].id);
+      },
+      (e) => setErr(errText(e)),
+    );
+  }, [open, connections, token, ws.id]);
+
+  const load = useCallback(
+    async (q: string) => {
+      if (!connId) return;
+      setErr(null);
+      setRepos(null);
+      try {
+        const r = await api.connectionRepositories(token, connId, ws.id, q);
+        setRepos(r.items);
+      } catch (e) {
+        setErr(errText(e));
+        setRepos([]);
+      }
+    },
+    [token, connId, ws.id],
+  );
+
+  useEffect(() => {
+    if (open && connId) {
+      void load("");
+      void loadAttached();
+    }
+  }, [open, connId, load, loadAttached]);
+
+  const connection = (connections ?? []).find((c) => c.id === connId) ?? null;
+  const picks = (repos ?? []).filter((r) => checked[r.id]);
+
+  const attach = async () => {
+    if (!connection || picks.length === 0) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await attachReposToWorkspace(token, ws, connection, picks);
+      setChecked({});
+      await loadAttached();
+      onAttached();
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <button type="button" className="ghost" style={{ marginTop: 6 }} onClick={() => setOpen(true)}>
+        Pick from a connector…
+      </button>
+    );
+  }
+
+  return (
+    <div className="nested" style={{ marginTop: 6 }}>
+      {err && <p className="error">{err}</p>}
+      {connections && connections.length === 0 ? (
+        <p className="empty">
+          No connectors on this project yet — add one on the Sources tab, then pick a repository here.
+        </p>
+      ) : (
+        <>
+          <div className="row">
+            <select value={connId} onChange={(e) => setConnId(e.target.value)}>
+              {(connections ?? []).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label} ({c.provider})
+                </option>
+              ))}
+            </select>
+            <input
+              className="grow"
+              placeholder="Search repositories…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void load(search);
+              }}
+            />
+            <button type="button" onClick={() => void load(search)}>
+              Search
+            </button>
+            <button type="button" className="ghost" onClick={() => setOpen(false)}>
+              Close
+            </button>
+          </div>
+          {repos === null ? (
+            <p className="empty">Loading repositories…</p>
+          ) : repos.length === 0 ? (
+            <p className="empty">Nothing reachable with this connector.</p>
+          ) : (
+            <ul className="rows">
+              {repos.map((r) => {
+                const isAttached = attached.has(r.clone_url);
+                return (
+                  <li key={r.id} className={isAttached ? "attached" : undefined}>
+                    <input
+                      type="checkbox"
+                      disabled={isAttached}
+                      checked={isAttached || Boolean(checked[r.id])}
+                      onChange={(e) => setChecked((c) => ({ ...c, [r.id]: e.target.checked }))}
+                    />
+                    <div className="grow">
+                      <div className="name">{r.full_path}</div>
+                      <div className="sub">{r.default_branch ?? "default branch"}</div>
+                    </div>
+                    {isAttached && <span className="badge ok">attached</span>}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          <div className="row">
+            <span className="grow" />
+            <button
+              type="button"
+              className="primary"
+              disabled={picks.length === 0 || busy}
+              onClick={() => void attach()}
+            >
+              {busy ? "Attaching…" : `Add ${picks.length || ""} to ${ws.name}`}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -3421,13 +3651,11 @@ function ConnectorsView({
   token,
   workspace: ws,
   filters,
-  onOpenStudio,
 }: {
   token: string;
   /** From the account switcher — this page no longer asks again. */
   workspace: Workspace;
   filters: Filters;
-  onOpenStudio?: (ws: Workspace) => void;
 }) {
   const [providers, setProviders] = useState<ConnectorProvider[] | null>(null);
   const [connections, setConnections] = useState<Connection[] | null>(null);
@@ -3486,18 +3714,9 @@ function ConnectorsView({
         </div>
       )}
 
-      {/* Only inside a real project (which passes onOpenStudio) — not on the
-          top-level shared Connections catalogue, which owns no repositories. */}
-      {!disabled && onOpenStudio && (
-        <ProjectSources
-          token={token}
-          workspace={ws}
-          tick={sourcesTick}
-          onChanged={bumpSources}
-          onOpenStudio={onOpenStudio}
-        />
-      )}
-
+      {/* Connectors + the repository browser live here (the Sources tab). The
+          attached-sources list itself now lives on the Nested projects tab,
+          next to the projects those sources feed. */}
       {!disabled && (
         <AddConnector
           token={token}
@@ -4110,45 +4329,9 @@ function RepoBrowser({
     if (picks.length === 0) return;
     setBusy(true);
     try {
-      const current = (await api.workspaceSettings(token, workspace.id)) ?? {};
-      const existing = current.repos ?? [];
-      const taken = new Set(existing.map((r) => r.name));
-      const added: RepoEntry[] = [];
-      for (const r of picks) {
-        // Directory name must be [a-z0-9_-]+. De-duplicate against what the
-        // workspace already has rather than shadowing an existing source.
-        const base =
-          r.name
-            .toLowerCase()
-            .replace(/[^a-z0-9_-]+/g, "-")
-            .replace(/^-+|-+$/g, "") || `repo-${r.id}`;
-        let candidate = base;
-        let n = 2;
-        while (taken.has(candidate)) candidate = `${base}-${n++}`;
-        taken.add(candidate);
-        added.push({
-          name: candidate,
-          // github/gitlab compose a provider URL; anything else (bitbucket,
-          // self-hosted) is a plain git clone URL — don't mislabel it gitlab.
-          source:
-            connection.provider === "github"
-              ? "github"
-              : connection.provider === "gitlab"
-                ? "gitlab"
-                : "git",
-          url: r.clone_url,
-          branch: r.default_branch,
-          // studio-session resolves this from credstore itself, so the token
-          // stays server-side end to end.
-          token_ref: connection.secret_ref,
-        });
-      }
-      await api.putWorkspaceSettings(token, workspace.id, {
-        ...current,
-        repos: [...existing, ...added],
-      });
+      const added = await attachReposToWorkspace(token, workspace, connection, picks);
       onNote(
-        `Attached ${added.length} repositor${added.length === 1 ? "y" : "ies"} to ${workspace.name} — ` +
+        `Attached ${added} repositor${added === 1 ? "y" : "ies"} to ${workspace.name} — ` +
           `cloned on the next session launch.`,
       );
       setChecked({});
