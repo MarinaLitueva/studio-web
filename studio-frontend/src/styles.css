@@ -10,6 +10,7 @@
   --accent: #0e639c;        /* Theia/VS Code button blue — no more violet */
   --accent-hover: #0b5285;
   --accent-soft: #e8f0f7;
+  --panel: #f5f6f8;         /* chip / icon tile fill */
   --danger: #e5484d;
   --danger-soft: #fdecec;
   --ok: #2f9e57;
@@ -348,7 +349,7 @@ button.danger:hover:not(:disabled) { background: #b91c1c; border-color: #b91c1c;
     linear-gradient(var(--accent-soft) 0 0) 0 0 / 28% 22% no-repeat,
     linear-gradient(color-mix(in srgb, var(--accent) 12%, transparent) 0 0) 78% 8% / 24% 30% no-repeat,
     linear-gradient(var(--accent-soft) 0 0) 88% 74% / 22% 26% no-repeat,
-    linear-gradient(color-mix(in srgb, #8b5cf6 10%, transparent) 0 0) 6% 82% / 26% 18% no-repeat,
+    linear-gradient(color-mix(in srgb, #2b8fd6 10%, transparent) 0 0) 6% 82% / 26% 18% no-repeat,
     var(--bg);
 }
 .login-panel {
@@ -450,7 +451,7 @@ button.danger:hover:not(:disabled) { background: #b91c1c; border-color: #b91c1c;
 .hero-create-card { width: min(440px, 90%); margin-top: 0.5rem; }
 .hero-create-btn { width: min(440px, 90%); padding: 11px; font-size: 14.5px; }
 .hero-gradient {
-  background: linear-gradient(90deg, var(--accent), #8b5cf6, #c084fc);
+  background: linear-gradient(90deg, var(--accent), #2b8fd6, #4daafc);
   -webkit-background-clip: text; background-clip: text; color: transparent;
 }
 .home-grid {
@@ -578,31 +579,65 @@ button.danger:hover:not(:disabled) { background: #b91c1c; border-color: #b91c1c;
   .rightbar { display: none; }
 }
 
-/* ── Dark theme (server-side preference via simple-user-settings) ── */
-/* One palette with the embedded IDE (the session splash and Theia dark run
-   on the #1e1e2e family) — switching portal ↔ space must not change hue. */
+/* ── Dark theme — Theia / VS Code Dark+ palette ──────────────────────────────
+   Two schemes, one hue family, both lifted straight from Theia: the light
+   theme above is Theia Light (white + #f3f3f3 greys), this is Theia Dark
+   (#1e1e1e editor / #252526 panels, #cccccc text, the #0e639c button blue).
+   Neutral grey on purpose — no violet, no navy tint — so the portal and the
+   embedded IDE read as the same product. Switched via the Profile → theme
+   preference, which sets data-theme on <html> and is broadcast to every IDE
+   iframe (App.tsx MutationObserver). */
 :root[data-theme="dark"] {
-  --bg: #181825;
-  --surface: #1e1e2e;
-  --border: #313244;
-  --text: #cdd6f4;
-  --muted: #8f96b3;
-  --accent: #818cf8;
-  --accent-hover: #6d79f2;
-  --accent-soft: #2a2a45;
-  --danger-soft: #3a1f26;
+  --bg: #1e1e1e;            /* Theia editor background (the gutter) */
+  --surface: #252526;      /* Theia side bar / panel — cards live here */
+  --border: #3c3c3c;       /* Theia contrast / input border */
+  --text: #cccccc;         /* Theia foreground */
+  --muted: #9d9d9d;        /* Theia description foreground */
+  --panel: #2d2d2d;        /* chip / icon tile fill */
+  --accent: #4ea6ff;       /* bright selection blue — used where accent is TEXT */
+  --accent-hover: #6cb6ff;
+  --accent-soft: #0d2c45;  /* deep-blue selection tint (list active-bg family) */
+  --danger: #f47174;  --danger-soft: #3a1f22;
+  --ok: #4bb96a;      --ok-soft: #123020;
+  --warn: #d7a13a;    --warn-soft: #332812;
+  --info: #6a9bff;    --info-soft: #16233b;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 16px rgba(0, 0, 0, 0.3);
+  --shadow-pop: 0 8px 30px rgba(0, 0, 0, 0.5);
 }
+/* Flat editor-grey gutter with a barely-there lighter crown — Theia is flat. */
 :root[data-theme="dark"] body {
-  background: radial-gradient(1000px 400px at 80% -10%, #232338 0%, transparent 60%), var(--bg);
+  background: radial-gradient(1200px 360px at 78% -20%, #2a2a2a 0%, transparent 70%), var(--bg);
 }
+/* Inputs: Theia's #3c3c3c field on the dark shell. */
 :root[data-theme="dark"] input,
 :root[data-theme="dark"] select {
-  background: #181825; color: var(--text);
+  background: #3c3c3c; color: var(--text); border-color: #3c3c3c;
 }
-:root[data-theme="dark"] .sidebar nav button:hover { background: #222c44; }
-:root[data-theme="dark"] .hint code { background: #222c44; }
-:root[data-theme="dark"] button:hover:not(:disabled) { background: #222c44; }
+/* Hovers: Theia's neutral list / toolbar greys (no blue tint). */
+:root[data-theme="dark"] .sidebar nav button:hover,
+:root[data-theme="dark"] .ptable tbody tr:hover td,
+:root[data-theme="dark"] .wb-item:hover:not(:disabled) { background: #2a2d2e; }
+:root[data-theme="dark"] button:hover:not(:disabled) { background: #2d2d2d; border-color: #5a5a5a; }
+:root[data-theme="dark"] .hint code { background: #333333; }
+:root[data-theme="dark"] .coverage .track { background: #333333; }
+:root[data-theme="dark"] .badge.neutral,
+:root[data-theme="dark"] .badge.archived { background: #333333; color: #cccccc; }
+:root[data-theme="dark"] .error { border-color: #5a2a2d; }
+:root[data-theme="dark"] .notice { background: #33280f; border-color: #5a4a1f; color: #e6c07b; }
+/* Filled-accent surfaces keep Theia's darker button blue so white text on them
+   stays legible even though --accent (text / links) is the brighter blue. */
+:root[data-theme="dark"] button.primary,
+:root[data-theme="dark"] .account-avatar,
+:root[data-theme="dark"] .badge.you,
+:root[data-theme="dark"] .count-pill,
+:root[data-theme="dark"] .funnel .count,
+:root[data-theme="dark"] .studio-ai .sa-send {
+  background: #0e639c; border-color: #0e639c; color: #fff;
+}
+:root[data-theme="dark"] button.primary:hover:not(:disabled),
+:root[data-theme="dark"] .studio-ai .sa-send:hover:not(:disabled) {
+  background: #1177bb; border-color: #1177bb;
+}
 
 /* ── Concept v2: project portfolio & people tables ─────────────────────────────
    A list of projects is a comparison, not a stack of cards: status, people and
@@ -672,9 +707,6 @@ button.danger:hover:not(:disabled) { background: #b91c1c; border-color: #b91c1c;
 }
 .notice .ghost { color: inherit; }
 
-:root[data-theme="dark"] .badge.ok { background: #10291f; }
-:root[data-theme="dark"] .badge.warn { background: #2e1f14; color: #fdba74; }
-:root[data-theme="dark"] .notice { background: #2a2013; border-color: #4a3418; color: #fed7aa; }
 
 /* ══════════════════════════════════════════════════════════════════════════
    Constructor Studio look — pulled toward the portfolio/workbench mockups.
