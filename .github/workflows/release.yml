@@ -51,7 +51,11 @@ jobs:
 
       - name: Build (release)
         working-directory: studio-backend
-        run: cargo build --release --locked
+        # --no-default-features drops the `llm` feature (mini-chat + oagw): the
+        # DMZ deploy ships no LLM key and no IDE sessions, and oagw's post_init
+        # would deadlock the first boot on a root tenant that account-management
+        # only seeds later (see the mini_chat/api_egress notes in Cargo.toml).
+        run: cargo build --release --locked --no-default-features
 
       - uses: actions/upload-artifact@v4
         with:

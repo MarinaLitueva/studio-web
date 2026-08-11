@@ -7,7 +7,8 @@
 mod connectors; // source connectors: driver plugins + tenant connection catalogue
 mod credstore_pg; // persistent credstore value store (issue #66)
 mod keycloak_idp_plugin; // real user provisioning via Keycloak Admin API (ADR-0004)
-mod llm_proxy; // OpenAI-compatible LLM proxy for Theia AI in IDE sessions
+#[cfg(feature = "llm")]
+mod llm_proxy; // OpenAI-compatible LLM proxy for Theia AI in IDE sessions (llm feature)
 mod project; // projects: two creation shapes, stages, lifecycle (ADR-0005)
 mod registered_gears;
 mod secrets_bootstrap; // self-heal for config-seeded credstore secrets at boot

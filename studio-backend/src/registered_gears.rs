@@ -28,13 +28,19 @@ use static_authz_plugin as _;
 use account_management as _;
 use static_idp_plugin as _;
 
-// Feature gears: workspace AI chat (mini-chat + LLM egress chain), per-user
-// settings, file storage.
-// mini_chat also brings the static model-policy plugin (in-crate,
-// src/infra/plugins/static_model_policy — gear "static-mini-chat-model-policy-plugin").
-use api_egress as _;
+// Feature gears: per-user settings, file storage, credstore.
 use credstore as _;
 use file_storage as _;
-use mini_chat as _;
 use simple_user_settings as _;
 use static_credstore_plugin as _;
+
+// Workspace AI chat (mini-chat + oagw LLM egress). Behind the `llm` feature:
+// oagw's post_init provisions its upstream under the root tenant, which does
+// not exist on a fresh database until account-management's run-phase saga
+// seeds it — so with oagw present the first boot deadlocks. Off in the k8s
+// release image (no LLM key, no IDE sessions). mini_chat also brings its
+// in-crate static model-policy + audit plugins.
+#[cfg(feature = "llm")]
+use api_egress as _;
+#[cfg(feature = "llm")]
+use mini_chat as _;

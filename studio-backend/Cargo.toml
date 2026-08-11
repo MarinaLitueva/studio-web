@@ -13,6 +13,16 @@ description = "Constructor Studio backend server assembled from CF/Gears (accoun
 name = "studio-backend"
 path = "src/main.rs"
 
+[features]
+# `llm` pulls in the AI chain: mini-chat, oagw (api_egress) and the in-crate
+# studio-llm-proxy. Default ON so `cargo run` / the docker-compose dev build
+# get Ask AI and the IDE proxy. The k8s release image is built
+# `--no-default-features` (see .github/workflows/release.yml): the DMZ deploy
+# has no LLM key and no IDE sessions, and dropping oagw removes the fresh-boot
+# root-tenant deadlock documented on the mini_chat/api_egress dependencies.
+default = ["llm"]
+llm = ["dep:mini_chat", "dep:api_egress"]
+
 [dependencies]
 # gears-rust is consumed as a git dependency pinned to one revision, not as a
 # sibling checkout. The pin lived in three places before (this file, ci.yml,
@@ -114,8 +124,17 @@ static_idp_plugin = { package = "cf-gears-static-idp-plugin", git = "https://git
 # (src/infra/plugins/static_model_policy); the standalone
 # gears/mini-chat/plugins/static-model-policy-plugin dir is a leftover
 # Cargo.toml with no sources (gears issue candidate #5).
-mini_chat = { package = "cf-gears-mini-chat", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
-api_egress = { package = "cf-gears-oagw", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
+# mini-chat + oagw are gated behind the `llm` feature (default on). oagw's
+# post_init provisions the mini-chat upstream under the ROOT tenant, but the
+# root is created by account-management's bootstrap saga in its run phase —
+# after every gear's post_init. On a fresh database the root does not exist
+# yet, so oagw's post_init fails and the boot dies before the saga can seed
+# it (a deadlock masked in docker only because the volume already held a root
+# from an earlier boot). The DMZ deploy ships no LLM key and disables IDE
+# sessions, so the release image is built `--no-default-features`: no LLM
+# chain, no oagw, the boot reaches the run phase and bootstraps its own root.
+mini_chat = { package = "cf-gears-mini-chat", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7", optional = true }
+api_egress = { package = "cf-gears-oagw", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7", optional = true }
 credstore = { package = "cf-gears-credstore", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
 static_credstore_plugin = { package = "cf-gears-static-credstore-plugin", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
 simple_user_settings = { package = "cf-gears-simple-user-settings", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
