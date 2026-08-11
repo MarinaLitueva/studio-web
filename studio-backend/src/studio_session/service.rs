@@ -605,6 +605,20 @@ impl SessionService {
             .cloned()
     }
 
+    /// Proxy lookup by session id ALONE. The browser opens the IDE in an
+    /// iframe and cannot carry the caller's platform token, so the tenant
+    /// check the REST API does is impossible here — the per-session gate token
+    /// (256-bit, handed only to the owner by the create call, enforced by the
+    /// session container's own entry gate) is the capability instead. This
+    /// returns just the driver address to proxy to.
+    pub async fn proxy_target(&self, id: Uuid) -> Option<SessionAddress> {
+        self.sessions
+            .read()
+            .await
+            .get(&id)
+            .map(|s| s.address.clone())
+    }
+
     pub async fn list(&self, tenant_id: Uuid) -> Vec<Session> {
         self.sessions
             .read()

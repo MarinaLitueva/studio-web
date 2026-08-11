@@ -52,6 +52,20 @@ backend:
     minReplicas: 1
     maxReplicas: 4
     targetCPUUtilizationPercentage: 80
+  # IDE sessions (studio-session Kubernetes driver, ADR-0003). Off by default;
+  # the config profile also has to select driver=kubernetes. When on, the
+  # backend gets a namespaced Role over pods/services (sessions-rbac.yaml) and
+  # a NetworkPolicy opens egress for session Pods (sessions-netpol.yaml).
+  # autoscaling MUST stay single-replica while on: the session registry is
+  # in-memory per pod, so a second backend replica cannot see the first's
+  # sessions (a DB-backed registry is the follow-up).
+  sessions:
+    enabled: false
+    networkPolicy:
+      enabled: true
+      # Git hosts the session entrypoint may clone from (CIDRs, since a bare
+      # NetworkPolicy cannot name FQDNs). Empty = DNS only (no external clone).
+      egressCidrs: []
 
 frontend:
   image:

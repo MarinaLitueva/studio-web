@@ -11,5 +11,6 @@ pub mod docker;
 pub mod driver;
 pub mod gear;
 pub mod k8s;
+pub mod proxy;
 pub mod rest;
 pub mod service;

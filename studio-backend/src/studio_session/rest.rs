@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use axum::extract::Path;
+use axum::routing::any;
 use axum::{Extension, Router};
 use toolkit::api::canonical_prelude::*;
 use toolkit::api::operation_builder::{CORE_GLOBAL_BASE_LICENSE_FEATURE, LicenseFeature};
@@ -349,6 +350,20 @@ pub fn register_routes(
         .error_404(openapi)
         .error_500(openapi)
         .register(router, openapi);
+
+    // Browser → session reverse proxy (Kubernetes driver). Raw axum routes,
+    // NOT `.authenticated()`: the browser opens these in an iframe with no
+    // platform token — the session container's own 256-bit gate is the auth
+    // (see proxy.rs). `any` because Theia mixes GET/POST/WS on these paths.
+    router = router
+        .route(
+            "/studio-session/v1/ide/{id}",
+            any(super::proxy::ide_proxy_root),
+        )
+        .route(
+            "/studio-session/v1/ide/{id}/{*rest}",
+            any(super::proxy::ide_proxy_rest),
+        );
 
     router.layer(Extension(Sessions(service)))
 }

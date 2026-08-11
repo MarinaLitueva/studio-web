@@ -416,7 +416,18 @@ gears:
 
   studio-session:
     config:
-      enabled: false   # no Docker in-cluster; Pod driver = future ADR-0003 step
+      # IDE sessions via the Kubernetes Pod driver (ADR-0003). Needs the
+      # backend Role over pods/services (Helm backend.sessions.enabled=true)
+      # and a browser reachable through the /studio proxy.
+      enabled: true
+      driver: "kubernetes"
+      # kyverno on this cluster admits only harbor.constr.dev images, so the
+      # session image goes through the ghcr proxy project (same as the backend
+      # and frontend). No pull secret needed — Harbor handles the upstream.
+      image: "harbor.constr.dev/proxy-ghcr.io/constructorfabric/studio-web/cf-studio-theia:edge"
+      # Namespace is auto-detected from the mounted ServiceAccount token;
+      # k8s_namespace / k8s_image_pull_secret override only if ever needed.
+      git_mode: "disabled"
 
   # ── Self-heal for config-seeded credstore secrets ──
   # Re-seeds the references declared above from the environment on every start.
