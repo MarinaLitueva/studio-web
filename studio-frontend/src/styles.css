@@ -1,28 +1,40 @@
 :root {
-  --bg: #f4f6fb;
+  /* Constructor Studio design language (matches the portfolio/workbench mockups):
+     near-white shell, white cards, a single violet accent, soft pastel status
+     pills. Tuned to sit a touch cooler and more purple than the old indigo. */
+  --bg: #eef0f5;            /* app gutter behind the cards */
   --surface: #ffffff;
-  --border: #e3e8f0;
-  --text: #1a2333;
-  --muted: #64748b;
-  --accent: #4f46e5;
-  --accent-hover: #4338ca;
-  --accent-soft: #eef2ff;
-  --danger: #dc2626;
-  --danger-soft: #fef2f2;
-  --ok: #059669;
+  --border: #e9eaf1;
+  --text: #1d2130;
+  --muted: #8a8f9e;
+  --accent: #6d4aff;        /* buttons, active nav, links */
+  --accent-hover: #5a37e6;
+  --accent-soft: #f0ecff;
+  --danger: #e5484d;
+  --danger-soft: #fdecec;
+  --ok: #2f9e57;
+  --ok-soft: #e7f6ec;
+  --warn: #b4791f;
+  --warn-soft: #fbf1de;
+  --info: #3b63c9;
+  --info-soft: #e9effd;
   --radius: 12px;
-  --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 4px 16px rgba(16, 24, 40, 0.06);
+  --radius-lg: 16px;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 6px 20px rgba(16, 24, 40, 0.05);
+  --shadow-pop: 0 8px 30px rgba(16, 24, 40, 0.14);
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
+  /* Flat, calm gutter like the mockups — a whisper of violet up top, no glow. */
   background:
-    radial-gradient(1000px 400px at 80% -10%, #e0e7ff 0%, transparent 60%),
+    radial-gradient(1200px 360px at 78% -20%, #efecff 0%, transparent 70%),
     var(--bg);
   color: var(--text);
-  font: 15px/1.5 -apple-system, "Segoe UI", Inter, Roboto, system-ui, sans-serif;
+  font: 15px/1.5 "Inter", -apple-system, "Segoe UI", Roboto, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
 main { max-width: 880px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
@@ -663,3 +675,95 @@ button.danger:hover:not(:disabled) { background: #b91c1c; border-color: #b91c1c;
 :root[data-theme="dark"] .badge.ok { background: #10291f; }
 :root[data-theme="dark"] .badge.warn { background: #2e1f14; color: #fdba74; }
 :root[data-theme="dark"] .notice { background: #2a2013; border-color: #4a3418; color: #fed7aa; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Constructor Studio look — pulled toward the portfolio/workbench mockups.
+   Appended last so these win over the base rules above (equal specificity).
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Status pills — soft pastel fill + darker text, one accent per state, exactly
+   the mockup vocabulary. Tone class names cover both our derived tones
+   (ok/warn/danger/info/neutral) and the mockup's status words. */
+.badge {
+  padding: 3px 10px; border-radius: 999px;
+  font-size: 11.5px; font-weight: 600; letter-spacing: 0.01em;
+  line-height: 1.5; white-space: nowrap;
+  background: var(--accent-soft); color: var(--accent);
+}
+.badge.ok, .badge.monitoring, .badge.active, .badge.healthy { background: var(--ok-soft); color: var(--ok); }
+.badge.warn, .badge.review, .badge.setup, .badge.draft { background: var(--warn-soft); color: var(--warn); }
+.badge.danger, .badge.critical, .badge.blocked, .badge.failed { background: var(--danger-soft); color: var(--danger); }
+.badge.info, .badge.measuring, .badge.benchmark, .badge.syncing { background: var(--info-soft); color: var(--info); }
+.badge.neutral, .badge.archived { background: #eef0f4; color: #6b7180; }
+.badge.workspace { background: var(--ok-soft); color: var(--ok); }
+.badge.selfmanaged { background: var(--warn-soft); color: var(--warn); }
+
+/* Table headers: tiny, uppercase, tracked and muted — the mockup's column row. */
+.ptable thead th {
+  font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--muted); font-weight: 600; padding: 8px 10px;
+  border-bottom: 1px solid var(--border); text-align: left;
+}
+.ptable tbody td { padding: 13px 10px; }
+.ptable tbody tr:hover td { background: #f7f6ff; }
+.pname { font-weight: 600; color: var(--text); }
+.pname:hover { color: var(--accent); }
+
+/* Initials avatar — colored disc, deterministic hue set inline via --hue. */
+.avatar {
+  width: 26px; height: 26px; border-radius: 50%;
+  display: inline-grid; place-items: center; flex: 0 0 auto;
+  font-size: 10.5px; font-weight: 700; color: #fff; letter-spacing: 0.02em;
+  background: hsl(var(--hue, 258) 62% 58%);
+}
+.avatar.lg { width: 34px; height: 34px; font-size: 13px; }
+.owner { display: inline-flex; align-items: center; gap: 8px; }
+.owner .name { font-size: 13.5px; }
+
+/* Needs-attention: a colored status dot + text, action link underneath. */
+.attn { display: flex; flex-direction: column; gap: 2px; }
+.attn .line { display: flex; align-items: center; gap: 7px; font-size: 13.5px; }
+.attn .dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; background: var(--muted); }
+.attn .dot.red { background: var(--danger); }
+.attn .dot.amber { background: #eab308; }
+.attn .dot.blue { background: var(--info); }
+.attn .dot.green { background: var(--ok); }
+.attn .act { font-size: 12.5px; color: var(--accent); text-decoration: none; }
+.attn .act:hover { text-decoration: underline; }
+
+/* Coverage meter — % + slim bar + count, like the Artifact-coverage column. */
+.coverage { display: flex; align-items: center; gap: 8px; min-width: 150px; }
+.coverage .pct { font-weight: 600; font-size: 13px; min-width: 34px; }
+.coverage .track { flex: 1; height: 6px; border-radius: 999px; background: #ececf3; overflow: hidden; }
+.coverage .fill { height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, #7b5cff, #6d4aff); }
+.coverage .count { font-size: 12px; color: var(--muted); white-space: nowrap; }
+
+/* Floating "Studio AI" assistant, bottom-right, like every mockup. */
+.studio-ai {
+  position: fixed; right: 20px; bottom: 20px; z-index: 60;
+  width: 320px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop); overflow: hidden;
+}
+.studio-ai .sa-head { display: flex; align-items: center; gap: 9px; padding: 12px 14px; }
+.studio-ai .sa-mark {
+  width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center;
+  background: linear-gradient(135deg, #7b5cff, #6d4aff); color: #fff; font-size: 13px;
+}
+.studio-ai .sa-title { font-weight: 600; font-size: 14px; flex: 1; }
+.studio-ai .sa-ctx { padding: 0 14px 6px; }
+.studio-ai .sa-ctx-label { font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.studio-ai .sa-chip {
+  display: inline-flex; align-items: center; gap: 6px; margin-top: 8px;
+  background: var(--accent-soft); color: var(--accent);
+  border-radius: 999px; padding: 6px 11px; font-size: 12.5px; font-weight: 500;
+}
+.studio-ai .sa-input { display: flex; gap: 8px; align-items: center; padding: 10px 14px 14px; }
+.studio-ai .sa-input input { flex: 1; border-radius: 999px; }
+.studio-ai .sa-send {
+  width: 30px; height: 30px; border-radius: 50%; flex: 0 0 auto; padding: 0;
+  background: var(--accent); border-color: var(--accent); color: #fff;
+}
+.studio-ai.collapsed { width: auto; }
+.studio-ai.collapsed .sa-ctx, .studio-ai.collapsed .sa-input { display: none; }
