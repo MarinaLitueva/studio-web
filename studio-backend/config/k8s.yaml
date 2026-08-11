@@ -251,7 +251,7 @@ gears:
   #
   # Values are sealed with AES-256-GCM under STUDIO_CREDSTORE_KEY (base64,
   # 32 bytes -> `openssl rand -base64 32`). The key is deliberately NOT in this
-  # file: the config loader does not expand ${VAR} anyway, and a literal key
+  # file: it arrives via the env var named by key_env below, and a literal key
   # here would travel in the image and show up in --print-config.
   #
   # Key unset      -> WARN, this gear stands down, static-credstore-plugin wins
@@ -332,9 +332,8 @@ gears:
       vendor: "constructorfabric"
       priority: 100
       model_catalog:
-        # NB: this plugin's config does NOT expand ${VAR} (gears feedback
-        # item) — provider_model_id is a literal. Keep it in sync with the
-        # provider configured above / STUDIO_LLM_HOST.
+        # NB: provider_model_id is a literal model name. Keep it in sync
+        # with the provider configured above / STUDIO_LLM_HOST.
         - id: "studio-default"
           provider_model_id: "llama-3.3-70b-versatile"
           display_name: "Studio assistant"

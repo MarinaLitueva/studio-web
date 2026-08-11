@@ -38,6 +38,10 @@ utoipa = "5"
 uuid = { version = "1", features = ["serde", "v4", "v5"] }
 toolkit-macros = { package = "cf-gears-toolkit-macros", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
 credstore-sdk = { package = "cf-gears-credstore-sdk", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
+# Strict ${VAR} pre-expansion of the config file (#65): the toolkit loader
+# reads the YAML verbatim, so placeholders outside DSNs reached the runtime
+# as literals. Same expansion the toolkit itself applies to DSNs.
+toolkit-utils = { package = "cf-gears-toolkit-utils", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
 # studio-connector: GtsTypeId on the account-management metadata boundary.
 # Same version gears-rust pins in its workspace manifest.
 gts = "0.11"
