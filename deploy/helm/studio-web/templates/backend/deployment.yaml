@@ -64,6 +64,13 @@ spec:
             # file-storage URL-signing seed — per environment, never baked in.
             - name: STUDIO_FS_SIGNING_SEED
               valueFrom: { secretKeyRef: { name: {{ .Values.backend.appSecrets.existingSecret }}, key: fs_signing_seed } }
+            # Dev token auth (INFRA-3767 interim): the k8s profile runs
+            # static-authn while no OIDC realm exists. The profile REQUIRES
+            # this variable — a missing Secret fails the boot naming it.
+            {{- if .Values.backend.devAuth.existingSecret }}
+            - name: STUDIO_ADMIN_TOKEN
+              valueFrom: { secretKeyRef: { name: {{ .Values.backend.devAuth.existingSecret }}, key: admin_token } }
+            {{- end }}
             # Sealing key for the persistent credstore value store (#66),
             # base64 of 32 bytes. Optional by design: without it the gear
             # stands down with a WARN and the in-memory fallback wins — the

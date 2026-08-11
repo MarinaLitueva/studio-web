@@ -28,6 +28,12 @@ backend:
   # pod restart], s2s_client_secret [optional], idp_admin_secret [optional]).
   appSecrets:
     existingSecret: "studio-web-app"
+  # Interim token auth (INFRA-3767): while no OIDC realm exists, the k8s
+  # profile runs static-authn and needs a Secret with key `admin_token`.
+  # The k8s profile REQUIRES the variable, so leaving this empty fails the
+  # boot naming STUDIO_ADMIN_TOKEN. Drop when a real IdP takes over.
+  devAuth:
+    existingSecret: "studio-web-dev-auth"
   # LLM egress endpoint (non-secret half; the key lives in appSecrets).
   # Any OpenAI-compatible provider; defaults = Groq free tier.
   llm:
