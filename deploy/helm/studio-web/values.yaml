@@ -61,6 +61,7 @@ backend:
   # sessions (a DB-backed registry is the follow-up).
   sessions:
     enabled: false
+    kubeApiEgress: true
     networkPolicy:
       enabled: true
       # Git hosts the session entrypoint may clone from (CIDRs, since a bare
