@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use axum::extract::Path;
-use axum::routing::any;
 use axum::{Extension, Router};
 use toolkit::api::canonical_prelude::*;
 use toolkit::api::operation_builder::{CORE_GLOBAL_BASE_LICENSE_FEATURE, LicenseFeature};
@@ -351,19 +350,45 @@ pub fn register_routes(
         .error_500(openapi)
         .register(router, openapi);
 
-    // Browser → session reverse proxy (Kubernetes driver). Raw axum routes,
-    // NOT `.authenticated()`: the browser opens these in an iframe with no
-    // platform token — the session container's own 256-bit gate is the auth
-    // (see proxy.rs). `any` because Theia mixes GET/POST/WS on these paths.
-    router = router
-        .route(
-            "/studio-session/v1/ide/{id}",
-            any(super::proxy::ide_proxy_root),
-        )
-        .route(
-            "/studio-session/v1/ide/{id}/{*rest}",
-            any(super::proxy::ide_proxy_rest),
-        );
+    // Browser → session reverse proxy (Kubernetes driver). These are `.public()`
+    // on purpose: the browser opens the IDE in an iframe with no platform token,
+    // so the api-gateway must NOT auth-gate them — the session container's own
+    // 256-bit gate (?token -> cookie) is the auth (see proxy.rs). `.public()`
+    // (vs a raw route) is what lands the path in the gateway's public-route set;
+    // a raw route is still caught by require_auth_by_default and 401s. The
+    // handler mounts as a plain `get`/`post`, so the WebSocket upgrade passes
+    // through untouched. Theia loads at the trailing-slash root and every asset/
+    // WS path under it; GET carries the page + WS upgrade, POST the RPC services.
+    for (method, is_root) in [(true, true), (true, false), (false, true), (false, false)] {
+        let (path, tag) = if is_root {
+            ("/studio-session/v1/ide/{id}/", "ide-root")
+        } else {
+            ("/studio-session/v1/ide/{id}/{*rest}", "ide-asset")
+        };
+        let base = if method {
+            OperationBuilder::get(path)
+        } else {
+            OperationBuilder::post(path)
+        };
+        let op = base
+            .operation_id(format!(
+                "studio_session.ide_proxy.{}.{}",
+                if method { "get" } else { "post" },
+                tag
+            ))
+            .summary("Reverse proxy to a Kubernetes IDE session")
+            .tag("StudioSessions")
+            .public();
+        router = if is_root {
+            op.handler(super::proxy::ide_proxy_root)
+                .text_response(StatusCode::OK, "IDE session stream", "text/html")
+                .register(router, openapi)
+        } else {
+            op.handler(super::proxy::ide_proxy_rest)
+                .text_response(StatusCode::OK, "IDE session stream", "text/html")
+                .register(router, openapi)
+        };
+    }
 
     router.layer(Extension(Sessions(service)))
 }
