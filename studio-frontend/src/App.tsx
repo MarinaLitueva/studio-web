@@ -4465,7 +4465,14 @@ function RepoBrowser({
         taken.add(candidate);
         added.push({
           name: candidate,
-          source: connection.provider === "github" ? "github" : "gitlab",
+          // github/gitlab compose a provider URL; anything else (bitbucket,
+          // self-hosted) is a plain git clone URL — don't mislabel it gitlab.
+          source:
+            connection.provider === "github"
+              ? "github"
+              : connection.provider === "gitlab"
+                ? "gitlab"
+                : "git",
           url: r.clone_url,
           branch: r.default_branch,
           // studio-session resolves this from credstore itself, so the token
