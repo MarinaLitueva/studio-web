@@ -15,6 +15,9 @@ spec:
         app.kubernetes.io/component: frontend
     spec:
       serviceAccountName: {{ include "studio-web.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: frontend

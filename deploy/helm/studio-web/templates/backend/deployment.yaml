@@ -17,6 +17,11 @@ spec:
         app.kubernetes.io/component: backend
     spec:
       serviceAccountName: {{ include "studio-web.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      # ghcr packages published by GITHUB_TOKEN start private — without a
+      # pull secret the pod never leaves ImagePullBackOff.
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: backend
@@ -59,6 +64,14 @@ spec:
             # file-storage URL-signing seed — per environment, never baked in.
             - name: STUDIO_FS_SIGNING_SEED
               valueFrom: { secretKeyRef: { name: {{ .Values.backend.appSecrets.existingSecret }}, key: fs_signing_seed } }
+            # Sealing key for the persistent credstore value store (#66),
+            # base64 of 32 bytes. Optional by design: without it the gear
+            # stands down with a WARN and the in-memory fallback wins — the
+            # pod still boots, but every user-typed secret (repo PATs) dies
+            # with each restart. Set it in any environment that restarts pods,
+            # which is all of them.
+            - name: STUDIO_CREDSTORE_KEY
+              valueFrom: { secretKeyRef: { name: {{ .Values.backend.appSecrets.existingSecret }}, key: credstore_key, optional: true } }
             # Keycloak Admin API for invites (keycloak-idp-plugin). Optional:
             # without the secret the plugin self-deprioritizes (invites off).
             {{- if .Values.backend.idpAdmin.baseUrl }}

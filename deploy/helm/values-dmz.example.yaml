@@ -5,14 +5,32 @@
 # Secrets to pre-create in the namespace (the chart never creates them):
 #
 #   studio-postgres-app   host, port, user, password, dbname
-#       (operator-managed PG; the app user needs CREATEDB while
-#        database.auto_provision creates the per-gear databases)
+#       (operator-managed PG)
 #   studio-web-idp        issuer_url, client_id, client_secret
 #       (OIDC realm the portal + backend validate against)
 #   studio-web-app        llm_api_key           [required]
 #                         fs_signing_seed       [required, e.g. `openssl rand -base64 32 | tr '+/' '-_'`]
+#                         credstore_key         [strongly recommended: `openssl rand -base64 32`;
+#                                                without it user-typed secrets (repo PATs) die
+#                                                with every pod restart — #66]
 #                         s2s_client_secret     [optional: mini-chat confidential client]
 #                         idp_admin_secret      [optional: Keycloak admin client for invites]
+#   ghcr-pull             kubernetes.io/dockerconfigjson for ghcr.io
+#       (the ghcr packages start private; skip if they are made public)
+#
+# Databases: auto_provision does NOT create Postgres databases (it only
+# provisions SQLite paths). Every per-gear database in config/k8s.yaml must
+# exist before the first boot — one psql pass, idempotent:
+#
+#   psql "$DSN" <<'SQL'
+#   SELECT format('CREATE DATABASE %I OWNER %I', db, current_user)
+#   FROM unnest(ARRAY[
+#     'studio_types_registry','studio_nodes_registry','studio_resource_group',
+#     'studio_account_management','studio_settings','studio_file_storage',
+#     'studio_credstore','studio_credstore_values','studio_mini_chat',
+#     'studio_projects']) AS db
+#   WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = db)\gexec
+#   SQL
 
 global:
   hostname: "studio.dmz.cnstr.me"   # proposal — the `something` part is ours to pick
@@ -32,6 +50,10 @@ backend:
 frontend:
   image:
     tag: "v0.1.0"
+
+# Remove if the ghcr packages are public.
+imagePullSecrets:
+  - name: ghcr-pull
 
 ingress:
   enabled: true
