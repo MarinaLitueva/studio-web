@@ -68,6 +68,14 @@ enum Commands {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    // rustls 0.23 carries both crypto providers in this tree (aws-lc-rs from
+    // credstore/TLS, ring from file-storage/pingora). rustls refuses to pick
+    // a process default when more than one is compiled in, and the kube client
+    // (studio-session's Kubernetes driver) builds its TLS config off that
+    // default — so without this the first API call panics. Pin aws-lc-rs, the
+    // provider the rest of the stack already uses; a no-op if one is set.
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
     // Layered config: defaults -> YAML (env-expanded, #65) -> env (APP__*)
     // -> CLI overrides.
     let mut config = load_config(cli.config.as_ref())?;
