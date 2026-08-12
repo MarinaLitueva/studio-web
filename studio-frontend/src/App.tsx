@@ -56,6 +56,24 @@ interface Workspace extends Tenant {
   orgId: string;
 }
 
+/** What "Open Studio" launches against. A root project passes itself (a
+ *  Workspace is a valid target — it already has id + name). A nested project
+ *  passes its OWN id and its single source as the root repo, so each project
+ *  gets its own session (keyed by id) cloning its own content. The session gear
+ *  treats workspace_id as an opaque per-session key — directory name, pod
+ *  label, idempotency — and does not require it to be a tenant, so no tenant is
+ *  created for a nested project. */
+type StudioTarget = {
+  id: string;
+  name: string;
+  /** Explicit repo set; when omitted the launcher reads workspaceSettings(id). */
+  repos?: RepoEntry[];
+  /** Root repo/path override; when omitted taken from workspaceSettings(id). */
+  root?: { path?: string; repoUrl?: string; branch?: string; tokenRef?: string };
+  /** True when this is a nested project (no workspaceSettings of its own). */
+  standalone?: boolean;
+};
+
 /** Platform tenant administration (organizations, raw workspace list).
  *
  *  Off by default — concept v2 hides the organization level. Kept one
@@ -472,7 +490,7 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
   const [orgs, setOrgs] = useState<Tenant[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [studio, setStudio] = useState<Workspace | null>(null);
+  const [studio, setStudio] = useState<StudioTarget | null>(null);
   const [dash, setDash] = useState<Workspace | null>(null);
   // Spaces: embedded IDE sessions living INSIDE the portal window. Every
   // space keeps its iframe mounted (hidden, not unmounted), so switching
@@ -487,7 +505,7 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
   );
 
   const openSpace = useCallback(
-    (ws: Workspace, session: { id: string; url: string }, activate = true) => {
+    (ws: StudioTarget, session: { id: string; url: string }, activate = true) => {
       setSpaces((prev) =>
         prev.some((s) => s.wsId === ws.id)
           ? prev.map((s) =>
@@ -579,7 +597,7 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
         const session = live.find((s) => s.workspace_id === entry.wsId);
         if (session) {
           openSpace(
-            { id: entry.wsId, name: entry.wsName } as Workspace,
+            { id: entry.wsId, name: entry.wsName },
             session,
             entry.wsId === urlWs,
           );
@@ -1279,7 +1297,7 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
         {studio && (
           <StudioLauncher
             token={token}
-            ws={studio}
+            target={studio}
             onClose={() => setStudio(null)}
             onOpen={(s) => openSpace(studio, s)}
           />
@@ -1607,7 +1625,7 @@ function ProjectsView({
   projectLabel?: string;
   setProjectLabel: (n: string | undefined) => void;
   onChanged: () => void;
-  onOpenStudio: (ws: Workspace) => void;
+  onOpenStudio: (target: StudioTarget) => void;
 }) {
   const root = workspaces.find((w) => w.id === crumb.projectId);
 
@@ -1712,7 +1730,7 @@ function ProjectDetail({
   root: Workspace;
   filters: Filters;
   onBack: () => void;
-  onOpenStudio: (ws: Workspace) => void;
+  onOpenStudio: (target: StudioTarget) => void;
   onOpenNested: (p: Project) => void;
   onChanged: () => void;
 }) {
@@ -1760,7 +1778,13 @@ function ProjectDetail({
             <WorkspaceDashboard token={token} ws={root} embedded onBack={onBack} onOpenStudio={onOpenStudio} />
           )}
           {tab === "nested" && (
-            <WorkspaceProjectsCard token={token} ws={root} onChanged={onChanged} onOpen={onOpenNested} />
+            <WorkspaceProjectsCard
+              token={token}
+              ws={root}
+              onChanged={onChanged}
+              onOpen={onOpenNested}
+              onOpenStudio={onOpenStudio}
+            />
           )}
           {tab === "artifacts" && (
             <ArtifactsView token={token} workspace={root} onOpenStudio={onOpenStudio} />
@@ -1917,7 +1941,7 @@ function WorkspacesView({
   workspaces: Workspace[];
   filters: Filters;
   onChanged: () => void;
-  onOpenStudio: (ws: Workspace) => void;
+  onOpenStudio: (target: StudioTarget) => void;
   /** Drill into a workspace. */
   onOpen: (ws: Workspace) => void;
   /** Off when rendered as a level inside an organization, which has its own. */
@@ -2050,7 +2074,7 @@ function WorkspaceDashboard({
   token: string;
   ws: Workspace;
   onBack: () => void;
-  onOpenStudio: (ws: Workspace) => void;
+  onOpenStudio: (target: StudioTarget) => void;
   /** Rendered inside the workspace row rather than as its own page: the row
    *  already shows the name and carries "Open Studio", so the topbar would be
    *  a second copy of both. */
@@ -2590,6 +2614,7 @@ function WorkspaceProjectsCard({
   ws,
   onChanged,
   onOpen,
+  onOpenStudio,
 }: {
   token: string;
   ws: Workspace;
@@ -2597,6 +2622,9 @@ function WorkspaceProjectsCard({
   /** Drill into the project level. Absent when the card is embedded somewhere
    *  that has no navigation of its own. */
   onOpen?: (p: Project) => void;
+  /** Launch a Studio session for a nested project — its own session (keyed by
+   *  the project id) cloning its own source, independent of the root's. */
+  onOpenStudio?: (target: StudioTarget) => void;
 }) {
   const wsId = ws.id;
   const [projects, setProjects] = useState<Project[] | null>(null);
@@ -2742,6 +2770,22 @@ function WorkspaceProjectsCard({
                     </div>
                     <span className="badge">{p.status}</span>
                     {onOpen && <button onClick={() => onOpen(p)}>Open</button>}
+                    {onOpenStudio && (
+                      <button
+                        className="primary"
+                        title="Open a Studio session for this nested project — its own workspace, cloning its own source"
+                        onClick={() =>
+                          onOpenStudio({
+                            id: p.id,
+                            name: p.name,
+                            standalone: true,
+                            root: p.git_url ? { repoUrl: p.git_url } : undefined,
+                          })
+                        }
+                      >
+                        Open Studio
+                      </button>
+                    )}
                     {p.status === "draft" && (
                       <button onClick={() => void move(p, "active")}>Activate</button>
                     )}
@@ -3005,7 +3049,7 @@ function HomeView({
   workspaces: Workspace[];
   spaces: { wsId: string; wsName: string }[];
   onOpenSpace: (wsId: string) => void;
-  onOpenStudio: (ws: Workspace) => void;
+  onOpenStudio: (target: StudioTarget) => void;
   onOpenDashboard: (ws: Workspace) => void;
   onNavigate: (v: View) => void;
 }) {
@@ -4968,12 +5012,12 @@ function ProfileView({ me, home, token }: { me: Me; home: Tenant | null; token: 
 
 function StudioLauncher({
   token,
-  ws,
+  target,
   onClose,
   onOpen,
 }: {
   token: string;
-  ws: Workspace;
+  target: StudioTarget;
   onClose: () => void;
   /** Opens the session as an embedded space (same window, no new tab). */
   onOpen: (session: { id: string; url: string }) => void;
@@ -4990,11 +5034,17 @@ function StudioLauncher({
   const [error, setError] = useState<string | null>(null);
   const autoLaunched = useRef(false);
 
-  // Sources are bound on the workspace (dashboard → Repositories card);
-  // the launcher just uses them.
+  // A root project reads its sources from workspaceSettings. A nested project
+  // is standalone — it carries its own repos/root on the target (its single
+  // source), and has no workspaceSettings of its own to read.
   useEffect(() => {
+    if (target.standalone) {
+      setRepos(target.repos ?? []);
+      setRoot(target.root ?? {});
+      return;
+    }
     api
-      .workspaceSettings(token, ws.id)
+      .workspaceSettings(token, target.id)
       .then((s) => {
         setRepos(s?.repos ?? []);
         setRoot({
@@ -5005,7 +5055,8 @@ function StudioLauncher({
         });
       })
       .catch(() => setRepos([]));
-  }, [token, ws.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, target.id]);
 
   // No polling needed for opening: the space embeds the session URL right
   // away and the container-side splash keeps the frame alive until Theia
@@ -5030,24 +5081,26 @@ function StudioLauncher({
       // launches without the new sources/targets/token refs.
       let freshRepos = repos ?? [];
       let freshRoot = root;
-      try {
-        const s = await api.workspaceSettings(token, ws.id);
-        freshRepos = s?.repos ?? [];
-        freshRoot = {
-          path: s?.root_path?.trim() || undefined,
-          repoUrl: s?.root_repo_url?.trim() || undefined,
-          branch: s?.root_branch?.trim() || undefined,
-          tokenRef: s?.root_token_ref?.trim() || undefined,
-        };
-        setRepos(freshRepos);
-        setRoot(freshRoot);
-      } catch {
-        // Settings unreachable — fall back to the snapshot we have.
+      if (!target.standalone) {
+        try {
+          const s = await api.workspaceSettings(token, target.id);
+          freshRepos = s?.repos ?? [];
+          freshRoot = {
+            path: s?.root_path?.trim() || undefined,
+            repoUrl: s?.root_repo_url?.trim() || undefined,
+            branch: s?.root_branch?.trim() || undefined,
+            tokenRef: s?.root_token_ref?.trim() || undefined,
+          };
+          setRepos(freshRepos);
+          setRoot(freshRoot);
+        } catch {
+          // Settings unreachable — fall back to the snapshot we have.
+        }
       }
       const usable = freshRepos.filter((r) =>
         r.source === "local" ? Boolean(r.path?.trim()) : Boolean(r.url?.trim()),
       );
-      const s = await api.createStudioSession(token, ws.id, usable, freshRoot);
+      const s = await api.createStudioSession(token, target.id, usable, freshRoot);
       setSession(s);
       // Straight into the embedded space — starting sessions show the
       // in-container splash until the IDE is up.
@@ -5073,9 +5126,7 @@ function StudioLauncher({
   return (
     <div className="card launcher">
       <div className="card-head">
-        <h2>
-          Studio — {ws.name} <span className="sub">({ws.orgName})</span>
-        </h2>
+        <h2>Studio — {target.name}</h2>
         <button className="ghost" onClick={onClose}>
           close
         </button>
