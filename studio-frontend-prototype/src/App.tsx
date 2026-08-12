@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { env as runtimeEnv } from "./env";
+import { errText, matches } from "./format";
+import { ProjectsPortfolio } from "./projects";
+import { PeopleView } from "./people";
+import { StudioAI } from "./studio-ai";
 import {
   api,
   ApiError,
@@ -23,34 +27,74 @@ import {
 } from "./api";
 
 // Portal (личный кабинет): sign in with a bearer token, then an app shell
-// with a sidebar — Workspaces / Organizations / Members / Profile.
-// Selecting a workspace hands off to the Theia-based Studio (/studio/{id}).
+// with a sidebar — Projects / People / Integrations / Profile.
+// Opening a project hands off to the Theia-based Studio (/space/{id}).
+//
+// ── Concept v2 ───────────────────────────────────────────────────────────────
+// A **Project** is the only unit of work the UI knows. What the platform calls
+// a *workspace tenant* IS a project (it owns the sources, the automation level,
+// the people and the IDE sessions); what the `studio-project` gear records are
+// *nested projects* inside it.
+//
+// **Organizations are hidden, not removed.** The organization tenant still
+// exists and still does its two jobs — owning the shared connector catalogue
+// and anchoring the tenant hierarchy — but it is no longer a place you can
+// navigate to, and nobody holds a role in one. The code below keeps every
+// org-shaped seam (`orgId` on a project, org-scoped connections, the tenant
+// admin surfaces) reachable behind a flag, so bringing the level back is a
+// UI decision rather than a re-architecture.
 
-function errText(e: unknown): string {
-  if (e instanceof ApiError) {
-    const b = e.body as { title?: string; detail?: string } | undefined;
-    return `HTTP ${e.status}${b?.title ? ` · ${b.title}` : ""}${b?.detail ? ` — ${b.detail}` : ""}`;
-  }
-  return String(e);
-}
-
+/** The AM tenant behind a root project.
+ *
+ *  Still named `Workspace` on purpose: that is the tenant type the backend
+ *  serves, and renaming the wire word would only hide where the UI's noun and
+ *  the platform's noun disagree. `orgName`/`orgId` stay for the same reason —
+ *  a connection can be attached to the organization instead of the project,
+ *  which is what makes one PAT serve every project of an organization. */
 interface Workspace extends Tenant {
   orgName: string;
-  /// Parent tenant. A connection can be attached to it instead of the
-  /// workspace, which is what makes one PAT serve every workspace of an
-  /// organization.
   orgId: string;
+}
+
+/** What "Open Studio" launches against. A root project passes itself (a
+ *  Workspace is a valid target — it already has id + name). A nested project
+ *  passes its OWN id and its single source as the root repo, so each project
+ *  gets its own session (keyed by id) cloning its own content. The session gear
+ *  treats workspace_id as an opaque per-session key — directory name, pod
+ *  label, idempotency — and does not require it to be a tenant, so no tenant is
+ *  created for a nested project. */
+type StudioTarget = {
+  id: string;
+  name: string;
+  /** Explicit repo set; when omitted the launcher reads workspaceSettings(id). */
+  repos?: RepoEntry[];
+  /** Root repo/path override; when omitted taken from workspaceSettings(id). */
+  root?: { path?: string; repoUrl?: string; branch?: string; tokenRef?: string };
+  /** True when this is a nested project (no workspaceSettings of its own). */
+  standalone?: boolean;
+};
+
+/** Platform tenant administration (organizations, raw workspace list).
+ *
+ *  Off by default — concept v2 hides the organization level. Kept one
+ *  `localStorage.setItem("studio.platformAdmin", "on")` away because the
+ *  hierarchy is still real and someone has to be able to see it. */
+function platformAdminEnabled(): boolean {
+  try {
+    return localStorage.getItem("studio.platformAdmin") === "on";
+  } catch {
+    return false;
+  }
 }
 
 /* ── Filters (right panel) ── */
 
 interface Filters {
   query: string;
-  org: string; // workspaces: filter by organization id
-  selfManagedOnly: boolean; // workspaces
-  sort: "name-asc" | "name-desc"; // workspaces
+  org: string; // platform admin: filter the raw workspace list by organization
+  selfManagedOnly: boolean;
+  sort: "name-asc" | "name-desc";
   model: string; // chats: filter by model_id
-  mode: "all" | "managed" | "self"; // organizations
   sections: { gears: boolean; upstreams: boolean; entities: boolean }; // system
 }
 
@@ -60,28 +104,19 @@ const DEFAULT_FILTERS: Filters = {
   selfManagedOnly: false,
   sort: "name-asc",
   model: "",
-  mode: "all",
   sections: { gears: true, upstreams: true, entities: true },
 };
-
-function matches(q: string, ...fields: (string | undefined | null)[]): boolean {
-  const needle = q.trim().toLowerCase();
-  if (!needle) return true;
-  return fields.some((f) => (f ?? "").toLowerCase().includes(needle));
-}
 
 type PanelView = View | "dashboard";
 
 function activeFilterCount(view: PanelView, f: Filters): number {
   let n = 0;
   if (view !== "system" && view !== "profile" && view !== "dashboard" && f.query.trim()) n++;
-  if (view === "workspaces") {
-    if (f.org) n++;
+  if (view === "projects") {
     if (f.selfManagedOnly) n++;
     if (f.sort !== "name-asc") n++;
   }
   if (view === "chats" && f.model) n++;
-  if (view === "organizations" && f.mode !== "all") n++;
   if (view === "system") n += Object.values(f.sections).filter((v) => !v).length;
   return n;
 }
@@ -280,13 +315,10 @@ function Login({
 
 type View =
   | "home"
-  | "organizations"
-  | "workspaces"
   | "projects"
+  | "people"
   | "chats"
-  | "members"
   | "files"
-  | "secrets"
   | "connectors"
   | "system"
   | "profile";
@@ -365,37 +397,28 @@ function NavIcon({ name }: { name: string }) {
   );
 }
 
-// Sectioned nav (console-style), grouped by the domain model's layers:
-// the CONTROL PLANE (tenant admin hierarchy, working contexts, citizens,
-// credentials), the WORK surfaces, and MONITORING. Projects are NOT a
-// top-level surface — in the model a Project is a managed object living in
-// a workspace's context, managed from the Workspace Dashboard. Profile
-// moved to the bottom account menu.
-// The MAIN portal is pure work (console pattern): administration —
-// organizations, members, secrets — lives in the separate Admin area,
-// reached from the account menu / product switcher.
-/** Where a nav item exists. A workspace section shown while an organization is
- *  selected is a promise the app cannot keep — it can only answer "pick a
- *  workspace first", which is a dead end dressed as a page. */
-type NavScope = "always" | "workspace";
-
+// Sectioned nav (concept v2). Two nouns carry the whole product — Projects and
+// People — and everything that used to need a level above them (organizations,
+// the workspace/project split, "pick a workspace first" dead ends) is gone from
+// the sidebar. Sources, secrets and nested projects are not top-level surfaces:
+// they belong TO a project and live on its page, which is what makes the
+// project the unit rather than a folder you have to select first.
 const NAV_SECTIONS: {
   title: string | null;
-  items: { id: View; icon: string; label: string; scope?: NavScope }[];
+  items: { id: View; icon: string; label: string }[];
 }[] = [
-  { title: null, items: [{ id: "home", icon: "home", label: "Home" }] },
   {
     title: "Work",
     items: [
-      // "Overview" rather than "Organizations": what opens here is the
-      // dashboard of whatever the switcher has selected — an organization
-      // with its workspaces, or a workspace with its own content.
-      { id: "workspaces", icon: "org", label: "Overview" },
-      { id: "projects", icon: "grid", label: "Projects", scope: "workspace" },
-      { id: "chats", icon: "chat", label: "Chats", scope: "workspace" },
-      { id: "files", icon: "file", label: "Files", scope: "workspace" },
-      { id: "connectors", icon: "plug", label: "Connectors", scope: "workspace" },
-      { id: "secrets", icon: "key", label: "Secrets", scope: "workspace" },
+      { id: "projects", icon: "grid", label: "Projects" },
+      { id: "people", icon: "users", label: "People" },
+      // Shared connector catalogue. It is owned by the hidden organization —
+      // which is exactly why it sits here and not inside one project: every
+      // project of the org inherits it. Labelled "Connections" to match the
+      // sidebar in the product mockups.
+      { id: "connectors", icon: "plug", label: "Connections" },
+      { id: "chats", icon: "chat", label: "Chats" },
+      { id: "files", icon: "file", label: "Files" },
     ],
   },
   {
@@ -404,43 +427,46 @@ const NAV_SECTIONS: {
   },
 ];
 
-type AdminView = "organizations" | "members" | "workspaces" | "connectors" | "secrets";
+type AdminView = "people" | "connectors" | "secrets" | "tenants" | "workspaces";
 
+/** Administration that survives concept v2: people, the shared catalogue,
+ *  credentials. The tenant hierarchy (organizations, the raw workspace list)
+ *  appears only when the platform-admin flag is on. */
 const ADMIN_NAV: { id: AdminView; icon: string; label: string }[] = [
-  { id: "organizations", icon: "org", label: "Organization" },
-  { id: "members", icon: "users", label: "Members" },
-  { id: "workspaces", icon: "grid", label: "Workspaces" },
-  // Organization-owned connections. The workspace-level page can only show them
-  // as inherited and read-only: a connection is edited in the tenant that owns
-  // it, and for an organization-scoped PAT that tenant is the organization.
-  { id: "connectors", icon: "plug", label: "Connectors" },
+  { id: "people", icon: "users", label: "People" },
+  { id: "connectors", icon: "plug", label: "Integrations" },
   { id: "secrets", icon: "key", label: "Secrets" },
 ];
 
-function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () => void }) {
-  const [view, setView] = useState<View>("home");
-  /** Position in the organization → workspace → project drill-down. */
-  const [crumb, setCrumb] = useState<Crumb>({});
-  /** Name of the opened project, kept for the crumb: the group is not in any
-   *  list the shell holds, and refetching it for a label would be silly. */
-  const [projectLabel, setProjectLabel] = useState<string | undefined>();
+const PLATFORM_NAV: { id: AdminView; icon: string; label: string }[] = [
+  { id: "tenants", icon: "org", label: "Organizations" },
+  { id: "workspaces", icon: "grid", label: "Project tenants" },
+];
 
-  // Leaving a workspace must not strand you on one of its sections: the item
-  // is gone from the sidebar, so the page would be unreachable and empty.
-  useEffect(() => {
-    const item = NAV_SECTIONS.flatMap((sec) => sec.items).find((i) => i.id === view);
-    if (item?.scope === "workspace" && !crumb.wsId) setView("workspaces");
-  }, [crumb.wsId, view]);
+function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () => void }) {
+  const [view, setView] = useState<View>("projects");
+  /** Position in the project → nested project drill-down. Two levels, one noun. */
+  const [crumb, setCrumb] = useState<Crumb>({});
+  /** Name of the opened nested project, kept for the crumb: the record is not
+   *  in any list the shell holds, and refetching it for a label would be silly. */
+  const [projectLabel, setProjectLabel] = useState<string | undefined>();
   const [accountMenu, setAccountMenu] = useState(false);
   const [productMenu, setProductMenu] = useState(false);
+  // Active organization — the top context, now that the level above projects is
+  // back. Lifted to the shell so the sidebar switcher (where "Home" used to be)
+  // and the portfolio share one selection. null = "resolve a sensible default".
+  const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
+  const [orgNavMenu, setOrgNavMenu] = useState(false);
   // Admin area (console pattern): a separate mode with its own sidebar for
   // organizations / members / workspaces administration.
   const [adminOpen, setAdminOpen] = useState(false);
-  const [adminView, setAdminView] = useState<AdminView>("organizations");
+  const [adminView, setAdminView] = useState<AdminView>("people");
   // Which organization the admin area is scoped to ("__new__" = create hero).
+  // Concept v2 resolves it implicitly; the picker only appears under the flag.
   const [adminOrgId, setAdminOrgId] = useState<string | null>(null);
   const [adminOrgMenu, setAdminOrgMenu] = useState(false);
-  const openAdmin = (v: AdminView = "organizations", orgId?: string) => {
+  const showPlatform = platformAdminEnabled();
+  const openAdmin = (v: AdminView = "people", orgId?: string) => {
     setAdminOpen(true);
     setAdminView(v);
     if (orgId) setAdminOrgId(orgId);
@@ -468,7 +494,7 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
   const [orgs, setOrgs] = useState<Tenant[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [studio, setStudio] = useState<Workspace | null>(null);
+  const [studio, setStudio] = useState<StudioTarget | null>(null);
   const [dash, setDash] = useState<Workspace | null>(null);
   // Spaces: embedded IDE sessions living INSIDE the portal window. Every
   // space keeps its iframe mounted (hidden, not unmounted), so switching
@@ -483,7 +509,7 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
   );
 
   const openSpace = useCallback(
-    (ws: Workspace, session: { id: string; url: string }, activate = true) => {
+    (ws: StudioTarget, session: { id: string; url: string }, activate = true) => {
       setSpaces((prev) =>
         prev.some((s) => s.wsId === ws.id)
           ? prev.map((s) =>
@@ -575,7 +601,7 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
         const session = live.find((s) => s.workspace_id === entry.wsId);
         if (session) {
           openSpace(
-            { id: entry.wsId, name: entry.wsName } as Workspace,
+            { id: entry.wsId, name: entry.wsName },
             session,
             entry.wsId === urlWs,
           );
@@ -715,6 +741,46 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
     (home?.tenant_type === TENANT_TYPES.organization ? (home as Tenant) : orgs[0]) ??
     null;
 
+  /** The organization concept v2 hides.
+   *
+   *  It is still where a new project is created and still owns the shared
+   *  connector catalogue — the UI simply never names it. Resolution order: the
+   *  one the platform-admin picker selected, your home tenant when that IS an
+   *  organization, the first organization you can see, else your home tenant
+   *  (single-tenant deployments put projects straight under the root). */
+  const implicitOrgId = adminOrg?.id ?? home?.id ?? null;
+  /** Shaped like a project so the connector surfaces — written against "a
+   *  tenant that owns a catalogue" — can be pointed at the organization. */
+  const orgAsSpace: Workspace | null = adminOrg
+    ? { ...adminOrg, orgId: adminOrg.id, orgName: adminOrg.name }
+    : home
+      ? { ...home, orgId: home.id, orgName: home.name }
+      : null;
+
+  // The organizations offered in the switcher: every one that holds projects
+  // (derived from the loaded workspaces, which carry orgId/orgName) plus any
+  // other visible, accessible org — so a freshly created, still-empty org is
+  // switchable straight away. Self-managed orgs are barriered (no children
+  // reachable), so they only appear if they already own a project here.
+  const orgOptions = (() => {
+    const m = new Map<string, { id: string; name: string }>();
+    for (const w of workspaces) if (w.orgId) m.set(w.orgId, { id: w.orgId, name: w.orgName });
+    for (const o of orgs) if (!o.self_managed && !m.has(o.id)) m.set(o.id, { id: o.id, name: o.name });
+    if (m.size === 0 && implicitOrgId) m.set(implicitOrgId, { id: implicitOrgId, name: home?.name ?? "Organization" });
+    return Array.from(m.values());
+  })();
+  // Resolve the active org. Honour an explicit pick, else default to one that
+  // actually CONTAINS projects — never an empty sibling, which is what made the
+  // portfolio read as "nothing here".
+  const orgsWithProjects = new Set(workspaces.map((w) => w.orgId));
+  const activeOrgResolvedId =
+    (activeOrgId && orgOptions.some((o) => o.id === activeOrgId) ? activeOrgId : null) ??
+    orgOptions.find((o) => orgsWithProjects.has(o.id))?.id ??
+    orgOptions[0]?.id ??
+    implicitOrgId ??
+    null;
+  const activeOrg = orgOptions.find((o) => o.id === activeOrgResolvedId) ?? null;
+
   const panelView: PanelView = dash ? "dashboard" : view;
 
   const refresh = useCallback(async () => {
@@ -777,8 +843,8 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
             product family — API docs and the IdP admin are the real others. */}
         <div className="wordmark product-switch">
           <button className="product-button" onClick={() => setProductMenu((v) => !v)}>
-            <div className="logo">S</div>
-            <strong>Studio</strong>
+            <div className="logo">CS</div>
+            <strong>Constructor Studio</strong>
             <span className="chev">▾</span>
           </button>
           <button
@@ -819,7 +885,9 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
                   <span className="ico">←</span> Back to Studio
                 </button>
               </div>
-              {/* Org selector: every admin view below is scoped to it. */}
+              {/* Org selector: only under the platform flag — concept v2
+                  resolves the organization implicitly. */}
+              {showPlatform && (
               <div className="nav-section org-select-wrap">
                 <button className="org-select" onClick={() => setAdminOrgMenu((v) => !v)}>
                   <span className="account-avatar small">
@@ -847,7 +915,7 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
                     <button
                       onClick={() => {
                         setAdminOrgId("__new__");
-                        setAdminView("organizations");
+                        setAdminView("tenants");
                         setAdminOrgMenu(false);
                       }}
                     >
@@ -856,6 +924,7 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
                   </div>
                 )}
               </div>
+              )}
               <div className="nav-section">
                 <div className="nav-section-title admin-title">Administration</div>
                 {ADMIN_NAV.map((n) => (
@@ -869,6 +938,21 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
                   </button>
                 ))}
               </div>
+              {showPlatform && (
+                <div className="nav-section">
+                  <div className="nav-section-title admin-title">Platform (tenant hierarchy)</div>
+                  {PLATFORM_NAV.map((n) => (
+                    <button
+                      key={n.id}
+                      className={adminView === n.id ? "active" : ""}
+                      title="The organization level concept v2 hides — still real, still administrable"
+                      onClick={() => setAdminView(n.id)}
+                    >
+                      <span className="ico"><NavIcon name={n.icon} /></span> {n.label}
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="nav-section">
                 <div className="nav-section-title admin-title">IdP</div>
                 <button
@@ -880,21 +964,73 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
               </div>
             </>
           ) : (
-            NAV_SECTIONS.map((sec) => {
-              // Workspace sections disappear while an organization is selected:
-              // the level decides what exists, so the sidebar always matches
-              // what the switcher says you are looking at.
-              const items = sec.items.filter((n) => n.scope !== "workspace" || crumb.wsId);
-              if (items.length === 0) return null;
+            <>
+            {/* Organization switcher — sits where "Home" used to, because the
+                organization IS the home context: pick one and its projects
+                open. A static pill when there is only one; creation lives in
+                the account menu below. */}
+            <div className="nav-section org-nav">
+              <div className="org-select-wrap">
+                <button
+                  type="button"
+                  className="org-select"
+                  disabled={orgOptions.length <= 1}
+                  title={activeOrg?.name ?? "Organization"}
+                  onClick={() => setOrgNavMenu((v) => !v)}
+                >
+                  <span className="account-avatar small">
+                    {(activeOrg?.name ?? "?").slice(0, 1).toUpperCase()}
+                  </span>
+                  <span className="org-select-name">{activeOrg?.name ?? "Select organization"}</span>
+                  {orgOptions.length > 1 && <span className="chev">▾</span>}
+                </button>
+                {orgNavMenu && orgOptions.length > 1 && (
+                  <div className="org-menu">
+                    {orgOptions.map((o) => (
+                      <button
+                        key={o.id}
+                        type="button"
+                        onClick={() => {
+                          setActiveOrgId(o.id);
+                          setCrumb({});
+                          setView("projects");
+                          setActiveSpace(null);
+                          setOrgNavMenu(false);
+                        }}
+                      >
+                        <span className="account-avatar small">{o.name.slice(0, 1).toUpperCase()}</span>
+                        {o.name}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      className="org-new"
+                      title="Create an organization in the account menu"
+                      onClick={() => {
+                        setOrgNavMenu(false);
+                        setAccountMenu(true);
+                      }}
+                    >
+                      ＋ New organization
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+            {NAV_SECTIONS.map((sec) => {
+              // Every item exists unconditionally now: nothing in the sidebar
+              // depends on having picked a container first.
+              const items = sec.items;
               return (
-              <div key={sec.title ?? "_top"} className="nav-section">
+              <div
+                key={sec.title ?? "_top"}
+                className={`nav-section${sec.title ? ` nav-section-${sec.title.toLowerCase()}` : ""}`}
+              >
                 {sec.title && (
                   <div className="nav-section-title">
-                    {sec.title === "Work" && crumb.wsId
-                      ? workspaces.find((w) => w.id === crumb.wsId)?.name ?? sec.title
-                      : sec.title === "Work" && crumb.orgId
-                        ? orgs.find((o) => o.id === crumb.orgId)?.name ?? sec.title
-                        : sec.title}
+                    {sec.title === "Work" && crumb.projectId
+                      ? workspaces.find((w) => w.id === crumb.projectId)?.name ?? sec.title
+                      : sec.title}
                   </div>
                 )}
                 {items.map((n) => (
@@ -912,7 +1048,8 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
                 ))}
               </div>
               );
-            })
+            })}
+            </>
           )}
           {spaces.length > 0 && (
             <div className="nav-spaces">
@@ -983,23 +1120,23 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
                 <button onClick={onLogout}>Sign out</button>
               </div>
 
-              {/* Right: where you are working. Workspaces belong to the
-                  organization above them rather than sharing one flat column,
-                  because that is the actual containment. */}
+              {/* Right: where you are working — organizations first, then the
+                  projects of the one in context. The level above projects is
+                  back, so the menu groups by it instead of a flat column. */}
               <ContextPane
                 token={token}
-                home={home}
-                orgs={orgs}
+                orgs={orgOptions}
+                homeId={home?.id ?? null}
+                createOrgId={implicitOrgId}
                 workspaces={workspaces}
                 crumb={crumb}
                 onPick={(next) => {
                   setAdminOpen(false);
                   setCrumb(next);
-                  setView("workspaces");
+                  setView("projects");
                   setActiveSpace(null);
                   setAccountMenu(false);
                 }}
-                onAdminOrg={(id) => openAdmin("organizations", id)}
                 onChanged={() => void refresh()}
               />
             </div>
@@ -1015,8 +1152,7 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
               {/* The context lives here, next to the identity — the two
                   questions "who am I" and "where am I" get one answer spot. */}
               <span className="scope-line">
-                {workspaces.find((w) => w.id === crumb.wsId)?.name ??
-                  orgs.find((o) => o.id === crumb.orgId)?.name ??
+                {workspaces.find((w) => w.id === crumb.projectId)?.name ??
                   userEmail ??
                   home?.name ??
                   ""}
@@ -1113,10 +1249,12 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
       </div>
 
       <div className="content" style={activeSpace ? { display: "none" } : undefined}>
+        {/* Floating assistant, bottom-right, on every portal screen (mockups). */}
+        <StudioAI token={token} />
         {error && <div className="error">{error}</div>}
         {adminOpen ? (
           <>
-            {adminView === "organizations" && (
+            {adminView === "tenants" && (
               <OrganizationsView
                 token={token}
                 homeId={me.subject_tenant_id}
@@ -1129,14 +1267,16 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
                 onNew={() => setAdminOrgId("__new__")}
               />
             )}
-            {adminView === "members" && (
-              <MembersView
+            {adminView === "people" && (
+              <PeopleView
                 token={token}
-                home={home}
-                orgs={orgs}
-                workspaces={workspaces}
-                filters={filters}
-                fixedTenantId={adminOrg?.id ?? null}
+                roots={workspaces}
+                query={filters.query}
+                onOpenProject={(id) => {
+                  setAdminOpen(false);
+                  setCrumb({ projectId: id });
+                  setView("projects");
+                }}
               />
             )}
             {adminView === "workspaces" && (
@@ -1151,31 +1291,27 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
                   setStudio(ws);
                 }}
                 onOpen={(ws) => {
-                  // Admin lists workspaces across the platform; opening one
-                  // hands over to the normal drill-down rather than growing a
-                  // second workspace page inside the admin zone.
+                  // The platform list is the raw tenant view; opening a row hands
+                  // over to the normal project page rather than growing a second
+                  // project surface inside the admin zone.
                   setAdminOpen(false);
-                  setCrumb({ orgId: ws.orgId, wsId: ws.id });
-                  setView("workspaces");
+                  setCrumb({ projectId: ws.id });
+                  setView("projects");
                 }}
               />
             )}
             {adminView === "connectors" &&
-              (adminOrg ? (
+              (orgAsSpace ? (
                 /* ConnectorsView is written against a tenant that owns a
-                   connection catalogue, which an organization is. Passing the
-                   organization in the workspace slot makes `inherited` false for
-                   its own rows, so the Edit button is enabled here — which is the
-                   whole point of this section. */
-                <ConnectorsView
-                  token={token}
-                  workspace={{ ...adminOrg, orgId: adminOrg.id, orgName: adminOrg.name }}
-                  filters={filters}
-                />
+                   connection catalogue, which the organization is. Passing it in
+                   the project slot makes `inherited` false for its own rows, so
+                   the Edit button is enabled here — the whole point of this
+                   section, and the reason the org level survives in the model. */
+                <ConnectorsView token={token} workspace={orgAsSpace} filters={filters} />
               ) : (
                 <div className="card">
-                  <h2>Connectors</h2>
-                  <p className="empty">Select an organization first.</p>
+                  <h2>Integrations</h2>
+                  <p className="empty">No tenant to hold the shared catalogue yet.</p>
                 </div>
               ))}
             {adminView === "secrets" && <SecretsView token={token} workspaces={workspaces} filters={filters} />}
@@ -1189,18 +1325,30 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
           />
         ) : (
           <>
-        {view === "workspaces" && (
-          <BrowseView
+        {view === "projects" && (
+          <ProjectsView
             token={token}
-            home={home}
-            orgs={orgs}
             workspaces={workspaces}
+            orgId={activeOrgResolvedId}
+            activeOrg={activeOrg}
             filters={filters}
             crumb={crumb}
             setCrumb={setCrumb}
             projectLabel={projectLabel}
+            setProjectLabel={setProjectLabel}
             onChanged={refresh}
             onOpenStudio={setStudio}
+          />
+        )}
+        {view === "people" && (
+          <PeopleView
+            token={token}
+            roots={workspaces}
+            query={filters.query}
+            onOpenProject={(id) => {
+              setCrumb({ projectId: id });
+              setView("projects");
+            }}
           />
         )}
         {view === "home" && (
@@ -1216,42 +1364,19 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
             onNavigate={setView}
           />
         )}
-        {view === "secrets" && (
-          <WorkspaceSectionView
-            title="Secrets"
-            ws={workspaces.find((w) => w.id === crumb.wsId) ?? null}
-          >
-            {(ws) => <SecretsView token={token} workspaces={[ws]} filters={filters} />}
-          </WorkspaceSectionView>
-        )}
-        {view === "projects" && (
-          <WorkspaceSectionView
-            title="Projects"
-            ws={workspaces.find((w) => w.id === crumb.wsId) ?? null}
-          >
-            {(ws) => (
-              <WorkspaceProjectsCard
-                token={token}
-                ws={ws}
-                onChanged={() => void refresh()}
-                onOpen={(p) => {
-                  setProjectLabel(p.name);
-                  setCrumb({ orgId: ws.orgId, wsId: ws.id, projectId: p.id });
-                  setView("workspaces");
-                }}
-              />
-            )}
-          </WorkspaceSectionView>
-        )}
-        {view === "connectors" && (
-          <WorkspaceSectionView
-            title="Connectors"
-            ws={workspaces.find((w) => w.id === crumb.wsId) ?? null}
-          >
-            {(ws) => <ConnectorsView token={token} workspace={ws} filters={filters} />}
-          </WorkspaceSectionView>
-        )}
-        {/* organizations/members render only inside the Admin area now. */}
+        {view === "connectors" &&
+          (orgAsSpace ? (
+            <ConnectorsView token={token} workspace={orgAsSpace} filters={filters} />
+          ) : (
+            <div className="card">
+              <h2>Connections</h2>
+              <p className="empty">
+                No shared catalogue tenant yet — you can still add a connector inside a project on
+                its Sources tab.
+              </p>
+            </div>
+          ))}
+        {/* The tenant hierarchy renders only inside the Admin area, under the flag. */}
         {view === "chats" && <ChatsView token={token} filters={filters} />}
         {view === "files" && <FilesView token={token} filters={filters} />}
         {view === "system" && <SystemView token={token} filters={filters} />}
@@ -1261,7 +1386,7 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
         {studio && (
           <StudioLauncher
             token={token}
-            ws={studio}
+            target={studio}
             onClose={() => setStudio(null)}
             onOpen={(s) => openSpace(studio, s)}
           />
@@ -1276,7 +1401,6 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
           onChange={setFilters}
           open={panelOpen}
           onToggle={() => setPanelOpen((v) => !v)}
-          orgs={orgs}
         />
       )}
     </div>
@@ -1292,7 +1416,6 @@ function FilterPanel({
   onChange,
   open,
   onToggle,
-  orgs,
 }: {
   view: PanelView;
   token: string;
@@ -1300,7 +1423,6 @@ function FilterPanel({
   onChange: (f: Filters) => void;
   open: boolean;
   onToggle: () => void;
-  orgs: Tenant[];
 }) {
   const [models, setModels] = useState<import("./api").Model[]>([]);
 
@@ -1364,19 +1486,8 @@ function FilterPanel({
             </div>
           )}
 
-          {view === "workspaces" && (
+          {view === "projects" && (
             <>
-              <div className="filter-group">
-                <span className="lbl">Organization</span>
-                <select value={filters.org} onChange={(e) => set({ org: e.target.value })}>
-                  <option value="">All organizations</option>
-                  {orgs.map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {o.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
               <div className="filter-group">
                 <span className="lbl">Mode</span>
                 <div className="chipset">
@@ -1416,24 +1527,6 @@ function FilterPanel({
             </div>
           )}
 
-          {view === "organizations" && (
-            <div className="filter-group">
-              <span className="lbl">Mode</span>
-              <div className="chipset">
-                {(["all", "managed", "self"] as const).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    className={`chip ${filters.mode === m ? "on" : ""}`}
-                    onClick={() => set({ mode: m })}
-                  >
-                    {m === "self" ? "self-managed" : m}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
           {view === "system" && (
             <div className="filter-group">
               <span className="lbl">Sections</span>
@@ -1459,84 +1552,76 @@ function FilterPanel({
   );
 }
 
-/* ── Workspaces ── */
+/* ── Projects ── */
 
-/** A sidebar section that only means anything inside a workspace.
- *
- *  Connectors, Projects and friends are workspace-scoped now, so instead of
- *  each growing its own workspace picker — a second answer to a question the
- *  account switcher already answers — they refuse to render without one and
- *  say where to choose it. */
-function WorkspaceSectionView({
-  title,
-  ws,
-  children,
-}: {
-  title: string;
-  ws: Workspace | null;
-  children: (ws: Workspace) => React.ReactNode;
-}) {
-  if (!ws) {
-    return (
-      <>
-        <h1>{title}</h1>
-        <p className="empty">
-          Pick a workspace first — the switcher at the bottom of the sidebar, under your name.
-        </p>
-      </>
-    );
-  }
-  return <>{children(ws)}</>;
-}
 /** The right pane of the account popover: pick where you are working.
  *
- *  Organizations first, then the workspaces OF the selected organization —
- *  not one flat column, because a workspace only exists inside an organization
- *  and a list that hides that makes people pick the wrong one. */
+ *  Organizations first, then the projects OF the one in context — the level
+ *  above a project is back, so the menu groups by it instead of showing one
+ *  flat column. The organization list is derived from the loaded projects, so
+ *  an org with nothing in it never appears here empty. */
 function ContextPane({
   token,
-  home,
   orgs,
+  homeId,
+  createOrgId,
   workspaces,
   crumb,
   onPick,
-  onAdminOrg,
   onChanged,
 }: {
   token: string;
-  home: Tenant | null;
-  orgs: Tenant[];
+  /** Organizations that group the projects — derived from the loaded set. */
+  orgs: { id: string; name: string }[];
+  /** Parent tenant a brand-new organization is created under (the home root). */
+  homeId: string | null;
+  /** Fallback parent for a brand-new project when no org is in context. */
+  createOrgId: string | null;
   workspaces: Workspace[];
   crumb: Crumb;
   onPick: (c: Crumb) => void;
-  onAdminOrg: (id: string) => void;
   onChanged: () => void;
 }) {
   const [q, setQ] = useState("");
+  // Which creator is open, if any — a new organization, or a new project.
   const [adding, setAdding] = useState<"org" | "ws" | null>(null);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Which organization's projects to show. Defaults to the org owning the
+  // project in context, else the first org that actually has projects — never
+  // an empty one, even though empty orgs are still listed and selectable.
+  const [pickedOrg, setPickedOrg] = useState<string | null>(null);
+  const ownerOrgId = workspaces.find((w) => w.id === crumb.projectId)?.orgId;
+  const activeOrgId =
+    pickedOrg ??
+    ownerOrgId ??
+    orgs.find((o) => workspaces.some((w) => w.orgId === o.id))?.id ??
+    orgs[0]?.id ??
+    null;
 
-  // Which organization's workspaces to show: the one in context, else the one
-  // owning the workspace in context, else the first.
-  const activeOrgId = crumb.orgId ?? workspaces.find((w) => w.id === crumb.wsId)?.orgId ?? orgs[0]?.id;
   const orgList = orgs.filter((o) => matches(q, o.name));
-  const wsList = workspaces.filter((w) => w.orgId === activeOrgId && matches(q, w.name));
+  const list = workspaces
+    .filter((w) => (activeOrgId ? w.orgId === activeOrgId : true) && matches(q, w.name))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   async function create(kind: "org" | "ws") {
-    const parent = kind === "org" ? home?.id : activeOrgId;
+    // An organization is created under the home root; a project under the org
+    // currently in context (falling back to the implicit one).
+    const parent = kind === "org" ? homeId : activeOrgId ?? createOrgId;
     if (!parent || !name.trim()) return;
     setBusy(true);
     setError(null);
     try {
-      await api.createTenant(token, {
+      const created = await api.createTenant(token, {
         name: name.trim(),
         parent_id: parent,
         tenant_type: kind === "org" ? TENANT_TYPES.organization : TENANT_TYPES.workspace,
       });
       setName("");
       setAdding(null);
+      // Jump straight into a freshly created org so the user can fill it.
+      if (kind === "org" && created?.id) setPickedOrg(created.id);
       onChanged();
     } catch (e) {
       setError(errText(e));
@@ -1555,11 +1640,12 @@ function ContextPane({
       />
 
       <div className="ctx-head">
-        <span>Your organizations</span>
+        <span>Organizations</span>
         <button
           type="button"
           title="New organization"
-          onClick={() => setAdding(adding === "org" ? null : "org")}
+          disabled={!homeId}
+          onClick={() => setAdding((v) => (v === "org" ? null : "org"))}
         >
           +
         </button>
@@ -1582,31 +1668,20 @@ function ContextPane({
       )}
       {orgList.map((o) => (
         <div key={o.id} className={`ctx-row${activeOrgId === o.id ? " on" : ""}`}>
-          <button type="button" className="grow" onClick={() => onPick({ orgId: o.id })}>
+          <button type="button" className="grow" onClick={() => setPickedOrg(o.id)}>
             <span className="account-avatar small">{o.name.slice(0, 1).toUpperCase()}</span>
             {o.name}
-            {o.self_managed && <span className="badge selfmanaged">🔒</span>}
-          </button>
-          {/* The gear is administration, deliberately a separate target from
-              the row that only switches context. */}
-          <button
-            type="button"
-            className="ctx-gear"
-            title="Administer this organization"
-            onClick={() => onAdminOrg(o.id)}
-          >
-            ⚙
           </button>
         </div>
       ))}
 
       <div className="ctx-head">
-        <span>Workspaces</span>
+        <span>Projects</span>
         <button
           type="button"
-          title="New workspace"
-          disabled={!activeOrgId}
-          onClick={() => setAdding(adding === "ws" ? null : "ws")}
+          title="New project"
+          disabled={!activeOrgId && !createOrgId}
+          onClick={() => setAdding((v) => (v === "ws" ? null : "ws"))}
         >
           +
         </button>
@@ -1615,7 +1690,7 @@ function ContextPane({
         <div className="ctx-add">
           <input
             autoFocus
-            placeholder="Workspace name"
+            placeholder="Project name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => {
@@ -1627,16 +1702,12 @@ function ContextPane({
           </button>
         </div>
       )}
-      {wsList.length === 0 ? (
-        <p className="empty">No workspaces here yet.</p>
+      {list.length === 0 ? (
+        <p className="empty">No projects yet.</p>
       ) : (
-        wsList.map((w) => (
-          <div key={w.id} className={`ctx-row${crumb.wsId === w.id ? " on" : ""}`}>
-            <button
-              type="button"
-              className="grow"
-              onClick={() => onPick({ orgId: w.orgId, wsId: w.id })}
-            >
+        list.map((w) => (
+          <div key={w.id} className={`ctx-row${crumb.projectId === w.id ? " on" : ""}`}>
+            <button type="button" className="grow" onClick={() => onPick({ projectId: w.id })}>
               <span className="account-avatar small">{w.name.slice(0, 1).toUpperCase()}</span>
               {w.name}
             </button>
@@ -1647,19 +1718,19 @@ function ContextPane({
     </div>
   );
 }
-/* ── Browse: organization → workspace drill-down ───────────────────────────
+
+/* ── Project drill-down ────────────────────────────────────────────────────────
  *
- * The portal's spine. Every level shows what it contains and what it owns, and
- * the crumb says where you are — instead of a flat set of screens where
- * "Connectors" and "Secrets" floated free of the thing they belong to.
- * Projects become the level below a workspace.
+ * Two levels of the same noun: the portfolio, then one project, then a nested
+ * project inside it. The level above (organizations) is gone from navigation —
+ * see the concept note at the top of this file for what survived in the model.
  */
 
 interface Crumb {
-  orgId?: string;
-  wsId?: string;
-  /** Resource-Group id of the project (ADR-0002) — the level below a workspace. */
+  /** Root project: the AM tenant of type `workspace`. */
   projectId?: string;
+  /** Nested project: the `studio-project` gear record inside it. */
+  nestedId?: string;
 }
 
 function Breadcrumbs({
@@ -1685,324 +1756,342 @@ function Breadcrumbs({
   );
 }
 
-function BrowseView({
+function ProjectsView({
   token,
-  home,
-  orgs,
   workspaces,
+  orgId,
+  activeOrg,
   filters,
   crumb,
   setCrumb,
   projectLabel,
+  setProjectLabel,
   onChanged,
   onOpenStudio,
 }: {
   token: string;
-  home: Tenant | null;
-  orgs: Tenant[];
   workspaces: Workspace[];
+  /** Active organization, chosen in the sidebar switcher and resolved by the
+   *  shell to one that actually holds projects. New projects are created here. */
+  orgId: string | null;
+  activeOrg: { id: string; name: string } | null;
   filters: Filters;
   crumb: Crumb;
   setCrumb: (c: Crumb) => void;
-  /** Label for the project crumb, remembered when the project was opened. */
   projectLabel?: string;
+  setProjectLabel: (n: string | undefined) => void;
   onChanged: () => void;
-  onOpenStudio: (ws: Workspace) => void;
+  onOpenStudio: (target: StudioTarget) => void;
 }) {
-  const org = orgs.find((o) => o.id === crumb.orgId);
-  const ws = workspaces.find((w) => w.id === crumb.wsId);
-  // The project name is not in any list we already hold, so the crumb carries
-  // it: cheaper and steadier than refetching the group for a label.
-  const projectName = crumb.projectId ? projectLabel : undefined;
+  // The organization is now chosen in the sidebar, so the portfolio just shows
+  // the projects of the one in context.
+  const orgRoots = workspaces.filter((w) => w.orgId === orgId);
+
+  const root = workspaces.find((w) => w.id === crumb.projectId);
+
+  if (!root) {
+    return (
+      <ProjectsPortfolio
+        token={token}
+        roots={orgRoots}
+        org={activeOrg}
+        query={filters.query}
+        selfManagedOnly={filters.selfManagedOnly}
+        sort={filters.sort}
+        homeOrgId={orgId}
+        onOpen={(r) => setCrumb({ projectId: r.id })}
+        onOpenNested={(r, p) => {
+          setProjectLabel(p.name);
+          setCrumb({ projectId: r.id, nestedId: p.id });
+        }}
+        onOpenStudio={(r) => {
+          const ws = workspaces.find((w) => w.id === r.id);
+          if (ws) onOpenStudio(ws);
+        }}
+        onOpenStudioNested={(_root, p) =>
+          onOpenStudio({
+            id: p.id,
+            name: p.name,
+            standalone: true,
+            root: p.git_url ? { repoUrl: p.git_url } : undefined,
+          })
+        }
+        onChanged={onChanged}
+      />
+    );
+  }
 
   const trail: { label: string; onClick?: () => void }[] = [
-    { label: "Organizations", onClick: org ? () => setCrumb({}) : undefined },
+    ...(activeOrg ? [{ label: activeOrg.name, onClick: () => setCrumb({}) }] : []),
+    { label: "Projects", onClick: () => setCrumb({}) },
+    {
+      label: root.name,
+      onClick: crumb.nestedId ? () => setCrumb({ projectId: root.id }) : undefined,
+    },
   ];
-  if (org) {
-    trail.push({
-      label: org.name,
-      onClick: ws ? () => setCrumb({ orgId: org.id }) : undefined,
-    });
-  }
-  if (ws) {
-    trail.push({
-      label: ws.name,
-      onClick: crumb.projectId ? () => setCrumb({ orgId: org?.id, wsId: ws.id }) : undefined,
-    });
-  }
-  if (crumb.projectId && ws) trail.push({ label: projectName ?? "project" });
+  if (crumb.nestedId) trail.push({ label: projectLabel ?? "work" });
 
   return (
     <>
       <Breadcrumbs items={trail} />
-      {!org ? (
-        <OrganizationsLevel
+      {crumb.nestedId ? (
+        <NestedProjectLevel
+          key={crumb.nestedId}
           token={token}
-          home={home}
-          orgs={orgs}
-          workspaces={workspaces}
-          filters={filters}
-          onChanged={onChanged}
-          onOpen={(o) => setCrumb({ orgId: o.id })}
+          root={root}
+          nestedId={crumb.nestedId}
+          fallbackName={projectLabel}
+          onBack={() => setCrumb({ projectId: root.id })}
         />
-      ) : !ws ? (
-        <OrganizationLevel
-          token={token}
-          org={org}
-          workspaces={workspaces.filter((w) => w.orgId === org.id)}
-          filters={filters}
-          onChanged={onChanged}
-          onOpenStudio={onOpenStudio}
-          onOpenWorkspace={(w) => setCrumb({ orgId: org.id, wsId: w.id })}
-          onDeleted={() => {
-            setCrumb({});
-            onChanged();
-          }}
-        />
-      ) : crumb.projectId ? (
-        <ProjectLevel name={projectName ?? "Project"} ws={ws} />
       ) : (
-        <WorkspaceLevel
+        <ProjectDetail
+          key={root.id}
           token={token}
-          ws={ws}
+          root={root}
+          filters={filters}
+          onBack={() => setCrumb({})}
           onOpenStudio={onOpenStudio}
-          onBack={() => setCrumb({ orgId: org.id })}
+          onOpenNested={(p) => {
+            setProjectLabel(p.name);
+            setCrumb({ projectId: root.id, nestedId: p.id });
+          }}
+          onChanged={onChanged}
         />
       )}
     </>
   );
 }
 
-/** Level 0 — the organizations you can see, and creating one. */
-function OrganizationsLevel({
+/** Tabs of one project. Everything a project owns is here — that is what makes
+ *  it the unit of work rather than a container you have to select first. */
+type ProjectTab = "overview" | "nested" | "artifacts" | "people" | "integrations" | "secrets";
+
+/** Left workbench nav, grouped like the mockups. Ids are unchanged (the content
+ *  switch below still keys off them); only the labels and layout moved. */
+const PROJECT_NAV: { group: string; items: { id: ProjectTab; label: string }[] }[] = [
+  {
+    group: "Project",
+    items: [
+      { id: "overview", label: "Overview" },
+      { id: "nested", label: "Works" },
+      { id: "artifacts", label: "Artifacts" },
+      { id: "people", label: "Team" },
+    ],
+  },
+  {
+    group: "Project setup",
+    items: [
+      { id: "integrations", label: "Connectors" },
+      { id: "secrets", label: "Secrets" },
+    ],
+  },
+];
+
+function ProjectDetail({
   token,
-  home,
-  orgs,
-  workspaces,
+  root,
   filters,
-  onChanged,
-  onOpen,
-}: {
-  token: string;
-  home: Tenant | null;
-  orgs: Tenant[];
-  workspaces: Workspace[];
-  filters: Filters;
-  onChanged: () => void;
-  onOpen: (o: Tenant) => void;
-}) {
-  const [name, setName] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const visible = orgs.filter((o) => matches(filters.query, o.name));
-
-  async function create(e: FormEvent) {
-    e.preventDefault();
-    if (!home) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await api.createTenant(token, {
-        name,
-        parent_id: home.id,
-        tenant_type: TENANT_TYPES.organization,
-      });
-      setName("");
-      onChanged();
-    } catch (err) {
-      setError(errText(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <>
-      <h1>Organizations</h1>
-      <p className="subtitle">
-        An organization owns workspaces, the people in them, and the connectors they share. Open one
-        to work inside it.
-      </p>
-      <div className="card">
-        {visible.length === 0 ? (
-          <p className="empty">No organizations yet — create the first one below.</p>
-        ) : (
-          <ul className="rows">
-            {visible.map((o) => {
-              const count = workspaces.filter((w) => w.orgId === o.id).length;
-              return (
-                <li key={o.id}>
-                  <div
-                    className="grow"
-                    style={{ cursor: "pointer" }}
-                    onClick={() => onOpen(o)}
-                    title="Open this organization"
-                  >
-                    <div className="name">{o.name}</div>
-                    <div className="sub">
-                      {count} workspace{count === 1 ? "" : "s"}
-                    </div>
-                  </div>
-                  {o.self_managed && <span className="badge selfmanaged">self-managed</span>}
-                  <button onClick={() => onOpen(o)}>Open</button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-        <form className="inline" onSubmit={create}>
-          <input
-            placeholder="New organization name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <button className="primary" disabled={busy || !name || !home}>
-            Create
-          </button>
-        </form>
-        {error && <div className="error">{error}</div>}
-      </div>
-    </>
-  );
-}
-
-/** Level 1 — one organization: its workspaces, and what it owns for all of them. */
-function OrganizationLevel({
-  token,
-  org,
-  workspaces,
-  filters,
-  onChanged,
-  onOpenStudio,
-  onOpenWorkspace,
-  onDeleted,
-}: {
-  token: string;
-  org: Tenant;
-  workspaces: Workspace[];
-  filters: Filters;
-  onChanged: () => void;
-  onOpenStudio: (ws: Workspace) => void;
-  onOpenWorkspace: (ws: Workspace) => void;
-  onDeleted: () => void;
-}) {
-  const [error, setError] = useState<string | null>(null);
-
-  async function remove() {
-    if (workspaces.length > 0) {
-      window.alert(
-        `“${org.name}” still has ${workspaces.length} workspace(s). Delete them first — an ` +
-          `organization is not a folder you can drop with its contents inside.`,
-      );
-      return;
-    }
-    if (!window.confirm(`Delete organization “${org.name}”? This cannot be undone.`)) return;
-    try {
-      await api.deleteTenant(token, org.id);
-      onDeleted();
-    } catch (err) {
-      setError(errText(err));
-    }
-  }
-
-  return (
-    <>
-      <div className="topbar">
-        <div>
-          <h1>{org.name}</h1>
-          <p className="subtitle" style={{ margin: 0 }}>
-            organization · <code>{org.id.slice(0, 8)}…</code>
-          </p>
-        </div>
-      </div>
-      {error && <div className="error">{error}</div>}
-
-      <WorkspacesView
-        token={token}
-        orgs={[org]}
-        workspaces={workspaces}
-        filters={filters}
-        heading={false}
-        onChanged={onChanged}
-        onOpenStudio={onOpenStudio}
-        onOpen={onOpenWorkspace}
-      />
-
-      <div className="card">
-        <h2>Danger zone</h2>
-        <p className="hint">
-          Deleting an organization is only possible once it is empty — the backend enforces it too,
-          this button just says so before you find out from a 409.
-        </p>
-        <button className="ghost" onClick={() => void remove()}>
-          Delete organization
-        </button>
-      </div>
-    </>
-  );
-}
-
-/** Level 3 — one project inside a workspace.
- *
- *  A placeholder with an honest boundary: a project today is a Resource Group
- *  (ADR-0002) with members and a workspace binding, and nothing else has been
- *  built to hang on it yet. The level exists so the path is complete and so
- *  the next thing — plan phases from plan.toml, artifacts, traceability — has
- *  a place to land instead of being wedged into the workspace page. */
-function ProjectLevel({ name, ws }: { name: string; ws: Workspace }) {
-  return (
-    <>
-      <div className="topbar">
-        <div>
-          <h1>{name}</h1>
-          <p className="subtitle" style={{ margin: 0 }}>
-            project in {ws.name}
-          </p>
-        </div>
-      </div>
-      <div className="card">
-        <h2>Nothing here yet</h2>
-        <p className="hint">
-          A project is a Resource Group bound to this workspace (ADR-0002): it has a name and
-          members, and that is all it has so far. What belongs here next is the execution plan —
-          the phases, briefs and outputs the planner already writes to{" "}
-          <code>.cf-studio/.plans/</code> — surfaced from the server instead of living only on
-          disk. Members and settings move here once there is more than one thing to show.
-        </p>
-      </div>
-    </>
-  );
-}
-/** Level 2 — one workspace. Its own header, then everything it owns. */
-function WorkspaceLevel({
-  token,
-  ws,
-  onOpenStudio,
   onBack,
+  onOpenStudio,
+  onOpenNested,
+  onChanged,
 }: {
   token: string;
-  ws: Workspace;
-  onOpenStudio: (ws: Workspace) => void;
+  root: Workspace;
+  filters: Filters;
   onBack: () => void;
+  onOpenStudio: (target: StudioTarget) => void;
+  onOpenNested: (p: Project) => void;
+  onChanged: () => void;
 }) {
+  const [tab, setTab] = useState<ProjectTab>("overview");
+
   return (
     <>
       <div className="topbar">
         <div>
-          <h1>{ws.name}</h1>
+          <h1>{root.name}</h1>
           <p className="subtitle" style={{ margin: 0 }}>
-            workspace of {ws.orgName} · <code>{ws.id.slice(0, 8)}…</code>
+            project · <code>{root.id.slice(0, 8)}…</code>
+            {root.self_managed ? " · self-managed" : ""}
           </p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button className="primary" onClick={() => onOpenStudio(ws)}>
+          <button onClick={onBack}>← All projects</button>
+          <button className="primary" onClick={() => onOpenStudio(root)}>
             Open Studio
           </button>
         </div>
       </div>
-      {/* embedded: the header above already carries the name and Open Studio. */}
-      <WorkspaceDashboard token={token} ws={ws} embedded onBack={onBack} onOpenStudio={onOpenStudio} />
+
+      <div className="workbench">
+        <nav className="wb-nav">
+          {PROJECT_NAV.map((g) => (
+            <div key={g.group} className="wb-group">
+              <div className="wb-group-title">{g.group}</div>
+              {g.items.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  className={tab === t.id ? "wb-item on" : "wb-item"}
+                  onClick={() => setTab(t.id)}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          ))}
+        </nav>
+
+        <div className="wb-content">
+          {tab === "overview" && (
+            <WorkspaceDashboard token={token} ws={root} embedded onBack={onBack} onOpenStudio={onOpenStudio} />
+          )}
+          {tab === "nested" && (
+            <WorkspaceProjectsCard
+              token={token}
+              ws={root}
+              onChanged={onChanged}
+              onOpen={onOpenNested}
+              onOpenStudio={onOpenStudio}
+            />
+          )}
+          {tab === "artifacts" && (
+            <ArtifactsView token={token} workspace={root} onOpenStudio={onOpenStudio} />
+          )}
+          {tab === "people" && (
+            <PeopleView
+              token={token}
+              roots={[root]}
+              query={filters.query}
+              onOpenProject={() => setTab("overview")}
+            />
+          )}
+          {tab === "integrations" && (
+            <ConnectorsView token={token} workspace={root} filters={filters} />
+          )}
+          {tab === "secrets" && <SecretsView token={token} workspaces={[root]} filters={filters} />}
+        </div>
+      </div>
+    </>
+  );
+}
+
+/** One nested project.
+ *
+ *  Honest boundary: the gear stores the shape (greenfield vs modernize), the
+ *  journey stages, the status and the member group — and that is all there is.
+ *  What belongs here next is the execution plan the planner already writes to
+ *  `.cf-studio/.plans/`, served instead of living only on disk. */
+function NestedProjectLevel({
+  token,
+  root,
+  nestedId,
+  fallbackName,
+  onBack,
+}: {
+  token: string;
+  root: Workspace;
+  nestedId: string;
+  fallbackName?: string;
+  onBack: () => void;
+}) {
+  const [project, setProject] = useState<Project | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api.project(token, nestedId, root.id).then(
+      (p) => {
+        if (!cancelled) setProject(p);
+      },
+      (e) => {
+        if (!cancelled) setError(errText(e));
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [token, nestedId, root.id]);
+
+  return (
+    <>
+      <div className="topbar">
+        <div>
+          <h1>{project?.name ?? fallbackName ?? "Nested project"}</h1>
+          <p className="subtitle" style={{ margin: 0 }}>
+            nested in {root.name}
+            {project ? ` · ${project.mode === "modernize" ? "modernization" : "new build"}` : ""}
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onBack}>← {root.name}</button>
+        </div>
+      </div>
+      {error && <div className="error">{error}</div>}
+
+      {project && (
+        <div className="card">
+          <h2>Shape</h2>
+          <ul className="rows">
+            <li>
+              <div className="grow">
+                <div className="sub">Status</div>
+                <div className="name">{project.status}</div>
+              </div>
+            </li>
+            <li>
+              <div className="grow">
+                <div className="sub">{project.mode === "modernize" ? "Imported from" : "Brief"}</div>
+                <div className="name">
+                  {project.mode === "modernize"
+                    ? project.git_url || "uploaded archive"
+                    : project.brief?.trim() || "— none given —"}
+                </div>
+              </div>
+            </li>
+            <li>
+              <div className="grow">
+                <div className="sub">Journey stages</div>
+                <div className="name">{project.stages.join(", ") || "none"}</div>
+              </div>
+            </li>
+          </ul>
+          <p className="hint">
+            The plan itself — phases, briefs and outputs — is still written to{" "}
+            <code>.cf-studio/.plans/</code> by the planner and has no server surface yet. This page
+            is where it lands when it gets one.
+          </p>
+        </div>
+      )}
+
+      {project?.members_group_id ? (
+        <ProjectMembers
+          token={token}
+          /* Membership stayed on Resource Group (ADR-0002), so the group the
+             gear created is what this needs. */
+          project={{
+            id: project.members_group_id,
+            type: PROJECT_RG_TYPE,
+            name: project.name,
+            hierarchy: { parent_id: null, tenant_id: root.id, depth: 0 },
+            metadata: { workspace_id: root.id },
+          }}
+          workspace={root}
+          onClose={onBack}
+        />
+      ) : (
+        project && (
+          <div className="card">
+            <h2>Members</h2>
+            <p className="empty">
+              No Resource Group member list exists for this project — resource-group was unavailable
+              when it was created, so there is nothing to show rather than an empty list pretending
+              otherwise.
+            </p>
+          </div>
+        )
+      )}
     </>
   );
 }
@@ -2022,7 +2111,7 @@ function WorkspacesView({
   workspaces: Workspace[];
   filters: Filters;
   onChanged: () => void;
-  onOpenStudio: (ws: Workspace) => void;
+  onOpenStudio: (target: StudioTarget) => void;
   /** Drill into a workspace. */
   onOpen: (ws: Workspace) => void;
   /** Off when rendered as a level inside an organization, which has its own. */
@@ -2076,10 +2165,11 @@ function WorkspacesView({
     <>
       {heading && (
         <>
-          <h1>Workspaces</h1>
+          <h1>Project tenants</h1>
           <p className="subtitle">
-            Open a workspace to see and edit everything it owns — sources, automation, projects,
-            members — or go straight into its Studio.
+            The raw tenant list behind the projects — one AM tenant of type <code>workspace</code>
+            per project. Concept v2 does not show this level; it is here so the hierarchy stays
+            administrable.
           </p>
         </>
       )}
@@ -2096,12 +2186,12 @@ function WorkspacesView({
                   className="grow"
                   style={{ cursor: "pointer" }}
                   onClick={() => onOpen(w)}
-                  title="Open this workspace"
+                  title="Open this project"
                 >
                   <div className="name">{w.name}</div>
                   <div className="sub">{w.orgName}</div>
                 </div>
-                <span className="badge workspace">workspace</span>
+                <span className="badge workspace">tenant</span>
                 {w.self_managed && <span className="badge selfmanaged">self-managed</span>}
                 <button onClick={() => onOpen(w)}>Open</button>
                 <button className="primary" onClick={() => onOpenStudio(w)}>
@@ -2144,258 +2234,6 @@ const WORKER_CATEGORIES = ["documenting", "coding", "review", "analysis"];
 // definition and credstore rejects tenant sharing for it.
 const PAT_SECRET_TYPE = "gts.cf.core.credstore.secret.v1~cf.core.credstore.api_key.v1~";
 
-/** Pick repositories from a connection and hand them back as source entries.
- *
- *  Deliberately does not persist: the dashboard keeps unsaved edits in its own
- *  state behind one "Save sources" button, and a component writing metadata
- *  behind its back would make that button lie. (The Connectors page has its own
- *  browser that DOES persist, because there is no pending form there.) */
-function SourceFromConnector({
-  token,
-  ws,
-  mode,
-  onPick,
-}: {
-  token: string;
-  ws: Workspace;
-  /** "root" picks exactly one repository; "sources" picks any number. */
-  mode: "root" | "sources";
-  onPick: (entries: RepoEntry[]) => void;
-}) {
-  const [connections, setConnections] = useState<Connection[] | null>(null);
-  const [chosen, setChosen] = useState<string>("");
-  const [repos, setRepos] = useState<RemoteRepo[] | null>(null);
-  const [search, setSearch] = useState("");
-  const [checked, setChecked] = useState<Record<string, boolean>>({});
-  const [error, setError] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    void (async () => {
-      try {
-        const [c, p] = await Promise.all([
-          api.connections(token, ws.id),
-          api.connectorProviders(token),
-        ]);
-        // Only source hosts can be browsed; a model-provider connection has no
-        // repositories, so offering it here would be a dead end.
-        const sources = c.items.filter(
-          (x) =>
-            p.items.find((pp) => pp.provider === x.provider)?.category === "source_code",
-        );
-        setConnections(sources);
-        setChosen((prev) => prev || sources[0]?.id || "");
-      } catch (e) {
-        setError(errText(e));
-        setConnections([]);
-      }
-    })();
-  }, [open, token, ws.id]);
-
-  const load = useCallback(
-    async (id: string, q: string) => {
-      if (!id) return;
-      setError(null);
-      try {
-        const r = await api.connectionRepositories(token, id, ws.id, q);
-        setRepos(r.items);
-      } catch (e) {
-        setError(errText(e));
-        setRepos([]);
-      }
-    },
-    [token, ws.id],
-  );
-
-  useEffect(() => {
-    if (open && chosen) void load(chosen, "");
-  }, [open, chosen, load]);
-
-  const connection = connections?.find((c) => c.id === chosen);
-
-  const toEntries = (): RepoEntry[] => {
-    if (!connection) return [];
-    const picked = (repos ?? []).filter((r) => checked[r.id]);
-    return picked.map((r) => ({
-      // Directory name must be [a-z0-9_-]+; the caller de-duplicates against
-      // what the workspace already has.
-      name:
-        r.name
-          .toLowerCase()
-          .replace(/[^a-z0-9_-]+/g, "-")
-          .replace(/^-+|-+$/g, "") || `repo-${r.id}`,
-      source: connection.provider === "github" ? "github" : "gitlab",
-      url: r.clone_url,
-      branch: r.default_branch,
-      // The reference, never the token: studio-session reads credstore itself.
-      token_ref: connection.secret_ref,
-    }));
-  };
-
-  if (!open) {
-    return (
-      <div className="row">
-        <button type="button" onClick={() => setOpen(true)}>
-          {mode === "root" ? "Pick root from connector" : "+ Add from connector"}
-        </button>
-      </div>
-    );
-  }
-
-  const picks = (repos ?? []).filter((r) => checked[r.id]);
-
-  return (
-    <div className="nested">
-      {error && <p className="error">{error}</p>}
-      {connections === null ? (
-        <p className="empty">Loading connections…</p>
-      ) : connections.length === 0 ? (
-        <p className="empty">
-          No source connector for this workspace yet — add one on the Connectors page, then come
-          back.
-        </p>
-      ) : (
-        <>
-          <div className="row">
-            <select
-              value={chosen}
-              onChange={(e) => {
-                setChosen(e.target.value);
-                setChecked({});
-              }}
-            >
-              {connections.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.label} · {c.provider}
-                  {c.owner_tenant_id !== ws.id ? ` (from ${ws.orgName})` : ""}
-                </option>
-              ))}
-            </select>
-            <input
-              className="grow"
-              placeholder="Search repositories…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  void load(chosen, search);
-                }
-              }}
-            />
-            <button type="button" onClick={() => void load(chosen, search)}>
-              Search
-            </button>
-          </div>
-
-          {repos === null ? (
-            <p className="empty">Loading repositories…</p>
-          ) : repos.length === 0 ? (
-            <p className="empty">Nothing reachable with this credential.</p>
-          ) : (
-            <ul className="rows">
-              {repos.map((r) => (
-                <li key={r.id}>
-                  <input
-                    type={mode === "root" ? "radio" : "checkbox"}
-                    name={mode === "root" ? `root-${ws.id}` : undefined}
-                    checked={Boolean(checked[r.id])}
-                    onChange={(e) =>
-                      setChecked(
-                        mode === "root"
-                          ? { [r.id]: e.target.checked }
-                          : (c) => ({ ...c, [r.id]: e.target.checked }),
-                      )
-                    }
-                  />
-                  <div className="grow">
-                    <div className="name">{r.full_path}</div>
-                    <div className="sub">
-                      {r.default_branch ?? "default branch"}
-                      {r.description ? ` · ${r.description}` : ""}
-                    </div>
-                  </div>
-                  {r.visibility && <span className="badge">{r.visibility}</span>}
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <div className="row">
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                setChecked({});
-              }}
-            >
-              Cancel
-            </button>
-            <span className="grow" />
-            <button
-              type="button"
-              className="primary"
-              disabled={picks.length === 0}
-              onClick={() => {
-                onPick(toEntries());
-                setOpen(false);
-                setChecked({});
-              }}
-            >
-              {mode === "root" ? "Use as root" : `Add ${picks.length || ""}`}
-            </button>
-          </div>
-          <p className="hint">
-            Nothing is written yet — the picks land in the form above and go out with “Save
-            sources”.
-          </p>
-        </>
-      )}
-    </div>
-  );
-}
-
-/** A folder that already exists on the backend host, bind-mounted into the
- *  session. No connector can supply this — it is not a remote at all — so it
- *  stays a plain field. */
-function LocalFolderSource({ onAdd }: { onAdd: (entry: RepoEntry) => void }) {
-  const [name, setName] = useState("");
-  const [path, setPath] = useState("");
-  const clean = name
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-
-  return (
-    <div className="row">
-      <input
-        style={{ width: 160 }}
-        placeholder="name (dir)"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-      />
-      <input
-        className="grow"
-        placeholder="local folder on the backend host: /mnt/c/Repos/my-repo"
-        value={path}
-        onChange={(e) => setPath(e.target.value)}
-      />
-      <button
-        type="button"
-        disabled={!clean || !path.trim()}
-        onClick={() => {
-          onAdd({ name: clean, source: "local", path: path.trim() });
-          setName("");
-          setPath("");
-        }}
-      >
-        + Add local folder
-      </button>
-    </div>
-  );
-}
-
 function WorkspaceDashboard({
   token,
   ws,
@@ -2406,37 +2244,21 @@ function WorkspaceDashboard({
   token: string;
   ws: Workspace;
   onBack: () => void;
-  onOpenStudio: (ws: Workspace) => void;
+  onOpenStudio: (target: StudioTarget) => void;
   /** Rendered inside the workspace row rather than as its own page: the row
    *  already shows the name and carries "Open Studio", so the topbar would be
    *  a second copy of both. */
   embedded?: boolean;
 }) {
-  const [users, setUsers] = useState<User[] | null>(null);
-  const [projects, setProjects] = useState<Group[] | null>(null);
   const [settings, setSettings] = useState<WorkspaceSettings | null>(null);
-  const [settingsExist, setSettingsExist] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [pats, setPats] = useState<Record<string, string>>({}); // write-only: become credstore secrets
-  const [repoSaved, setRepoSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [u, g, s] = await Promise.all([
-        api.tenantUsers(token, ws.id),
-        api.groups(token),
-        api.workspaceSettings(token, ws.id),
-      ]);
-      setUsers(u.items ?? []);
-      setProjects(
-        (g.items ?? []).filter(
-          (p) => p.type === PROJECT_RG_TYPE && p.metadata?.workspace_id === ws.id,
-        ),
-      );
+      const s = await api.workspaceSettings(token, ws.id);
       setSettings(s ?? { automation_level: "recommendations", approved_worker_categories: [] });
-      setSettingsExist(s !== null);
     } catch (e) {
       setError(errText(e));
     }
@@ -2453,76 +2275,11 @@ function WorkspaceDashboard({
     setSaved(false);
     try {
       await api.putWorkspaceSettings(token, ws.id, settings);
-      setSettingsExist(true);
       setSaved(true);
     } catch (err) {
       setError(errText(err));
     }
   }
-
-  async function saveRepo(e: FormEvent) {
-    e.preventDefault();
-    if (!settings) return;
-    setError(null);
-    setRepoSaved(false);
-    try {
-      // Newly entered PATs become credstore secrets; settings keep only refs.
-      const repos = await Promise.all(
-        (settings.repos ?? []).map(async (r) => {
-          const pat = pats[r.name]?.trim();
-          if (pat && r.source !== "local") {
-            const ref = `studio-repo-${ws.id}-${r.name}`;
-            await api.putSecret(token, ref, pat, PAT_SECRET_TYPE);
-            return { ...r, token_ref: ref };
-          }
-          return r;
-        }),
-      );
-      // Drop incomplete rows (an added-but-unfilled source would fail launch).
-      const complete = repos.filter((r) =>
-        r.source === "local" ? Boolean(r.path?.trim()) : Boolean(r.url?.trim()),
-      );
-      let next = { ...settings, repos: complete };
-      // Root repository PAT → credstore secret, settings keep the reference.
-      const rootPat = pats["__root__"]?.trim();
-      if (rootPat && next.root_repo_url?.trim()) {
-        const ref = `studio-root-${ws.id}`;
-        await api.putSecret(token, ref, rootPat, PAT_SECRET_TYPE);
-        next = { ...next, root_token_ref: ref };
-      }
-      await api.putWorkspaceSettings(token, ws.id, next);
-      setSettings(next);
-      setPats({});
-      setSettingsExist(true);
-      setRepoSaved(true);
-    } catch (err) {
-      setError(errText(err));
-    }
-  }
-
-  function patchRepo(i: number, patch: Partial<import("./api").RepoEntry>) {
-    if (!settings) return;
-    const repos = [...(settings.repos ?? [])];
-    repos[i] = { ...repos[i], ...patch };
-    setSettings({ ...settings, repos });
-  }
-
-  const repoConnected =
-    (settings?.repos?.length ?? 0) > 0 || Boolean(settings?.root_repo_url?.trim());
-  // A git-backed source (GitLab/GitHub URL + PAT via credstore) IS a working
-  // repository connector — the studio-session gear clones it into the
-  // workspace. Only the non-git connectors are still ahead.
-  const gitConnector = (settings?.repos ?? []).some((r) => r.source !== "local" && r.url?.trim());
-  const steps: { label: string; done: boolean; soon?: boolean }[] = [
-    { label: "Workspace created", done: true },
-    { label: "Members invited", done: (users?.length ?? 0) > 0 },
-    { label: "First project created", done: (projects?.length ?? 0) > 0 },
-    { label: "Automation configured", done: settingsExist },
-    { label: "Repository connected", done: repoConnected },
-    { label: "Connector: Git (GitLab / GitHub)", done: gitConnector },
-    { label: "Connectors (Jira / Slack)", done: false, soon: true },
-    { label: "Kit installed", done: false, soon: true },
-  ];
 
   return (
     <>
@@ -2545,27 +2302,9 @@ function WorkspaceDashboard({
       {error && <div className="error">{error}</div>}
 
       <div className="card">
-        <h2>Onboarding (journey J2)</h2>
-        <ul className="rows">
-          {steps.map((s) => (
-            <li key={s.label}>
-              <span style={{ width: 22 }}>{s.done ? "✅" : s.soon ? "🔒" : "⬜"}</span>
-              <div className="grow">
-                <div className={s.done ? "name" : "sub"}>{s.label}</div>
-              </div>
-              {s.soon && <span className="badge">coming soon</span>}
-            </li>
-          ))}
-        </ul>
-        <p className="hint">
-          {users?.length ?? "…"} member(s) · {projects?.length ?? "…"} project(s)
-        </p>
-      </div>
-
-      <div className="card">
         <h2>Automation — trust ramp</h2>
         <p className="hint">
-          The domain model's trust ramp, per workspace: <b>manual</b> = read-only insight,{" "}
+          The domain model's trust ramp, per project: <b>manual</b> = read-only insight,{" "}
           <b>recommendations</b> = prepared actions awaiting approval, <b>autonomous</b> = approved
           automation for the categories below. Stored as tenant metadata (GTS-validated).
         </p>
@@ -2614,182 +2353,6 @@ function WorkspaceDashboard({
         )}
       </div>
 
-      <div className="card">
-        <h2>Workspace sources</h2>
-        <p className="hint">
-          How repositories enter this workspace (the domain model's ingress): each source becomes{" "}
-          <code>./&lt;name&gt;</code> in the IDE and a <code>[sources.&lt;name&gt;]</code> entry in{" "}
-          <code>.cf-workspace.toml</code>. Repositories come from a connector, so no clone URL or
-          token is typed here — the source keeps only a credstore reference, and{" "}
-          <code>studio-session</code> resolves it server-side.
-        </p>
-        {settings && (
-          <form onSubmit={saveRepo}>
-            <h3 className="group">Workspace root</h3>
-            <p className="hint">
-              A Studio workspace is itself a repository (manifest, docs, <code>.workspace-sources/</code>).
-              Pick it from a connector, or point at a folder that already exists on the backend host.
-            </p>
-            {settings.root_repo_url?.trim() ? (
-              <ul className="rows">
-                <li>
-                  <div className="grow">
-                    <div className="name">{settings.root_repo_url}</div>
-                    <div className="sub">
-                      {settings.root_branch || "default branch"}
-                      {settings.root_token_ref ? " · token via credstore" : " · public"}
-                    </div>
-                  </div>
-                  <span className="badge">root</span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setSettings({
-                        ...settings,
-                        root_repo_url: undefined,
-                        root_branch: undefined,
-                        root_token_ref: undefined,
-                      })
-                    }
-                  >
-                    remove
-                  </button>
-                </li>
-              </ul>
-            ) : (
-              <SourceFromConnector
-                token={token}
-                ws={ws}
-                mode="root"
-                onPick={(entries) => {
-                  const r = entries[0];
-                  if (!r) return;
-                  setSettings({
-                    ...settings,
-                    root_repo_url: r.url,
-                    root_branch: r.branch,
-                    root_token_ref: r.token_ref,
-                    root_path: undefined,
-                  });
-                }}
-              />
-            )}
-            <input
-              placeholder="…or a local folder on the backend host: /mnt/c/Repos/hypothesis-workspace"
-              value={settings.root_path ?? ""}
-              onChange={(e) => setSettings({ ...settings, root_path: e.target.value })}
-            />
-
-            <h3 className="group">Sources</h3>
-            {(settings.repos ?? []).length === 0 ? (
-              <p className="empty">No sources yet.</p>
-            ) : (
-              <ul className="rows">
-                {(settings.repos ?? []).map((r, i) => (
-                  <li key={`${r.name}-${i}`}>
-                    <div className="grow">
-                      <div className="name">{r.name}</div>
-                      <div className="sub">
-                        {r.source === "local" ? r.path : r.url}
-                        {r.token_ref ? " · token via credstore" : ""}
-                      </div>
-                    </div>
-                    <span className="badge">{r.source}</span>
-                    {r.source !== "local" && (
-                      <input
-                        style={{ width: 110 }}
-                        placeholder="branch"
-                        value={r.branch ?? ""}
-                        onChange={(e) => patchRepo(i, { branch: e.target.value || undefined })}
-                      />
-                    )}
-                    <input
-                      style={{ width: 150 }}
-                      placeholder={`target (default: ${r.name})`}
-                      value={r.target ?? ""}
-                      onChange={(e) => patchRepo(i, { target: e.target.value || undefined })}
-                    />
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setSettings({
-                          ...settings,
-                          repos: (settings.repos ?? []).filter((_, j) => j !== i),
-                        })
-                      }
-                    >
-                      remove
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            <SourceFromConnector
-              token={token}
-              ws={ws}
-              mode="sources"
-              onPick={(entries) => {
-                const existing = settings.repos ?? [];
-                const taken = new Set(existing.map((r) => r.name));
-                const fresh = entries.filter((e) => {
-                  if (taken.has(e.name)) return false;
-                  taken.add(e.name);
-                  return true;
-                });
-                setSettings({ ...settings, repos: [...existing, ...fresh] });
-              }}
-            />
-
-            <LocalFolderSource
-              onAdd={(entry) =>
-                setSettings({ ...settings, repos: [...(settings.repos ?? []), entry] })
-              }
-            />
-
-            <div className="row">
-              <button className="primary">Save sources</button>
-              {repoSaved && <span className="hint">saved ✓</span>}
-            </div>
-          </form>
-        )}
-      </div>
-
-      <AskAI token={token} ws={ws} />
-
-      <div className="card">
-        <h2>Coming soon (surfaces reserved per the domain model)</h2>
-        <ul className="rows">
-          <li>
-            <div className="grow">
-              <div className="name">Knowledge Graph</div>
-              <div className="sub">the workspace's managed objects and relations (§3.2) — requires the graph gear</div>
-            </div>
-            <span className="badge">preview</span>
-          </li>
-          <li>
-            <div className="grow">
-              <div className="name">Findings & recommendations</div>
-              <div className="sub">gaps, drift, contradictions → prepared actions (trust ramp §6.1)</div>
-            </div>
-            <span className="badge">preview</span>
-          </li>
-          <li>
-            <div className="grow">
-              <div className="name">Workflow runs</div>
-              <div className="sub">library-published pipelines and their executions (§3.3)</div>
-            </div>
-            <span className="badge">preview</span>
-          </li>
-          <li>
-            <div className="grow">
-              <div className="name">Kits & ontology</div>
-              <div className="sub">object types, templates, workflows the workspace activates (§7)</div>
-            </div>
-            <span className="badge">preview</span>
-          </li>
-        </ul>
-      </div>
     </>
   );
 }
@@ -2882,7 +2445,7 @@ function ChatsView({ token, filters }: { token: string; filters: Filters }) {
 
       <div className="card">
         {chats.length === 0 ? (
-          <p className="empty">No chats yet — start one from a workspace dashboard (Ask AI).</p>
+          <p className="empty">No chats yet — start one from a project overview (Ask AI).</p>
         ) : visibleChats.length === 0 ? (
           <p className="empty">No chats match the current filters.</p>
         ) : (
@@ -3088,88 +2651,140 @@ function SystemView({ token, filters }: { token: string; filters: Filters }) {
   );
 }
 
-/* ── Ask AI (mini-chat gear: SSE streaming through oagw -> provider) ── */
-
-interface ChatLine {
-  role: "user" | "assistant";
-  text: string;
-}
-
-function AskAI({ token, ws }: { token: string; ws: Workspace }) {
-  const [chatId, setChatId] = useState<string | null>(null);
-  const [lines, setLines] = useState<ChatLine[]>([]);
-  const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function send(e: FormEvent) {
-    e.preventDefault();
-    const content = input.trim();
-    if (!content) return;
-    setBusy(true);
-    setError(null);
-    setInput("");
-    setLines((l) => [...l, { role: "user", text: content }, { role: "assistant", text: "…" }]);
-    try {
-      let id = chatId;
-      if (!id) {
-        const chat = await api.createChat(token, `Workspace: ${ws.name}`);
-        id = chat.id;
-        setChatId(id);
-      }
-      await api.streamMessage(token, id, content, (full) =>
-        setLines((l) => [...l.slice(0, -1), { role: "assistant", text: full }]),
-      );
-    } catch (err) {
-      setLines((l) => l.slice(0, -1));
-      setError(errText(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="card">
-      <h2>Ask AI</h2>
-      <p className="hint">
-        Live chat via the mini-chat gear (SSE through oagw). Needs a real provider key in
-        `static-credstore-plugin` (`openai-key`) — otherwise the stream fails at the provider.
-      </p>
-      {lines.length > 0 && (
-        <div style={{ maxHeight: 320, overflowY: "auto", margin: "0.5rem 0" }}>
-          {lines.map((l, i) => (
-            <p key={i} style={{ margin: "6px 0", whiteSpace: "pre-wrap" }}>
-              <strong>{l.role === "user" ? "You" : "AI"}:</strong> {l.text}
-            </p>
-          ))}
-        </div>
-      )}
-      <form className="inline" onSubmit={send}>
-        <input
-          placeholder={`Ask about “${ws.name}”…`}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          disabled={busy}
-        />
-        <button className="primary" disabled={busy || !input.trim()}>
-          {busy ? "Streaming…" : "Send"}
-        </button>
-      </form>
-      {error && <div className="error">{error}</div>}
-    </div>
-  );
-}
-
 /* ── Projects (workspace-scoped card; RG-backed, ADR-0002) ──
    In the domain model a Project is a managed object of type Project — a
    graph object inside a workspace's context, not a control-plane citizen.
    Hence no top-level Projects view: they live on the Workspace Dashboard. */
+
+/** Pick a repository through one of the project's connectors and hand back its
+ *  clone URL — so a modernization's source can be chosen from a list instead of
+ *  pasting a URL. Uses the same connections + list-repositories the Sources tab
+ *  does; auth for private repos is resolved by the workspace at launch. */
+function NestedRepoPicker({
+  token,
+  workspace,
+  onPick,
+}: {
+  token: string;
+  workspace: Workspace;
+  onPick: (url: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [connections, setConnections] = useState<Connection[] | null>(null);
+  const [connId, setConnId] = useState("");
+  const [search, setSearch] = useState("");
+  const [repos, setRepos] = useState<RemoteRepo[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open || connections) return;
+    void api.connections(token, workspace.id).then(
+      (c) => {
+        setConnections(c.items);
+        if (c.items[0]) setConnId(c.items[0].id);
+      },
+      (e) => setErr(errText(e)),
+    );
+  }, [open, connections, token, workspace.id]);
+
+  const load = useCallback(
+    async (q: string) => {
+      if (!connId) return;
+      setErr(null);
+      setRepos(null);
+      try {
+        const r = await api.connectionRepositories(token, connId, workspace.id, q);
+        setRepos(r.items);
+      } catch (e) {
+        setErr(errText(e));
+        setRepos([]);
+      }
+    },
+    [token, connId, workspace.id],
+  );
+
+  useEffect(() => {
+    if (open && connId) void load("");
+  }, [open, connId, load]);
+
+  if (!open) {
+    return (
+      <button type="button" className="ghost" style={{ marginTop: 6 }} onClick={() => setOpen(true)}>
+        Pick from a connector…
+      </button>
+    );
+  }
+
+  return (
+    <div className="nested" style={{ marginTop: 6 }}>
+      {err && <p className="error">{err}</p>}
+      {connections && connections.length === 0 ? (
+        <p className="empty">
+          No connectors on this project yet — add one on the Sources tab, then pick a repository here.
+        </p>
+      ) : (
+        <>
+          <div className="row">
+            <select value={connId} onChange={(e) => setConnId(e.target.value)}>
+              {(connections ?? []).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label} ({c.provider})
+                </option>
+              ))}
+            </select>
+            <input
+              className="grow"
+              placeholder="Search repositories…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void load(search);
+              }}
+            />
+            <button type="button" onClick={() => void load(search)}>
+              Search
+            </button>
+            <button type="button" className="ghost" onClick={() => setOpen(false)}>
+              Cancel
+            </button>
+          </div>
+          {repos === null ? (
+            <p className="empty">Loading repositories…</p>
+          ) : repos.length === 0 ? (
+            <p className="empty">Nothing reachable with this connector.</p>
+          ) : (
+            <ul className="rows">
+              {repos.map((r) => (
+                <li key={r.id}>
+                  <div className="grow">
+                    <div className="name">{r.full_path}</div>
+                    <div className="sub">{r.default_branch ?? "default branch"}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onPick(r.clone_url);
+                      setOpen(false);
+                    }}
+                  >
+                    Use
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
 
 function WorkspaceProjectsCard({
   token,
   ws,
   onChanged,
   onOpen,
+  onOpenStudio,
 }: {
   token: string;
   ws: Workspace;
@@ -3177,6 +2792,9 @@ function WorkspaceProjectsCard({
   /** Drill into the project level. Absent when the card is embedded somewhere
    *  that has no navigation of its own. */
   onOpen?: (p: Project) => void;
+  /** Launch a Studio session for a nested project — its own session (keyed by
+   *  the project id) cloning its own source, independent of the root's. */
+  onOpenStudio?: (target: StudioTarget) => void;
 }) {
   const wsId = ws.id;
   const [projects, setProjects] = useState<Project[] | null>(null);
@@ -3195,6 +2813,8 @@ function WorkspaceProjectsCard({
   const [picked, setPicked] = useState<string[]>([]);
   const [brief, setBrief] = useState("");
   const [gitUrl, setGitUrl] = useState("");
+  // The create form is collapsed by default so it doesn't crowd the list.
+  const [creating, setCreating] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
@@ -3258,6 +2878,7 @@ function WorkspaceProjectsCard({
       setName("");
       setBrief("");
       setGitUrl("");
+      setCreating(false);
       await load();
       onChanged?.();
     } catch (err) {
@@ -3279,7 +2900,7 @@ function WorkspaceProjectsCard({
   }
 
   async function removeProject(p: Project) {
-    if (!window.confirm(`Delete project \u201c${p.name}\u201d (members included)?`)) return;
+    if (!window.confirm(`Delete work \u201c${p.name}\u201d (members included)?`)) return;
     setError(null);
     try {
       await api.deleteProject(token, p.id, wsId);
@@ -3295,18 +2916,23 @@ function WorkspaceProjectsCard({
   return (
     <>
       <div className="card">
-        <h2>Projects</h2>
+        <div className="card-head">
+          <h2>Works</h2>
+          <button className="primary" onClick={() => setCreating((v) => !v)}>
+            {creating ? "Cancel" : "New work"}
+          </button>
+        </div>
         <p className="hint">
-          This workspace's effort containers. The project record lives in the studio-project
-          gear (ADR-0005); membership stays on Resource Group, so a project without a member
-          group says so rather than showing an empty list.
+          The stages of work on this project — each Work with its own repositories and artifacts.
+          Each Work's record lives in the studio-project gear (ADR-0005); membership stays on
+          Resource Group, so a Work without a member group says so rather than showing an empty list.
         </p>
 
         {projects && (
           <>
             {projects.length === 0 ? (
               <p className="empty" style={{ marginTop: 12 }}>
-                No projects in “{ws.name}” yet.
+                No works in “{ws.name}” yet.
               </p>
             ) : (
               <ul className="rows" style={{ marginTop: 12 }}>
@@ -3322,6 +2948,22 @@ function WorkspaceProjectsCard({
                     </div>
                     <span className="badge">{p.status}</span>
                     {onOpen && <button onClick={() => onOpen(p)}>Open</button>}
+                    {onOpenStudio && (
+                      <button
+                        className="primary"
+                        title="Open a Studio session for this work — its own workspace, cloning its own source"
+                        onClick={() =>
+                          onOpenStudio({
+                            id: p.id,
+                            name: p.name,
+                            standalone: true,
+                            root: p.git_url ? { repoUrl: p.git_url } : undefined,
+                          })
+                        }
+                      >
+                        Open Studio
+                      </button>
+                    )}
                     {p.status === "draft" && (
                       <button onClick={() => void move(p, "active")}>Activate</button>
                     )}
@@ -3341,7 +2983,7 @@ function WorkspaceProjectsCard({
                     </button>
                     <button
                       className="ghost"
-                      title="Delete project"
+                      title="Delete work"
                       onClick={() => void removeProject(p)}
                     >
                       ✕
@@ -3351,8 +2993,9 @@ function WorkspaceProjectsCard({
               </ul>
             )}
 
-            <form onSubmit={create} style={{ marginTop: 16 }}>
-              {/* Two shapes, picked first: a greenfield project starts from a
+            {creating && (
+              <form onSubmit={create} className="work-create">
+              {/* Two shapes, picked first: a greenfield work starts from a
                   description, a modernization from existing code. */}
               <div className="inline" style={{ gap: 8 }}>
                 <button
@@ -3373,18 +3016,18 @@ function WorkspaceProjectsCard({
 
               <div className="inline" style={{ marginTop: 8 }}>
                 <input
-                  placeholder="Project name"
+                  placeholder="Work name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                 />
               </div>
 
               {stages.length > 0 && (
-                <div style={{ marginTop: 8 }}>
-                  <div className="hint">Journey stages</div>
-                  <div className="inline" style={{ flexWrap: "wrap", gap: 12 }}>
+                <div>
+                  <div className="field-label">Journey stages</div>
+                  <div className="stage-grid">
                     {stages.map((s) => (
-                      <label key={s.key} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <label key={s.key}>
                         <input
                           type="checkbox"
                           checked={s.required || picked.includes(s.key)}
@@ -3416,6 +3059,8 @@ function WorkspaceProjectsCard({
                       onChange={(e) => setGitUrl(e.target.value)}
                     />
                   </div>
+                  {/* Or pick from a connector instead of pasting a URL. */}
+                  <NestedRepoPicker token={token} workspace={ws} onPick={setGitUrl} />
                   {/* Deliberately visible and disabled rather than absent: the
                       backend accepts a file_id, but file-storage moves bytes
                       through a data-plane sidecar that this deployment does not
@@ -3432,12 +3077,16 @@ function WorkspaceProjectsCard({
                 </div>
               )}
 
-              <div className="inline" style={{ marginTop: 8 }}>
+              <div className="inline" style={{ marginTop: 12 }}>
                 <button className="primary" disabled={!canCreate}>
-                  {busy ? "Creating\u2026" : "Create project"}
+                  {busy ? "Creating\u2026" : "Create work"}
+                </button>
+                <button type="button" onClick={() => setCreating(false)}>
+                  Cancel
                 </button>
               </div>
-            </form>
+              </form>
+            )}
           </>
         )}
         {error && <div className="error">{error}</div>}
@@ -3537,7 +3186,7 @@ function ProjectMembers({
               <li key={id}>
                 <div className="grow">
                   <div className="name">{u?.display_name ?? u?.username ?? id}</div>
-                  <div className="sub">{u ? u.username : "user outside this workspace"}</div>
+                  <div className="sub">{u ? u.username : "person outside this project"}</div>
                 </div>
               </li>
             );
@@ -3546,7 +3195,7 @@ function ProjectMembers({
       )}
       <form className="inline" onSubmit={add}>
         <select value={pick} onChange={(e) => setPick(e.target.value)}>
-          <option value="">Add workspace user…</option>
+          <option value="">Add someone from this project…</option>
           {candidates.map((u) => (
             <option key={u.id} value={u.id}>
               {u.display_name ?? u.username}
@@ -3583,7 +3232,7 @@ function HomeView({
   workspaces: Workspace[];
   spaces: { wsId: string; wsName: string }[];
   onOpenSpace: (wsId: string) => void;
-  onOpenStudio: (ws: Workspace) => void;
+  onOpenStudio: (target: StudioTarget) => void;
   onOpenDashboard: (ws: Workspace) => void;
   onNavigate: (v: View) => void;
 }) {
@@ -3625,8 +3274,8 @@ function HomeView({
             <span className="hero-gradient">Constructor Studio</span>
           </h1>
           <p className="subtitle">
-            Your workspace for building with AI over real repositories — the control plane of the
-            Studio domain model.
+            Projects that build with AI over real repositories — the control plane of the Studio
+            domain model.
           </p>
         </div>
         <div className="hero-links">
@@ -3651,14 +3300,14 @@ function HomeView({
         <div className="card span-all">
           <h2>Continue</h2>
           {continueItems.length === 0 ? (
-            <p className="empty">No live sessions. Open a workspace to start one.</p>
+            <p className="empty">No live sessions. Open a project to start one.</p>
           ) : (
             <ul className="rows">
               {continueItems.map(({ ws, space, session }) => (
                 <li key={ws.id}>
                   <div className="grow">
                     <div className="name">⚙ {ws.name}</div>
-                    <div className="sub">{ws.orgName}{session ? ` · session ${session.state}` : ""}</div>
+                    <div className="sub">project{session ? ` · session ${session.state}` : ""}</div>
                   </div>
                   {space ? (
                     <button className="primary" onClick={() => onOpenSpace(ws.id)}>
@@ -3679,17 +3328,22 @@ function HomeView({
           <h2>Build</h2>
           <ul className="home-links">
             <li>
-              <button className="linklike" onClick={() => onNavigate("workspaces")}>
-                Workspaces — open the Studio IDE →
+              <button className="linklike" onClick={() => onNavigate("projects")}>
+                Projects — open one, or start the Studio IDE →
               </button>
             </li>
             {workspaces[0] && (
               <li>
                 <button className="linklike" onClick={() => onOpenDashboard(workspaces[0])}>
-                  Workspace dashboard (sources, automation, projects) →
+                  Project overview (sources, automation, nested projects) →
                 </button>
               </li>
             )}
+            <li>
+              <button className="linklike" onClick={() => onNavigate("people")}>
+                Invite someone into a project →
+              </button>
+            </li>
             <li>
               <button className="linklike" onClick={() => onNavigate("connectors")}>
                 Connect a repository →
@@ -3697,7 +3351,7 @@ function HomeView({
             </li>
             <li>
               <button className="linklike" onClick={() => onNavigate("chats")}>
-                Ask AI (workspace chats) →
+                Ask AI →
               </button>
             </li>
           </ul>
@@ -3716,8 +3370,17 @@ function HomeView({
               </div>
             </li>
             <li>
-              <div className="grow"><div className="sub">Organizations / Workspaces</div>
-                <div className="name">{orgs.length} / {workspaces.length}</div>
+              <div className="grow">
+                <div className="sub">Projects</div>
+                <div className="name">
+                  {workspaces.length}
+                  {/* The organization count stays visible as a platform fact,
+                      not as a place to go — concept v2 hides the level, it does
+                      not pretend the tenants vanished. */}
+                  <span className="sub" style={{ fontWeight: 400 }}>
+                    {orgs.length > 0 ? ` · in ${orgs.length} organization${orgs.length === 1 ? "" : "s"} (hidden)` : ""}
+                  </span>
+                </div>
               </div>
             </li>
             <li>
@@ -3768,7 +3431,7 @@ function useKnownSecretRefs(token: string, workspaces: Workspace[]): SecretRow[]
             if (!map.has(r)) map.set(r, new Set());
             map.get(r)?.add(`${ws.name}${what}`);
           };
-          add(s.root_token_ref, " (workspace root)");
+          add(s.root_token_ref, " (project root)");
           for (const repo of s.repos ?? []) add(repo.token_ref, ` / ${repo.name}`);
         }),
       );
@@ -3819,7 +3482,7 @@ function SecretsView({
   }
 
   async function remove(ref: string) {
-    if (!window.confirm(`Delete secret “${ref}”? Workspace settings keep the reference — launches will clone without credentials until a new value is saved.`)) return;
+    if (!window.confirm(`Delete secret “${ref}”? Project settings keep the reference — launches will clone without credentials until a new value is saved.`)) return;
     setError(null);
     try {
       await api.deleteSecret(token, ref);
@@ -3836,14 +3499,14 @@ function SecretsView({
       <h1>Secrets</h1>
       <p className="subtitle">
         Repository credentials in the credstore gear. Values are write-only; this view lists the
-        references known to workspace settings, probes their health, and rotates broken ones
+        references known to project settings, probes their health, and rotates broken ones
         (the store has no list API — anything saved outside the portal won't appear here).
       </p>
       <div className="card">
         {rows === null ? (
-          <p className="empty">Loading references from workspace settings…</p>
+          <p className="empty">Loading references from project settings…</p>
         ) : visible.length === 0 ? (
-          <p className="empty">No secret references found in any workspace settings.</p>
+          <p className="empty">No secret references found in any project settings.</p>
         ) : (
           <ul className="rows">
             {visible.map((r) => (
@@ -3880,7 +3543,7 @@ const CATEGORIES: { key: string; title: string; blurb: string }[] = [
   {
     key: "source_code",
     title: "Source code",
-    blurb: "Browse repositories and attach them to this workspace.",
+    blurb: "Browse repositories and attach them to this project.",
   },
   {
     key: "ai",
@@ -3894,6 +3557,396 @@ const CATEGORIES: { key: string; title: string; blurb: string }[] = [
  *  One choice sets both: the tenant holding the catalogue row (its reach) and
  *  the credstore sharing mode of the token (who may read it). */
 type Reach = "organization" | "workspace" | "personal";
+
+/** The project's current sources (workspace repos) with detach + Open in IDE, so
+ *  the Sources tab shows the RESULT of attaching, not only the connectors. */
+/** Attach chosen remote repositories to a workspace as sources (the repos a
+ *  session clones on launch). Shared by the Sources-tab repository browser and
+ *  the Nested-projects "Pick from a connector…" picker so both build identical
+ *  RepoEntry rows — same name sanitisation, same provider→source mapping, same
+ *  server-side token reference. Returns how many were added. */
+async function attachReposToWorkspace(
+  token: string,
+  ws: Workspace,
+  connection: Connection,
+  picks: RemoteRepo[],
+): Promise<number> {
+  const current = (await api.workspaceSettings(token, ws.id)) ?? {};
+  const existing = current.repos ?? [];
+  const taken = new Set(existing.map((r) => r.name));
+  const added: RepoEntry[] = [];
+  for (const r of picks) {
+    // Directory name must be [a-z0-9_-]+. De-duplicate against what the
+    // workspace already has rather than shadowing an existing source.
+    const base =
+      r.name
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, "-")
+        .replace(/^-+|-+$/g, "") || `repo-${r.id}`;
+    let candidate = base;
+    let n = 2;
+    while (taken.has(candidate)) candidate = `${base}-${n++}`;
+    taken.add(candidate);
+    added.push({
+      name: candidate,
+      // github/gitlab compose a provider URL; anything else (bitbucket,
+      // self-hosted) is a plain git clone URL — don't mislabel it gitlab.
+      source:
+        connection.provider === "github"
+          ? "github"
+          : connection.provider === "gitlab"
+            ? "gitlab"
+            : "git",
+      url: r.clone_url,
+      branch: r.default_branch,
+      // studio-session resolves this from credstore itself, so the token
+      // stays server-side end to end.
+      token_ref: connection.secret_ref,
+    });
+  }
+  await api.putWorkspaceSettings(token, ws.id, {
+    ...current,
+    repos: [...existing, ...added],
+  });
+  return added.length;
+}
+
+/** The repositories attached to a project — the sources a session clones on
+ *  launch. Lives on the Nested projects tab (next to the projects they feed):
+ *  it lists what is attached, lets you detach, and adds new sources by picking
+ *  them straight from one of the project's connectors. */
+/** Artifacts — everything a project works on, in one place: repositories
+ *  attached as sources (cloned into the IDE on launch) and files added by hand.
+ *  Two honest halves: repository sources are real and addable today; manual
+ *  file upload waits on the file-storage data-plane (not deployed here), so
+ *  that list is read-only for now. */
+function ArtifactsView({
+  token,
+  workspace,
+  onOpenStudio,
+}: {
+  token: string;
+  workspace: Workspace;
+  onOpenStudio?: (ws: Workspace) => void;
+}) {
+  return (
+    <>
+      <h1>Artifacts</h1>
+      <p className="subtitle">
+        What this project works on — repositories attached as sources, plus files added by hand. A
+        session clones these into the IDE when you open Studio.
+      </p>
+      <ProjectSources token={token} workspace={workspace} onOpenStudio={onOpenStudio} />
+      <ProjectFiles token={token} />
+    </>
+  );
+}
+
+/** The manual-file half of Artifacts. file-storage is the platform blob store,
+ *  but uploads go through its signed-URL data-plane sidecar, which this assembly
+ *  does not run — so the list is read-only and "Add file" says why rather than
+ *  offering a button that cannot finish. Per-project association arrives with
+ *  the project-as-tenant work (phase 2). */
+function ProjectFiles({ token }: { token: string }) {
+  const [files, setFiles] = useState<import("./api").StoredFile[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .files(token)
+      .then((f) => setFiles(f.items ?? []))
+      .catch((e) => setErr(errText(e)));
+  }, [token]);
+
+  const count = files?.length ?? 0;
+
+  return (
+    <div className="card">
+      <div className="card-head">
+        <h2>Added by hand{count > 0 ? ` · ${count}` : ""}</h2>
+        <button
+          className="primary"
+          disabled
+          title="Uploads need the file-storage data-plane (signed-URL sidecar), which is not deployed in this environment yet"
+        >
+          Add file…
+        </button>
+      </div>
+      <p className="hint">
+        Manually added files for later processing. Upload needs the file-storage data-plane, which
+        this environment does not run yet — the list is read-only for now and shows the platform
+        file-storage until per-project files are wired.
+      </p>
+      {err && <p className="error">{err}</p>}
+      {files === null ? (
+        <p className="empty">Loading files…</p>
+      ) : files.length === 0 ? (
+        <p className="empty">No files yet — manual upload arrives with the file-storage data-plane.</p>
+      ) : (
+        <ul className="rows">
+          {files.map((f) => (
+            <li key={f.id}>
+              <div className="grow">
+                <div className="name">{f.name ?? f.file_name ?? f.id}</div>
+                <div className="sub">{f.id}</div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function ProjectSources({
+  token,
+  workspace: ws,
+  onOpenStudio,
+}: {
+  token: string;
+  workspace: Workspace;
+  onOpenStudio?: (ws: Workspace) => void;
+}) {
+  const [repos, setRepos] = useState<RepoEntry[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const reload = useCallback(async () => {
+    const s = await api.workspaceSettings(token, ws.id).catch(() => null);
+    setRepos(s?.repos ?? []);
+  }, [token, ws.id]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  const detach = async (name: string) => {
+    setBusy(name);
+    setErr(null);
+    try {
+      const s = (await api.workspaceSettings(token, ws.id)) ?? {};
+      await api.putWorkspaceSettings(token, ws.id, {
+        ...s,
+        repos: (s.repos ?? []).filter((r) => r.name !== name),
+      });
+      await reload();
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const count = repos?.length ?? 0;
+
+  return (
+    <div className="card">
+      <div className="card-head">
+        <h2>From repositories{count > 0 ? ` · ${count}` : ""}</h2>
+        {count > 0 && onOpenStudio && (
+          <button className="primary" onClick={() => onOpenStudio(ws)}>
+            Open in IDE
+          </button>
+        )}
+      </div>
+      <p className="hint">
+        Repositories cloned into the workspace when a session launches. Add one by picking it from a
+        connector — set connectors up on the Connectors tab.
+      </p>
+      {err && <p className="error">{err}</p>}
+      {repos === null ? (
+        <p className="empty">Loading sources…</p>
+      ) : repos.length === 0 ? (
+        <p className="empty">No repositories attached yet — pick one from a connector below.</p>
+      ) : (
+        <ul className="rows">
+          {repos.map((r) => (
+            <li key={r.name}>
+              <div className="grow">
+                <div className="name">{r.name}</div>
+                <div className="sub">
+                  {r.source}
+                  {r.url ? ` · ${r.url}` : ""}
+                  {r.branch ? ` · ${r.branch}` : ""}
+                </div>
+              </div>
+              <button className="ghost" disabled={busy === r.name} onClick={() => void detach(r.name)}>
+                {busy === r.name ? "…" : "Detach"}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <SourceAttachPicker token={token} workspace={ws} onAttached={() => void reload()} />
+    </div>
+  );
+}
+
+/** "Pick from a connector…" on the Project sources panel: choose a connection,
+ *  search its repositories, tick some, attach them as sources. The same clone
+ *  URLs the Sources-tab browser produces — this just puts the affordance next
+ *  to the sources list itself. */
+function SourceAttachPicker({
+  token,
+  workspace: ws,
+  onAttached,
+}: {
+  token: string;
+  workspace: Workspace;
+  onAttached: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [connections, setConnections] = useState<Connection[] | null>(null);
+  const [connId, setConnId] = useState("");
+  const [search, setSearch] = useState("");
+  const [repos, setRepos] = useState<RemoteRepo[] | null>(null);
+  const [checked, setChecked] = useState<Record<string, boolean>>({});
+  const [attached, setAttached] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const loadAttached = useCallback(async () => {
+    const s = await api.workspaceSettings(token, ws.id).catch(() => null);
+    setAttached(new Set((s?.repos ?? []).map((r) => r.url).filter((u): u is string => Boolean(u))));
+  }, [token, ws.id]);
+
+  useEffect(() => {
+    if (!open || connections) return;
+    void api.connections(token, ws.id).then(
+      (c) => {
+        setConnections(c.items);
+        if (c.items[0]) setConnId(c.items[0].id);
+      },
+      (e) => setErr(errText(e)),
+    );
+  }, [open, connections, token, ws.id]);
+
+  const load = useCallback(
+    async (q: string) => {
+      if (!connId) return;
+      setErr(null);
+      setRepos(null);
+      try {
+        const r = await api.connectionRepositories(token, connId, ws.id, q);
+        setRepos(r.items);
+      } catch (e) {
+        setErr(errText(e));
+        setRepos([]);
+      }
+    },
+    [token, connId, ws.id],
+  );
+
+  useEffect(() => {
+    if (open && connId) {
+      void load("");
+      void loadAttached();
+    }
+  }, [open, connId, load, loadAttached]);
+
+  const connection = (connections ?? []).find((c) => c.id === connId) ?? null;
+  const picks = (repos ?? []).filter((r) => checked[r.id]);
+
+  const attach = async () => {
+    if (!connection || picks.length === 0) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await attachReposToWorkspace(token, ws, connection, picks);
+      setChecked({});
+      await loadAttached();
+      onAttached();
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <button type="button" className="ghost" style={{ marginTop: 6 }} onClick={() => setOpen(true)}>
+        Pick from a connector…
+      </button>
+    );
+  }
+
+  return (
+    <div className="nested" style={{ marginTop: 6 }}>
+      {err && <p className="error">{err}</p>}
+      {connections && connections.length === 0 ? (
+        <p className="empty">
+          No connectors on this project yet — add one on the Sources tab, then pick a repository here.
+        </p>
+      ) : (
+        <>
+          <div className="row">
+            <select value={connId} onChange={(e) => setConnId(e.target.value)}>
+              {(connections ?? []).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label} ({c.provider})
+                </option>
+              ))}
+            </select>
+            <input
+              className="grow"
+              placeholder="Search repositories…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void load(search);
+              }}
+            />
+            <button type="button" onClick={() => void load(search)}>
+              Search
+            </button>
+            <button type="button" className="ghost" onClick={() => setOpen(false)}>
+              Close
+            </button>
+          </div>
+          {repos === null ? (
+            <p className="empty">Loading repositories…</p>
+          ) : repos.length === 0 ? (
+            <p className="empty">Nothing reachable with this connector.</p>
+          ) : (
+            <ul className="rows">
+              {repos.map((r) => {
+                const isAttached = attached.has(r.clone_url);
+                return (
+                  <li key={r.id} className={isAttached ? "attached" : undefined}>
+                    <input
+                      type="checkbox"
+                      disabled={isAttached}
+                      checked={isAttached || Boolean(checked[r.id])}
+                      onChange={(e) => setChecked((c) => ({ ...c, [r.id]: e.target.checked }))}
+                    />
+                    <div className="grow">
+                      <div className="name">{r.full_path}</div>
+                      <div className="sub">{r.default_branch ?? "default branch"}</div>
+                    </div>
+                    {isAttached && <span className="badge ok">attached</span>}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          <div className="row">
+            <span className="grow" />
+            <button
+              type="button"
+              className="primary"
+              disabled={picks.length === 0 || busy}
+              onClick={() => void attach()}
+            >
+              {busy ? "Attaching…" : `Add ${picks.length || ""} to ${ws.name}`}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 function ConnectorsView({
   token,
@@ -3910,6 +3963,10 @@ function ConnectorsView({
   const [disabled, setDisabled] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  // Bumped when a repo is attached/detached anywhere on the tab, so the sources
+  // panel and the connector browser's "attached" flags stay in sync.
+  const [sourcesTick, setSourcesTick] = useState(0);
+  const bumpSources = () => setSourcesTick((t) => t + 1);
 
   const reload = useCallback(async () => {
     if (!ws) return;
@@ -3944,7 +4001,7 @@ function ConnectorsView({
       <h1>Connectors</h1>
       <p className="subtitle">
         How repositories and model credentials enter <b>{ws.name}</b>: its own connections plus
-        those its organization shares with all of its workspaces. Configure one once, then pick
+        those shared with every project. Configure one once, then pick
         repositories from a list instead of pasting clone URLs. Tokens go to credstore — after you
         submit one the browser never sees it again.
       </p>
@@ -3958,6 +4015,9 @@ function ConnectorsView({
         </div>
       )}
 
+      {/* Connectors + the repository browser live here (the Sources tab). The
+          attached-sources list itself now lives on the Nested projects tab,
+          next to the projects those sources feed. */}
       {!disabled && (
         <AddConnector
           token={token}
@@ -3979,6 +4039,8 @@ function ConnectorsView({
             matches(filters.query, c.label, c.provider, c.base_url),
           )}
           loading={connections === null}
+          sourcesTick={sourcesTick}
+          onSourcesChanged={bumpSources}
           onChanged={() => void reload()}
           onNote={setNote}
         />
@@ -4005,9 +4067,12 @@ function AddConnector({
   const [baseUrl, setBaseUrl] = useState("");
   const [pat, setPat] = useState("");
   const [reveal, setReveal] = useState(false);
-  // Organization by default: one PAT for gitlab.constr.dev is an organization
-  // asset, and re-entering it per workspace is how credentials get stale.
-  const [reach, setReach] = useState<Reach>("organization");
+  // This project by default. A project admin owns their project but not the
+  // hidden organization above it, so defaulting to org-scope made the very
+  // first "Test & save" fail on a write they aren't allowed — the connector
+  // never landed. Org-shared stays one explicit choice away for the case where
+  // one PAT really is an organization asset shared across every project.
+  const [reach, setReach] = useState<Reach>("workspace");
   const [busy, setBusy] = useState<"probe" | "save" | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -4018,7 +4083,7 @@ function AddConnector({
     setBaseUrl("");
     setPat("");
     setReveal(false);
-    setReach("organization");
+    setReach("workspace");
     setResult(null);
     setError(null);
   };
@@ -4036,7 +4101,7 @@ function AddConnector({
     return (
       <div className="card">
         <h2>Add connector</h2>
-        <p className="hint">Connect this workspace to an external tool or service.</p>
+        <p className="hint">Connect this project to an external tool or service.</p>
         {CATEGORIES.map(({ key, title, blurb }) => {
           const group = providers.filter((p) => p.category === key);
           if (group.length === 0) return null;
@@ -4115,16 +4180,16 @@ function AddConnector({
 
       <label>Available to</label>
       <select value={reach} onChange={(e) => setReach(e.target.value as Reach)}>
-        <option value="organization">{workspace.orgName} — all workspaces of this organization</option>
-        <option value="workspace">{workspace.name} — this workspace only</option>
+        <option value="workspace">{workspace.name} — this project only</option>
+        <option value="organization">Shared — inherited by every project</option>
         <option value="personal">Only me — private to my account</option>
       </select>
       <p className="hint">
         {reach === "organization"
-          ? "Stored on the organization and inherited by its workspaces; the token is readable across them."
+          ? "Stored once and inherited by every project; the token is readable across them."
           : reach === "workspace"
-            ? "Stored on this workspace; everyone in it can use the token."
-            : "Stored on this workspace, but the token stays readable only by you."}
+            ? "Stored on this project; everyone in it can use the token."
+            : "Stored on this project, but the token stays readable only by you."}
       </p>
 
       <label>Label</label>
@@ -4191,6 +4256,8 @@ function ConnectionList({
   providers,
   connections,
   loading,
+  sourcesTick,
+  onSourcesChanged,
   onChanged,
   onNote,
 }: {
@@ -4199,6 +4266,8 @@ function ConnectionList({
   providers: ConnectorProvider[];
   connections: Connection[];
   loading: boolean;
+  sourcesTick: number;
+  onSourcesChanged: () => void;
   onChanged: () => void;
   onNote: (s: string) => void;
 }) {
@@ -4231,7 +4300,7 @@ function ConnectionList({
 
   const remove = (c: Connection, inherited: boolean) => {
     const warn = inherited
-      ? `"${c.label}" belongs to ${workspace.orgName} and is shared with its other workspaces. Remove it for everyone?`
+      ? `"${c.label}" is shared with your other projects. Remove it for everyone?`
       : `Remove connection "${c.label}" and its token?`;
     if (!window.confirm(warn)) return;
     void api
@@ -4252,7 +4321,7 @@ function ConnectionList({
     return (
       <div className="card">
         <h2>Connections</h2>
-        <p className="empty">Nothing connected for this workspace yet.</p>
+        <p className="empty">Nothing connected for this project yet.</p>
       </div>
     );
   }
@@ -4327,7 +4396,7 @@ function ConnectionList({
                                 : "not checked"}
                         </span>
                         <span className={`badge ${c.scope === "personal" ? "" : "workspace"}`}>
-                          {inherited ? `${c.scope} · from ${workspace.orgName}` : c.scope}
+                          {inherited ? `${c.scope} · shared` : c.scope}
                         </span>
                       </div>
                     </div>
@@ -4383,6 +4452,8 @@ function ConnectionList({
                         token={token}
                         connection={c}
                         workspace={workspace}
+                        sourcesTick={sourcesTick}
+                        onSourcesChanged={onSourcesChanged}
                         onNote={onNote}
                       />
                     )}
@@ -4491,7 +4562,7 @@ function EditConnection({
       </div>
       <p className="hint" style={{ marginTop: 6 }}>
         The change is verified against the provider before anything is stored, with or without a
-        new token. The connection id is preserved, so workspace sources keep working.
+        new token. The connection id is preserved, so project sources keep working.
       </p>
       <div className="inline" style={{ marginTop: 6 }}>
         <button className="primary" disabled={!dirty || busy}>
@@ -4510,11 +4581,16 @@ function RepoBrowser({
   token,
   connection,
   workspace,
+  sourcesTick,
+  onSourcesChanged,
   onNote,
 }: {
   token: string;
   connection: Connection;
   workspace: Workspace;
+  /** Reload the attached set when sources change elsewhere on the tab. */
+  sourcesTick: number;
+  onSourcesChanged: () => void;
   onNote: (s: string) => void;
 }) {
   const [search, setSearch] = useState("");
@@ -4522,6 +4598,15 @@ function RepoBrowser({
   const [error, setError] = useState<string | null>(null);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
+  // Clone URLs already attached to this project — so a repo can't be added twice.
+  const [attached, setAttached] = useState<Set<string>>(new Set());
+
+  const loadAttached = useCallback(async () => {
+    const s = await api.workspaceSettings(token, workspace.id).catch(() => null);
+    setAttached(
+      new Set((s?.repos ?? []).map((r) => r.url).filter((u): u is string => Boolean(u))),
+    );
+  }, [token, workspace.id]);
 
   const load = useCallback(
     async (q: string) => {
@@ -4539,7 +4624,8 @@ function RepoBrowser({
 
   useEffect(() => {
     void load("");
-  }, [load]);
+    void loadAttached();
+  }, [load, loadAttached, sourcesTick]);
 
   const picks = (repos ?? []).filter((r) => checked[r.id]);
 
@@ -4547,41 +4633,14 @@ function RepoBrowser({
     if (picks.length === 0) return;
     setBusy(true);
     try {
-      const current = (await api.workspaceSettings(token, workspace.id)) ?? {};
-      const existing = current.repos ?? [];
-      const taken = new Set(existing.map((r) => r.name));
-      const added: RepoEntry[] = [];
-      for (const r of picks) {
-        // Directory name must be [a-z0-9_-]+. De-duplicate against what the
-        // workspace already has rather than shadowing an existing source.
-        const base =
-          r.name
-            .toLowerCase()
-            .replace(/[^a-z0-9_-]+/g, "-")
-            .replace(/^-+|-+$/g, "") || `repo-${r.id}`;
-        let candidate = base;
-        let n = 2;
-        while (taken.has(candidate)) candidate = `${base}-${n++}`;
-        taken.add(candidate);
-        added.push({
-          name: candidate,
-          source: connection.provider === "github" ? "github" : "gitlab",
-          url: r.clone_url,
-          branch: r.default_branch,
-          // studio-session resolves this from credstore itself, so the token
-          // stays server-side end to end.
-          token_ref: connection.secret_ref,
-        });
-      }
-      await api.putWorkspaceSettings(token, workspace.id, {
-        ...current,
-        repos: [...existing, ...added],
-      });
+      const added = await attachReposToWorkspace(token, workspace, connection, picks);
       onNote(
-        `Attached ${added.length} repositor${added.length === 1 ? "y" : "ies"} to ${workspace.name} — ` +
+        `Attached ${added} repositor${added === 1 ? "y" : "ies"} to ${workspace.name} — ` +
           `cloned on the next session launch.`,
       );
       setChecked({});
+      void loadAttached();
+      onSourcesChanged();
     } catch (e) {
       onNote(errText(e));
     } finally {
@@ -4611,23 +4670,31 @@ function RepoBrowser({
         <p className="empty">Nothing reachable with this credential.</p>
       ) : (
         <ul className="rows">
-          {repos.map((r) => (
-            <li key={r.id}>
-              <input
-                type="checkbox"
-                checked={Boolean(checked[r.id])}
-                onChange={(e) => setChecked((c) => ({ ...c, [r.id]: e.target.checked }))}
-              />
-              <div className="grow">
-                <div className="name">{r.full_path}</div>
-                <div className="sub">
-                  {r.default_branch ?? "default branch"}
-                  {r.description ? ` · ${r.description}` : ""}
+          {repos.map((r) => {
+            const isAttached = attached.has(r.clone_url);
+            return (
+              <li key={r.id} className={isAttached ? "attached" : undefined}>
+                <input
+                  type="checkbox"
+                  disabled={isAttached}
+                  checked={isAttached || Boolean(checked[r.id])}
+                  onChange={(e) => setChecked((c) => ({ ...c, [r.id]: e.target.checked }))}
+                />
+                <div className="grow">
+                  <div className="name">{r.full_path}</div>
+                  <div className="sub">
+                    {r.default_branch ?? "default branch"}
+                    {r.description ? ` · ${r.description}` : ""}
+                  </div>
                 </div>
-              </div>
-              {r.visibility && <span className="badge">{r.visibility}</span>}
-            </li>
-          ))}
+                {isAttached ? (
+                  <span className="badge ok">attached</span>
+                ) : (
+                  r.visibility && <span className="badge">{r.visibility}</span>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
 
@@ -4978,144 +5045,6 @@ function OrganizationsView({
   );
 }
 
-/* ── Members ── */
-
-function MembersView({
-  token,
-  home,
-  orgs,
-  workspaces,
-  filters,
-  fixedTenantId,
-}: {
-  token: string;
-  home: Tenant | null;
-  orgs: Tenant[];
-  workspaces: Workspace[];
-  filters: Filters;
-  /** Admin-area scoping: lock the view to this tenant, hide the picker. */
-  fixedTenantId?: string | null;
-}) {
-  const all = [...(home ? [home] : []), ...orgs, ...workspaces];
-  const [tenantId, setTenantId] = useState<string>(fixedTenantId ?? "");
-  useEffect(() => {
-    if (fixedTenantId && fixedTenantId !== tenantId) setTenantId(fixedTenantId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fixedTenantId]);
-  const [users, setUsers] = useState<User[] | null>(null);
-  const [username, setUsername] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async (id: string) => {
-    setError(null);
-    setUsers(null);
-    try {
-      const page = await api.tenantUsers(token, id);
-      setUsers(page.items ?? []);
-    } catch (e) {
-      setError(errText(e));
-    }
-  }, [token]);
-
-  useEffect(() => {
-    if (tenantId) void load(tenantId);
-  }, [tenantId, load]);
-
-  async function invite(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    try {
-      await api.inviteUser(token, tenantId, {
-        username,
-        email: `${username}@example.com`,
-        display_name: username,
-      });
-      setUsername("");
-      await load(tenantId);
-    } catch (err) {
-      setError(errText(err));
-    }
-  }
-
-  const visibleUsers = (users ?? []).filter((u) =>
-    matches(filters.query, u.display_name, u.username, u.email),
-  );
-
-  return (
-    <>
-      <h1>Members</h1>
-      <p className="subtitle">
-        Control-plane citizens: provisioned through the pluggable IdP contract. Roles arrive as
-        Role Grants (member × role × scope) with the access-control milestone.
-      </p>
-      <div className="card">
-        {!fixedTenantId && (
-          <select value={tenantId} onChange={(e) => setTenantId(e.target.value)}>
-            <option value="">Select a tenant…</option>
-            {all.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name} ({shortTypeName(t.tenant_type)})
-              </option>
-            ))}
-          </select>
-        )}
-
-        {users && (
-          <>
-            {users.length === 0 ? (
-              <p className="empty" style={{ marginTop: 12 }}>No users in this tenant.</p>
-            ) : visibleUsers.length === 0 ? (
-              <p className="empty" style={{ marginTop: 12 }}>No users match the current filters.</p>
-            ) : (
-              <ul className="rows" style={{ marginTop: 12 }}>
-                {visibleUsers.map((u) => (
-                  <li key={u.id}>
-                    <div className="grow">
-                      <div className="name">{u.display_name ?? u.username}</div>
-                      <div className="sub">
-                        {u.username}
-                        {u.email ? ` · ${u.email}` : ""}
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {/* The invite target sets the user's HOME TENANT = their whole
-                access scope. Inviting into the platform root grants
-                platform-wide visibility — almost never what you want. */}
-            {(() => {
-              const target = all.find((t) => t.id === tenantId);
-              if (!target) return null;
-              const isRoot = target.tenant_type !== TENANT_TYPES.organization
-                && target.tenant_type !== TENANT_TYPES.workspace;
-              return (
-                <p className={isRoot ? "error" : "hint"} style={{ marginTop: 12 }}>
-                  Inviting into: <b>{target.name}</b> — this becomes the user's home tenant and
-                  access scope ({isRoot
-                    ? "⚠ the PLATFORM ROOT: the user will see every managed organization. Pick an organization or workspace unless you really mean a platform admin."
-                    : "they will see this tenant's subtree only"}).
-                </p>
-              );
-            })()}
-            <form className="inline" onSubmit={invite}>
-              <input
-                placeholder="username to invite"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-              />
-              <button className="primary" disabled={!username}>
-                Invite
-              </button>
-            </form>
-          </>
-        )}
-        {error && <div className="error">{error}</div>}
-      </div>
-    </>
-  );
-}
-
 /* ── Profile ── */
 
 /// Best-effort JWT payload decode for DISPLAY only — authorization decisions
@@ -5266,12 +5195,12 @@ function ProfileView({ me, home, token }: { me: Me; home: Tenant | null; token: 
 
 function StudioLauncher({
   token,
-  ws,
+  target,
   onClose,
   onOpen,
 }: {
   token: string;
-  ws: Workspace;
+  target: StudioTarget;
   onClose: () => void;
   /** Opens the session as an embedded space (same window, no new tab). */
   onOpen: (session: { id: string; url: string }) => void;
@@ -5288,11 +5217,17 @@ function StudioLauncher({
   const [error, setError] = useState<string | null>(null);
   const autoLaunched = useRef(false);
 
-  // Sources are bound on the workspace (dashboard → Repositories card);
-  // the launcher just uses them.
+  // A root project reads its sources from workspaceSettings. A nested project
+  // is standalone — it carries its own repos/root on the target (its single
+  // source), and has no workspaceSettings of its own to read.
   useEffect(() => {
+    if (target.standalone) {
+      setRepos(target.repos ?? []);
+      setRoot(target.root ?? {});
+      return;
+    }
     api
-      .workspaceSettings(token, ws.id)
+      .workspaceSettings(token, target.id)
       .then((s) => {
         setRepos(s?.repos ?? []);
         setRoot({
@@ -5303,7 +5238,8 @@ function StudioLauncher({
         });
       })
       .catch(() => setRepos([]));
-  }, [token, ws.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, target.id]);
 
   // No polling needed for opening: the space embeds the session URL right
   // away and the container-side splash keeps the frame alive until Theia
@@ -5328,24 +5264,26 @@ function StudioLauncher({
       // launches without the new sources/targets/token refs.
       let freshRepos = repos ?? [];
       let freshRoot = root;
-      try {
-        const s = await api.workspaceSettings(token, ws.id);
-        freshRepos = s?.repos ?? [];
-        freshRoot = {
-          path: s?.root_path?.trim() || undefined,
-          repoUrl: s?.root_repo_url?.trim() || undefined,
-          branch: s?.root_branch?.trim() || undefined,
-          tokenRef: s?.root_token_ref?.trim() || undefined,
-        };
-        setRepos(freshRepos);
-        setRoot(freshRoot);
-      } catch {
-        // Settings unreachable — fall back to the snapshot we have.
+      if (!target.standalone) {
+        try {
+          const s = await api.workspaceSettings(token, target.id);
+          freshRepos = s?.repos ?? [];
+          freshRoot = {
+            path: s?.root_path?.trim() || undefined,
+            repoUrl: s?.root_repo_url?.trim() || undefined,
+            branch: s?.root_branch?.trim() || undefined,
+            tokenRef: s?.root_token_ref?.trim() || undefined,
+          };
+          setRepos(freshRepos);
+          setRoot(freshRoot);
+        } catch {
+          // Settings unreachable — fall back to the snapshot we have.
+        }
       }
       const usable = freshRepos.filter((r) =>
         r.source === "local" ? Boolean(r.path?.trim()) : Boolean(r.url?.trim()),
       );
-      const s = await api.createStudioSession(token, ws.id, usable, freshRoot);
+      const s = await api.createStudioSession(token, target.id, usable, freshRoot);
       setSession(s);
       // Straight into the embedded space — starting sessions show the
       // in-container splash until the IDE is up.
@@ -5371,9 +5309,7 @@ function StudioLauncher({
   return (
     <div className="card launcher">
       <div className="card-head">
-        <h2>
-          Studio — {ws.name} <span className="sub">({ws.orgName})</span>
-        </h2>
+        <h2>Studio — {target.name}</h2>
         <button className="ghost" onClick={onClose}>
           close
         </button>

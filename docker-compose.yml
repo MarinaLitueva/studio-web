@@ -116,6 +116,10 @@ services:
       context: .
       dockerfile: studio-backend/Dockerfile.src
     container_name: studio-backend
+    # Auto-recover without manual retry: if the backend exits (e.g. it loses
+    # postgres/keycloak mid-boot, or a first-boot race) keep restarting it until
+    # the healthcheck passes.
+    restart: unless-stopped
     environment:
       STUDIO_PG_PASSWORD: ${STUDIO_PG_PASSWORD:-studio}
       # Provider keys. Empty is a valid state: the features that need them
@@ -174,21 +178,32 @@ services:
       keycloak:
         condition: service_started
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8090/healthz"]
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8090/cf/health"]
       interval: 10s
       timeout: 3s
-      retries: 15
+      # Long grace before any failure counts against the backend: a healthy first
+      # boot (Rust binary start + migrations + waiting on postgres) is slow, and
+      # must not be mistaken for a dead container. During start_period a failing
+      # probe neither counts toward retries nor marks the container unhealthy.
+      start_period: 180s
+      retries: 30
 
   frontend:
     build:
       context: .
-      dockerfile: studio-frontend/Dockerfile.src
+      dockerfile: studio-frontend-prototype/Dockerfile.src
     container_name: studio-frontend
+    # Wait for the backend to be healthy and restart together with it, so the
+    # portal comes up on its own once the backend is ready — no manual start.
+    restart: unless-stopped
     ports:
       - "127.0.0.1:8080:8080"   # image is nginx-unprivileged: listens on 8080
     depends_on:
       backend:
         condition: service_healthy
+        # Restart the frontend whenever the backend is restarted (compose v2.17+),
+        # so a backend recovery brings the portal back without intervention.
+        restart: true
     # nginx.conf proxies /cf/ to http://studio-backend:8090 — the service's
     # container_name above must stay in sync with it.
 
