@@ -342,10 +342,13 @@ button.danger {
 button.danger:hover:not(:disabled) { background: #b91c1c; border-color: #b91c1c; }
 .danger-zone { border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
 .sidebar.collapsed .org-select-name, .sidebar.collapsed .org-select .chev { display: none; }
-/* Collapsed: the switcher becomes just its avatar, centered and borderless,
-   so it matches the icon rail instead of a stray bordered box. */
-.sidebar.collapsed .org-nav .org-select { border: none; background: none; padding: 9px 0; }
-.sidebar.collapsed .org-nav .org-select .account-avatar { margin: 0 auto; }
+/* Collapsed: the switcher becomes just its avatar — borderless and centered,
+   at the same badge size as the CS logo on top and the account avatar below,
+   so the three sit on one axis instead of a stray, smaller box. */
+.sidebar.collapsed .org-nav .org-select { border: none; background: none; padding: 6px 0; justify-content: center; }
+.sidebar.collapsed .org-nav .org-select .account-avatar {
+  width: 28px; height: 28px; border-radius: 8px; font-size: 13px; margin: 0 auto;
+}
 .sidebar.collapsed .org-nav .org-menu { left: 0; right: auto; min-width: 200px; }
 .account-menu > button { text-align: left; }
 
