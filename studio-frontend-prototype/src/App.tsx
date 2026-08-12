@@ -2651,6 +2651,8 @@ function WorkspaceProjectsCard({
   const [picked, setPicked] = useState<string[]>([]);
   const [brief, setBrief] = useState("");
   const [gitUrl, setGitUrl] = useState("");
+  // The create form is collapsed by default so it doesn't crowd the list.
+  const [creating, setCreating] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
@@ -2714,6 +2716,7 @@ function WorkspaceProjectsCard({
       setName("");
       setBrief("");
       setGitUrl("");
+      setCreating(false);
       await load();
       onChanged?.();
     } catch (err) {
@@ -2751,7 +2754,12 @@ function WorkspaceProjectsCard({
   return (
     <>
       <div className="card">
-        <h2>Works</h2>
+        <div className="card-head">
+          <h2>Works</h2>
+          <button className="primary" onClick={() => setCreating((v) => !v)}>
+            {creating ? "Cancel" : "New work"}
+          </button>
+        </div>
         <p className="hint">
           The stages of work on this project — each Work with its own repositories and artifacts.
           Each Work's record lives in the studio-project gear (ADR-0005); membership stays on
@@ -2823,8 +2831,9 @@ function WorkspaceProjectsCard({
               </ul>
             )}
 
-            <form onSubmit={create} style={{ marginTop: 16 }}>
-              {/* Two shapes, picked first: a greenfield project starts from a
+            {creating && (
+              <form onSubmit={create} className="work-create">
+              {/* Two shapes, picked first: a greenfield work starts from a
                   description, a modernization from existing code. */}
               <div className="inline" style={{ gap: 8 }}>
                 <button
@@ -2852,11 +2861,11 @@ function WorkspaceProjectsCard({
               </div>
 
               {stages.length > 0 && (
-                <div style={{ marginTop: 8 }}>
-                  <div className="hint">Journey stages</div>
-                  <div className="inline" style={{ flexWrap: "wrap", gap: 12 }}>
+                <div>
+                  <div className="field-label">Journey stages</div>
+                  <div className="stage-grid">
                     {stages.map((s) => (
-                      <label key={s.key} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <label key={s.key}>
                         <input
                           type="checkbox"
                           checked={s.required || picked.includes(s.key)}
@@ -2906,12 +2915,16 @@ function WorkspaceProjectsCard({
                 </div>
               )}
 
-              <div className="inline" style={{ marginTop: 8 }}>
+              <div className="inline" style={{ marginTop: 12 }}>
                 <button className="primary" disabled={!canCreate}>
                   {busy ? "Creating\u2026" : "Create work"}
                 </button>
+                <button type="button" onClick={() => setCreating(false)}>
+                  Cancel
+                </button>
               </div>
-            </form>
+              </form>
+            )}
           </>
         )}
         {error && <div className="error">{error}</div>}

@@ -114,13 +114,14 @@ button.primary:hover:not(:disabled) { background: var(--accent-hover); border-co
 button.ghost { border-color: transparent; color: var(--accent); background: transparent; }
 button.ghost:hover:not(:disabled) { background: var(--accent-soft); }
 
-input, select {
+input, select, textarea {
   font: inherit; font-size: 14px;
   border: 1px solid var(--border); border-radius: 8px;
   padding: 8px 12px; background: #fff; color: var(--text);
   outline: none; transition: border-color 0.15s, box-shadow 0.15s;
 }
-input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+textarea { resize: vertical; line-height: 1.5; }
+input:focus, select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 
 form.inline { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 0.9rem; }
 
@@ -610,9 +611,27 @@ button.danger:hover:not(:disabled) { background: #b91c1c; border-color: #b91c1c;
 }
 /* Inputs: Theia's #3c3c3c field on the dark shell. */
 :root[data-theme="dark"] input,
-:root[data-theme="dark"] select {
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea {
   background: #3c3c3c; color: var(--text); border-color: #3c3c3c;
 }
+
+/* New-work form: a separated, bordered block so creation doesn't blur into
+   the works list above it. */
+.work-create {
+  margin-top: 14px; padding: 14px 16px; border: 1px solid var(--border);
+  border-radius: var(--radius); background: color-mix(in srgb, var(--bg) 55%, transparent);
+}
+.work-create textarea { width: 100%; min-height: 90px; }
+.work-create .stage-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px 14px;
+  margin-top: 6px;
+}
+.work-create .stage-grid label { display: flex; align-items: center; gap: 6px; font-size: 13.5px; }
+.work-create .field-label {
+  font-size: 12px; color: var(--muted); font-weight: 600; margin-top: 12px;
+}
+.work-create .field-label:first-child { margin-top: 0; }
 /* Hovers: Theia's neutral list / toolbar greys (no blue tint). */
 :root[data-theme="dark"] .sidebar nav button:hover,
 :root[data-theme="dark"] .ptable tbody tr:hover td,
