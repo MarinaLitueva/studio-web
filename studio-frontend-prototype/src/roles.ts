@@ -121,6 +121,77 @@ export const roleGrants = {
   },
 };
 
+/* ── Project team membership (concept branch only) ────────────────────────────
+ *
+ * The account lives in the ORGANIZATION (its owning tenant), and a project's
+ * Team is a subset of those accounts. The platform can't record that today —
+ * an AM user has exactly one owning tenant, and a root project (workspace) has
+ * no Resource-Group member list of its own (only Works do). So, exactly like
+ * `roleGrants` above, project team membership is a browser-local overlay here:
+ * it lets the Team tab be exercised, is labelled unenforced, and is never sent
+ * to the backend. When the PDP / RG wiring lands this becomes real membership
+ * calls.
+ */
+
+const TEAM_KEY = "studio.concept.teamMembers";
+
+type TeamMap = Record<string, string[]>; // projectId -> userIds
+
+function readTeam(): TeamMap {
+  try {
+    const raw = localStorage.getItem(TEAM_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    return parsed && typeof parsed === "object" ? (parsed as TeamMap) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeTeam(map: TeamMap): void {
+  try {
+    localStorage.setItem(TEAM_KEY, JSON.stringify(map));
+  } catch {
+    /* non-fatal */
+  }
+}
+
+export const teamGrants = {
+  /** User ids added to this project's team here. */
+  members(projectId: string): string[] {
+    return [...(readTeam()[projectId] ?? [])];
+  },
+
+  add(projectId: string, userId: string): void {
+    const map = readTeam();
+    const cur = new Set(map[projectId] ?? []);
+    cur.add(userId);
+    map[projectId] = [...cur];
+    writeTeam(map);
+  },
+
+  remove(projectId: string, userId: string): void {
+    const map = readTeam();
+    const cur = (map[projectId] ?? []).filter((id) => id !== userId);
+    if (cur.length === 0) delete map[projectId];
+    else map[projectId] = cur;
+    writeTeam(map);
+  },
+
+  /** Total overlay assignments across every project — for the reset affordance. */
+  count(): number {
+    return Object.values(readTeam()).reduce((n, ids) => n + ids.length, 0);
+  },
+
+  clear(): void {
+    try {
+      localStorage.removeItem(TEAM_KEY);
+    } catch {
+      /* non-fatal */
+    }
+  },
+};
+
 /** The effective role: an explicit grant wins, otherwise what we can prove. */
 export function effectiveRole(
   projectId: string,

@@ -370,6 +370,15 @@ export const api = {
       body: JSON.stringify(input),
     }),
 
+  /** Rename a tenant. AM exposes `name` as the only mutable field on
+   *  `PATCH /tenants/{id}` (RFC 7396 merge patch); status transitions and the
+   *  parent are immutable here. */
+  updateTenant: (token: string, tenantId: string, input: { name: string }) =>
+    request<Tenant>(`/account-management/v1/tenants/${tenantId}`, token, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+
   tenantUsers: (token: string, tenantId: string) =>
     request<Page<User>>(`/account-management/v1/tenants/${tenantId}/users`, token),
 
