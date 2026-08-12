@@ -433,13 +433,15 @@ type AdminView = "people" | "connectors" | "secrets" | "tenants" | "workspaces";
  *  credentials. The tenant hierarchy (organizations, the raw workspace list)
  *  appears only when the platform-admin flag is on. */
 const ADMIN_NAV: { id: AdminView; icon: string; label: string }[] = [
+  // Organizations are a first-class concept again, so managing them (rename,
+  // add, delete) is ordinary administration — not gated behind the platform flag.
+  { id: "tenants", icon: "org", label: "Organizations" },
   { id: "people", icon: "users", label: "People" },
   { id: "connectors", icon: "plug", label: "Integrations" },
   { id: "secrets", icon: "key", label: "Secrets" },
 ];
 
 const PLATFORM_NAV: { id: AdminView; icon: string; label: string }[] = [
-  { id: "tenants", icon: "org", label: "Organizations" },
   { id: "workspaces", icon: "grid", label: "Project tenants" },
 ];
 
@@ -885,9 +887,11 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
                   <span className="ico">←</span> Back to Studio
                 </button>
               </div>
-              {/* Org selector: only under the platform flag — concept v2
-                  resolves the organization implicitly. */}
-              {showPlatform && (
+              {/* Org selector: shown under the platform flag, or whenever there
+                  is more than one organization to manage (so the Organizations
+                  admin can switch which one it acts on). A single org resolves
+                  implicitly and needs no picker. */}
+              {(showPlatform || orgs.length > 1) && (
               <div className="nav-section org-select-wrap">
                 <button className="org-select" onClick={() => setAdminOrgMenu((v) => !v)}>
                   <span className="account-avatar small">
@@ -4735,6 +4739,9 @@ function OrganizationsView({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [inbound, setInbound] = useState<import("./api").Conversion[]>([]);
+  // Inline rename of the selected organization.
+  const [renaming, setRenaming] = useState(false);
+  const [renameTo, setRenameTo] = useState("");
 
   const loadInbound = useCallback(async () => {
     try {
@@ -4770,6 +4777,25 @@ function OrganizationsView({
       await loadInbound();
     } catch (e) {
       setError(errText(e));
+    }
+  }
+
+  async function saveRename(org: Tenant) {
+    const next = renameTo.trim();
+    if (!next || next === org.name) {
+      setRenaming(false);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await api.updateTenant(token, org.id, { name: next });
+      setRenaming(false);
+      onChanged();
+    } catch (e) {
+      setError(errText(e));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -4887,7 +4913,46 @@ function OrganizationsView({
 
       {selected && (
         <div className="card">
-          <h2>{selected.name}</h2>
+          <div className="org-head">
+            {renaming ? (
+              <div className="ctx-add org-rename">
+                <input
+                  autoFocus
+                  value={renameTo}
+                  onChange={(e) => setRenameTo(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void saveRename(selected);
+                    if (e.key === "Escape") setRenaming(false);
+                  }}
+                />
+                <button
+                  type="button"
+                  disabled={busy || !renameTo.trim()}
+                  onClick={() => void saveRename(selected)}
+                >
+                  Save
+                </button>
+                <button type="button" className="ghost" onClick={() => setRenaming(false)}>
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <>
+                <h2 style={{ margin: 0 }}>{selected.name}</h2>
+                <button
+                  type="button"
+                  className="ghost"
+                  title="Rename organization"
+                  onClick={() => {
+                    setRenameTo(selected.name);
+                    setRenaming(true);
+                  }}
+                >
+                  ✎ Rename
+                </button>
+              </>
+            )}
+          </div>
           <ul className="rows">
             <li>
               <div className="grow">
