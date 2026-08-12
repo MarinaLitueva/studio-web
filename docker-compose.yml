@@ -178,7 +178,7 @@ services:
       keycloak:
         condition: service_started
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8090/healthz"]
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8090/cf/health"]
       interval: 10s
       timeout: 3s
       # Long grace before any failure counts against the backend: a healthy first
