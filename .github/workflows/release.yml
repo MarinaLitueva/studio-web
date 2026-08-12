@@ -66,21 +66,21 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: studio-frontend
+        working-directory: studio-frontend-prototype
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: studio-frontend/package-lock.json
+          cache-dependency-path: studio-frontend-prototype/package-lock.json
       - run: npm ci
       - run: npm test
       - run: npm run build
       - uses: actions/upload-artifact@v4
         with:
           name: studio-frontend-dist
-          path: studio-frontend/dist
+          path: studio-frontend-prototype/dist
 
   images:
     needs: [backend-binary, frontend-dist]
@@ -94,7 +94,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: studio-frontend-dist
-          path: studio-frontend/dist
+          path: studio-frontend-prototype/dist
 
       - uses: docker/login-action@v3
         with:
@@ -151,7 +151,7 @@ jobs:
           for t in ${{ steps.tags.outputs.list }}; do
             args+=(-t "$IMAGE_PREFIX/studio-frontend:$t")
           done
-          docker build -f studio-frontend/Dockerfile "${args[@]}" studio-frontend
+          docker build -f studio-frontend-prototype/Dockerfile "${args[@]}" studio-frontend-prototype
           for t in ${{ steps.tags.outputs.list }}; do
             docker push "$IMAGE_PREFIX/studio-frontend:$t"
           done

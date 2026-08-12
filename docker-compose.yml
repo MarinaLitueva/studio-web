@@ -191,7 +191,7 @@ services:
   frontend:
     build:
       context: .
-      dockerfile: studio-frontend/Dockerfile.src
+      dockerfile: studio-frontend-prototype/Dockerfile.src
     container_name: studio-frontend
     # Wait for the backend to be healthy and restart together with it, so the
     # portal comes up on its own once the backend is ready — no manual start.
