@@ -97,6 +97,7 @@ export function ProjectsPortfolio({
   onOpen,
   onOpenNested,
   onOpenStudio,
+  onOpenStudioNested,
   onChanged,
 }: {
   token: string;
@@ -111,6 +112,9 @@ export function ProjectsPortfolio({
   onOpen: (root: RootProject) => void;
   onOpenNested: (root: RootProject, project: Project) => void;
   onOpenStudio: (root: RootProject) => void;
+  /** Launch a Studio session for a nested project — its own session cloning
+   *  its own source, separate from the root's. */
+  onOpenStudioNested: (root: RootProject, project: Project) => void;
   onChanged: () => void;
 }) {
   const [nested, setNested] = useState<Record<string, Project[]>>({});
@@ -370,6 +374,13 @@ export function ProjectsPortfolio({
                             <td className="sub">{relTime(p.updated_at)}</td>
                             <td className="pactions">
                               <button onClick={() => onOpenNested(root, p)}>Open</button>
+                              <button
+                                className="primary"
+                                title="Open a Studio session for this nested project — its own workspace, cloning its own source"
+                                onClick={() => onOpenStudioNested(root, p)}
+                              >
+                                Open Studio
+                              </button>
                             </td>
                           </tr>
                         ))),

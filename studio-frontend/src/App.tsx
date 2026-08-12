@@ -1647,6 +1647,14 @@ function ProjectsView({
           const ws = workspaces.find((w) => w.id === r.id);
           if (ws) onOpenStudio(ws);
         }}
+        onOpenStudioNested={(_root, p) =>
+          onOpenStudio({
+            id: p.id,
+            name: p.name,
+            standalone: true,
+            root: p.git_url ? { repoUrl: p.git_url } : undefined,
+          })
+        }
         onChanged={onChanged}
       />
     );
