@@ -184,7 +184,7 @@ export function ProjectsPortfolio({
     const children = nested[root.id] ?? [];
     if (children.length > 0) {
       window.alert(
-        `“${root.name}” still has ${children.length} nested project(s). Delete those first — ` +
+        `“${root.name}” still has ${children.length} work(s). Delete those first — ` +
           `a project is not a folder you can drop with its contents inside.`,
       );
       return;
@@ -223,8 +223,9 @@ export function ProjectsPortfolio({
         <div>
           <h1>Projects</h1>
           <p className="subtitle" style={{ margin: 0 }}>
-            Every project owns its sources, its automation level and its people. Open one to work
-            inside it; nested projects are the efforts running within it.
+            A project is a product — it owns its connectors, artifacts and people. Open one to work
+            inside it; its Works are the stages of work on it, each with its own repositories and
+            artifacts.
           </p>
         </div>
         <button className="primary" disabled={!homeOrgId} onClick={() => setCreating((v) => !v)}>
@@ -290,7 +291,7 @@ export function ProjectsPortfolio({
                         <button
                           type="button"
                           className={`twisty ${children.length === 0 ? "empty" : shut ? "" : "open"}`}
-                          title={children.length === 0 ? "No nested projects" : shut ? "Expand" : "Collapse"}
+                          title={children.length === 0 ? "No works" : shut ? "Expand" : "Collapse"}
                           disabled={children.length === 0}
                           onClick={() => toggle(root.id)}
                         >
@@ -305,8 +306,8 @@ export function ProjectsPortfolio({
                           </button>
                           <div className="sub">
                             {children.length === 0
-                              ? "no nested projects yet"
-                              : `+${children.length} nested project${children.length === 1 ? "" : "s"}`}
+                              ? "no works yet"
+                              : `${children.length} work${children.length === 1 ? "" : "s"}`}
                             {root.self_managed ? " · self-managed" : ""}
                           </div>
                         </div>
@@ -353,7 +354,7 @@ export function ProjectsPortfolio({
                                   >
                                     {p.name}
                                   </button>
-                                  <div className="sub">Child of {root.name}</div>
+                                  <div className="sub">Part of {root.name}</div>
                                 </div>
                               </div>
                             </td>
@@ -376,7 +377,7 @@ export function ProjectsPortfolio({
                               <button onClick={() => onOpenNested(root, p)}>Open</button>
                               <button
                                 className="primary"
-                                title="Open a Studio session for this nested project — its own workspace, cloning its own source"
+                                title="Open a Studio session for this work — its own workspace, cloning its own source"
                                 onClick={() => onOpenStudioNested(root, p)}
                               >
                                 Open Studio
@@ -393,7 +394,7 @@ export function ProjectsPortfolio({
           <div className="ptable-foot">
             <span>
               {visible.length} project{visible.length === 1 ? "" : "s"}
-              {nestedCount > 0 ? ` · ${nestedCount} nested` : ""}
+              {nestedCount > 0 ? ` · ${nestedCount} work${nestedCount === 1 ? "" : "s"}` : ""}
             </span>
             <span className="sub">Organizations are hidden by design — the model still has them</span>
           </div>

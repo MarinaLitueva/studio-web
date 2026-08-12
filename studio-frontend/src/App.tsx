@@ -1667,7 +1667,7 @@ function ProjectsView({
       onClick: crumb.nestedId ? () => setCrumb({ projectId: root.id }) : undefined,
     },
   ];
-  if (crumb.nestedId) trail.push({ label: projectLabel ?? "nested project" });
+  if (crumb.nestedId) trail.push({ label: projectLabel ?? "work" });
 
   return (
     <>
@@ -1711,7 +1711,7 @@ const PROJECT_NAV: { group: string; items: { id: ProjectTab; label: string }[] }
     group: "Project",
     items: [
       { id: "overview", label: "Overview" },
-      { id: "nested", label: "Nested projects" },
+      { id: "nested", label: "Works" },
       { id: "artifacts", label: "Artifacts" },
       { id: "people", label: "Team" },
     ],
@@ -2735,7 +2735,7 @@ function WorkspaceProjectsCard({
   }
 
   async function removeProject(p: Project) {
-    if (!window.confirm(`Delete project \u201c${p.name}\u201d (members included)?`)) return;
+    if (!window.confirm(`Delete work \u201c${p.name}\u201d (members included)?`)) return;
     setError(null);
     try {
       await api.deleteProject(token, p.id, wsId);
@@ -2751,18 +2751,18 @@ function WorkspaceProjectsCard({
   return (
     <>
       <div className="card">
-        <h2>Projects</h2>
+        <h2>Works</h2>
         <p className="hint">
-          The efforts running inside this project. Each nested project's record lives in the studio-project
-          gear (ADR-0005); membership stays on Resource Group, so a project without a member
-          group says so rather than showing an empty list.
+          The stages of work on this project — each Work with its own repositories and artifacts.
+          Each Work's record lives in the studio-project gear (ADR-0005); membership stays on
+          Resource Group, so a Work without a member group says so rather than showing an empty list.
         </p>
 
         {projects && (
           <>
             {projects.length === 0 ? (
               <p className="empty" style={{ marginTop: 12 }}>
-                No projects in “{ws.name}” yet.
+                No works in “{ws.name}” yet.
               </p>
             ) : (
               <ul className="rows" style={{ marginTop: 12 }}>
@@ -2781,7 +2781,7 @@ function WorkspaceProjectsCard({
                     {onOpenStudio && (
                       <button
                         className="primary"
-                        title="Open a Studio session for this nested project — its own workspace, cloning its own source"
+                        title="Open a Studio session for this work — its own workspace, cloning its own source"
                         onClick={() =>
                           onOpenStudio({
                             id: p.id,
@@ -2813,7 +2813,7 @@ function WorkspaceProjectsCard({
                     </button>
                     <button
                       className="ghost"
-                      title="Delete project"
+                      title="Delete work"
                       onClick={() => void removeProject(p)}
                     >
                       ✕
@@ -2845,7 +2845,7 @@ function WorkspaceProjectsCard({
 
               <div className="inline" style={{ marginTop: 8 }}>
                 <input
-                  placeholder="Project name"
+                  placeholder="Work name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                 />
@@ -2908,7 +2908,7 @@ function WorkspaceProjectsCard({
 
               <div className="inline" style={{ marginTop: 8 }}>
                 <button className="primary" disabled={!canCreate}>
-                  {busy ? "Creating\u2026" : "Create project"}
+                  {busy ? "Creating\u2026" : "Create work"}
                 </button>
               </div>
             </form>
