@@ -1274,7 +1274,11 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
             {adminView === "people" && (
               <PeopleView
                 token={token}
-                roots={workspaces}
+                mode="org"
+                org={adminOrg ? { id: adminOrg.id, name: adminOrg.name } : activeOrg}
+                roots={workspaces.filter((w) =>
+                  adminOrg ? w.orgId === adminOrg.id : w.orgId === activeOrgResolvedId,
+                )}
                 query={filters.query}
                 onOpenProject={(id) => {
                   setAdminOpen(false);
@@ -1347,7 +1351,9 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
         {view === "people" && (
           <PeopleView
             token={token}
-            roots={workspaces}
+            mode="org"
+            org={activeOrg}
+            roots={workspaces.filter((w) => w.orgId === activeOrgResolvedId)}
             query={filters.query}
             onOpenProject={(id) => {
               setCrumb({ projectId: id });
@@ -1966,6 +1972,8 @@ function ProjectDetail({
           {tab === "people" && (
             <PeopleView
               token={token}
+              mode="team"
+              org={{ id: root.orgId, name: root.orgName }}
               roots={[root]}
               query={filters.query}
               onOpenProject={() => setTab("overview")}
