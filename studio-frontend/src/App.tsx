@@ -1676,7 +1676,7 @@ function ProjectsView({
 
 /** Tabs of one project. Everything a project owns is here — that is what makes
  *  it the unit of work rather than a container you have to select first. */
-type ProjectTab = "overview" | "nested" | "people" | "integrations" | "secrets";
+type ProjectTab = "overview" | "nested" | "artifacts" | "people" | "integrations" | "secrets";
 
 /** Left workbench nav, grouped like the mockups. Ids are unchanged (the content
  *  switch below still keys off them); only the labels and layout moved. */
@@ -1686,13 +1686,14 @@ const PROJECT_NAV: { group: string; items: { id: ProjectTab; label: string }[] }
     items: [
       { id: "overview", label: "Overview" },
       { id: "nested", label: "Nested projects" },
+      { id: "artifacts", label: "Artifacts" },
       { id: "people", label: "Team" },
     ],
   },
   {
     group: "Project setup",
     items: [
-      { id: "integrations", label: "Sources" },
+      { id: "integrations", label: "Connectors" },
       { id: "secrets", label: "Secrets" },
     ],
   },
@@ -1759,13 +1760,10 @@ function ProjectDetail({
             <WorkspaceDashboard token={token} ws={root} embedded onBack={onBack} onOpenStudio={onOpenStudio} />
           )}
           {tab === "nested" && (
-            <WorkspaceProjectsCard
-              token={token}
-              ws={root}
-              onChanged={onChanged}
-              onOpen={onOpenNested}
-              onOpenStudio={onOpenStudio}
-            />
+            <WorkspaceProjectsCard token={token} ws={root} onChanged={onChanged} onOpen={onOpenNested} />
+          )}
+          {tab === "artifacts" && (
+            <ArtifactsView token={token} workspace={root} onOpenStudio={onOpenStudio} />
           )}
           {tab === "people" && (
             <PeopleView
@@ -2592,7 +2590,6 @@ function WorkspaceProjectsCard({
   ws,
   onChanged,
   onOpen,
-  onOpenStudio,
 }: {
   token: string;
   ws: Workspace;
@@ -2600,8 +2597,6 @@ function WorkspaceProjectsCard({
   /** Drill into the project level. Absent when the card is embedded somewhere
    *  that has no navigation of its own. */
   onOpen?: (p: Project) => void;
-  /** Launch the IDE for this project — used by the Project sources panel. */
-  onOpenStudio?: (ws: Workspace) => void;
 }) {
   const wsId = ws.id;
   const [projects, setProjects] = useState<Project[] | null>(null);
@@ -2869,10 +2864,6 @@ function WorkspaceProjectsCard({
         )}
         {error && <div className="error">{error}</div>}
       </div>
-
-      {/* Sources back the projects above (a modernization clones one on launch),
-          so they live on this tab now — with their own connector picker. */}
-      <ProjectSources token={token} workspace={ws} onOpenStudio={onOpenStudio} />
 
       {openProject && openProject.members_group_id && (
         <ProjectMembers
@@ -3397,6 +3388,89 @@ async function attachReposToWorkspace(
  *  launch. Lives on the Nested projects tab (next to the projects they feed):
  *  it lists what is attached, lets you detach, and adds new sources by picking
  *  them straight from one of the project's connectors. */
+/** Artifacts — everything a project works on, in one place: repositories
+ *  attached as sources (cloned into the IDE on launch) and files added by hand.
+ *  Two honest halves: repository sources are real and addable today; manual
+ *  file upload waits on the file-storage data-plane (not deployed here), so
+ *  that list is read-only for now. */
+function ArtifactsView({
+  token,
+  workspace,
+  onOpenStudio,
+}: {
+  token: string;
+  workspace: Workspace;
+  onOpenStudio?: (ws: Workspace) => void;
+}) {
+  return (
+    <>
+      <h1>Artifacts</h1>
+      <p className="subtitle">
+        What this project works on — repositories attached as sources, plus files added by hand. A
+        session clones these into the IDE when you open Studio.
+      </p>
+      <ProjectSources token={token} workspace={workspace} onOpenStudio={onOpenStudio} />
+      <ProjectFiles token={token} />
+    </>
+  );
+}
+
+/** The manual-file half of Artifacts. file-storage is the platform blob store,
+ *  but uploads go through its signed-URL data-plane sidecar, which this assembly
+ *  does not run — so the list is read-only and "Add file" says why rather than
+ *  offering a button that cannot finish. Per-project association arrives with
+ *  the project-as-tenant work (phase 2). */
+function ProjectFiles({ token }: { token: string }) {
+  const [files, setFiles] = useState<import("./api").StoredFile[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .files(token)
+      .then((f) => setFiles(f.items ?? []))
+      .catch((e) => setErr(errText(e)));
+  }, [token]);
+
+  const count = files?.length ?? 0;
+
+  return (
+    <div className="card">
+      <div className="card-head">
+        <h2>Added by hand{count > 0 ? ` · ${count}` : ""}</h2>
+        <button
+          className="primary"
+          disabled
+          title="Uploads need the file-storage data-plane (signed-URL sidecar), which is not deployed in this environment yet"
+        >
+          Add file…
+        </button>
+      </div>
+      <p className="hint">
+        Manually added files for later processing. Upload needs the file-storage data-plane, which
+        this environment does not run yet — the list is read-only for now and shows the platform
+        file-storage until per-project files are wired.
+      </p>
+      {err && <p className="error">{err}</p>}
+      {files === null ? (
+        <p className="empty">Loading files…</p>
+      ) : files.length === 0 ? (
+        <p className="empty">No files yet — manual upload arrives with the file-storage data-plane.</p>
+      ) : (
+        <ul className="rows">
+          {files.map((f) => (
+            <li key={f.id}>
+              <div className="grow">
+                <div className="name">{f.name ?? f.file_name ?? f.id}</div>
+                <div className="sub">{f.id}</div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function ProjectSources({
   token,
   workspace: ws,
@@ -3441,7 +3515,7 @@ function ProjectSources({
   return (
     <div className="card">
       <div className="card-head">
-        <h2>Project sources{count > 0 ? ` · ${count}` : ""}</h2>
+        <h2>From repositories{count > 0 ? ` · ${count}` : ""}</h2>
         {count > 0 && onOpenStudio && (
           <button className="primary" onClick={() => onOpenStudio(ws)}>
             Open in IDE
@@ -3450,7 +3524,7 @@ function ProjectSources({
       </div>
       <p className="hint">
         Repositories cloned into the workspace when a session launches. Add one by picking it from a
-        connector — set connectors up on the Sources tab.
+        connector — set connectors up on the Connectors tab.
       </p>
       {err && <p className="error">{err}</p>}
       {repos === null ? (
