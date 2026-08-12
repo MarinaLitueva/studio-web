@@ -1627,17 +1627,35 @@ function ProjectsView({
   onChanged: () => void;
   onOpenStudio: (target: StudioTarget) => void;
 }) {
+  // Organizations are visible again: the portfolio is scoped to one org at a
+  // time. The target case is a single org, so the switcher only appears when
+  // there is more than one. Orgs are derived from the workspaces already loaded
+  // (each carries its orgId/orgName).
+  const orgOptions = (() => {
+    const m = new Map<string, string>();
+    for (const w of workspaces) if (w.orgId) m.set(w.orgId, w.orgName);
+    if (m.size === 0 && implicitOrgId) m.set(implicitOrgId, "Organization");
+    return Array.from(m, ([id, name]) => ({ id, name }));
+  })();
+  const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
+  const orgId = activeOrgId ?? implicitOrgId ?? orgOptions[0]?.id ?? null;
+  const activeOrg = orgOptions.find((o) => o.id === orgId) ?? orgOptions[0] ?? null;
+  const orgRoots = workspaces.filter((w) => w.orgId === orgId);
+
   const root = workspaces.find((w) => w.id === crumb.projectId);
 
   if (!root) {
     return (
       <ProjectsPortfolio
         token={token}
-        roots={workspaces}
+        roots={orgRoots}
+        org={activeOrg}
+        orgs={orgOptions}
+        onSwitchOrg={setActiveOrgId}
         query={filters.query}
         selfManagedOnly={filters.selfManagedOnly}
         sort={filters.sort}
-        homeOrgId={implicitOrgId}
+        homeOrgId={orgId}
         onOpen={(r) => setCrumb({ projectId: r.id })}
         onOpenNested={(r, p) => {
           setProjectLabel(p.name);
@@ -1661,6 +1679,7 @@ function ProjectsView({
   }
 
   const trail: { label: string; onClick?: () => void }[] = [
+    ...(activeOrg ? [{ label: activeOrg.name, onClick: () => setCrumb({}) }] : []),
     { label: "Projects", onClick: () => setCrumb({}) },
     {
       label: root.name,

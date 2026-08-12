@@ -94,6 +94,9 @@ export function ProjectsPortfolio({
   selfManagedOnly,
   sort,
   homeOrgId,
+  org,
+  orgs,
+  onSwitchOrg,
   onOpen,
   onOpenNested,
   onOpenStudio,
@@ -102,6 +105,11 @@ export function ProjectsPortfolio({
 }: {
   token: string;
   roots: RootProject[];
+  /** The organization these projects belong to (shown as the top context). */
+  org: { id: string; name: string } | null;
+  /** All organizations visible to the user — a switcher appears when > 1. */
+  orgs: { id: string; name: string }[];
+  onSwitchOrg: (id: string) => void;
   /** Search box from the right-hand filter panel. */
   query: string;
   /** Filter panel: only projects whose tenant raised the isolation barrier. */
@@ -221,6 +229,36 @@ export function ProjectsPortfolio({
     <>
       <div className="topbar">
         <div>
+          {/* Organization is the top context again: projects live inside it. A
+              switcher appears only when the user can see more than one org. */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <span
+              style={{
+                fontSize: 10.5,
+                letterSpacing: "0.07em",
+                textTransform: "uppercase",
+                color: "var(--muted)",
+                fontWeight: 600,
+              }}
+            >
+              Organization
+            </span>
+            {orgs.length > 1 ? (
+              <select
+                value={org?.id ?? ""}
+                onChange={(e) => onSwitchOrg(e.target.value)}
+                style={{ fontSize: 13, padding: "3px 8px" }}
+              >
+                {orgs.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span style={{ fontWeight: 600 }}>{org?.name ?? "—"}</span>
+            )}
+          </div>
           <h1>Projects</h1>
           <p className="subtitle" style={{ margin: 0 }}>
             A project is a product — it owns its connectors, artifacts and people. Open one to work
@@ -396,7 +434,7 @@ export function ProjectsPortfolio({
               {visible.length} project{visible.length === 1 ? "" : "s"}
               {nestedCount > 0 ? ` · ${nestedCount} work${nestedCount === 1 ? "" : "s"}` : ""}
             </span>
-            <span className="sub">Organizations are hidden by design — the model still has them</span>
+            {org && <span className="sub">in {org.name}</span>}
           </div>
         )}
       </div>
