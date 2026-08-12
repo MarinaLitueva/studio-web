@@ -409,10 +409,26 @@ button.danger:hover:not(:disabled) { background: #b91c1c; border-color: #b91c1c;
 .sidebar.collapsed .product-button strong,
 .sidebar.collapsed .product-button .chev { display: none; }
 .sidebar.collapsed .product-switch { display: flex; flex-direction: column; gap: 6px; align-items: center; }
+/* Collapsed rail: every item is a centered rounded square, so the active/hover
+   fill is a neat badge (matching the avatars) instead of a wide full-width
+   pill, and the icons sit on one evenly spaced column. */
+.sidebar.collapsed nav { align-items: center; gap: 4px; }
 .sidebar.collapsed nav button {
-  font-size: 0; gap: 0; justify-content: center; padding: 9px 0;
+  font-size: 0; gap: 0; justify-content: center;
+  width: 40px; height: 40px; padding: 0; border-radius: 10px; align-self: center;
+}
+.sidebar.collapsed .nav-section { margin-top: 2px; display: flex; flex-direction: column; align-items: center; gap: 4px; width: 100%; }
+/* Group break (e.g. Work → Monitor) reads as a short centered divider instead
+   of a random gap. */
+.sidebar.collapsed .nav-section-monitor {
+  margin-top: 10px; padding-top: 10px; position: relative;
+}
+.sidebar.collapsed .nav-section-monitor::before {
+  content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: 24px; height: 1px; background: var(--border);
 }
 .sidebar.collapsed nav button .ico { font-size: 15px; }
+.sidebar.collapsed nav button svg { width: 18px; height: 18px; }
 .sidebar.collapsed nav button .dirty-dot { font-size: 9px; margin: 0; position: absolute; transform: translate(10px, -8px); }
 .sidebar.collapsed .nav-section-title { display: none; }
 .sidebar.collapsed .space-x { display: none; }

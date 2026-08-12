@@ -1022,7 +1022,10 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
               // depends on having picked a container first.
               const items = sec.items;
               return (
-              <div key={sec.title ?? "_top"} className="nav-section">
+              <div
+                key={sec.title ?? "_top"}
+                className={`nav-section${sec.title ? ` nav-section-${sec.title.toLowerCase()}` : ""}`}
+              >
                 {sec.title && (
                   <div className="nav-section-title">
                     {sec.title === "Work" && crumb.projectId
