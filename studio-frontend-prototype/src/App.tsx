@@ -459,6 +459,7 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
   // and the portfolio share one selection. null = "resolve a sensible default".
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
   const [orgNavMenu, setOrgNavMenu] = useState(false);
+  const [projNavMenu, setProjNavMenu] = useState(false);
   // The open project's active tab. Lifted here so the sidebar can BE the project
   // nav when a project is open (the experiment) instead of a nav inside the page.
   const [projectTab, setProjectTab] = useState<ProjectTab>("overview");
@@ -795,6 +796,8 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
   // projects view with a project in the crumb and no admin/space overlay.
   const activeProject = workspaces.find((w) => w.id === crumb.projectId) ?? null;
   const inProject = !adminOpen && view === "projects" && !!activeProject;
+  // Projects of the org in context — the project switcher's list.
+  const orgProjects = workspaces.filter((w) => w.orgId === activeOrgResolvedId);
 
   const panelView: PanelView = dash ? "dashboard" : view;
 
@@ -1037,18 +1040,58 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
             {inProject && activeProject ? (
               // ── Project context: the sidebar IS the project's nav ──
               <>
-                <div className="nav-section nav-project-head">
-                  <div className="nav-section-title">{activeProject.name}</div>
-                  <button
-                    className="proj-back"
-                    title="Back to the organization's projects"
-                    onClick={() => {
-                      setCrumb({});
-                      setActiveSpace(null);
-                    }}
-                  >
-                    <span className="ico">←</span> All projects
-                  </button>
+                {/* Project switcher — same shape as the org one above it: pick
+                    another project of this organization, or jump back to the
+                    whole list via the extra "All projects" entry. */}
+                <div className="nav-section org-nav proj-nav">
+                  <div className="org-select-wrap">
+                    <button
+                      type="button"
+                      className="org-select"
+                      title={activeProject.name}
+                      onClick={() => setProjNavMenu((v) => !v)}
+                    >
+                      <span className="account-avatar small">
+                        {activeProject.name.slice(0, 1).toUpperCase()}
+                      </span>
+                      <span className="org-select-name">{activeProject.name}</span>
+                      <span className="chev">▾</span>
+                    </button>
+                    {projNavMenu && (
+                      <div className="org-menu">
+                        {orgProjects.map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            className={p.id === activeProject.id ? "on" : ""}
+                            onClick={() => {
+                              setCrumb({ projectId: p.id });
+                              setProjectTab("overview");
+                              setActiveSpace(null);
+                              setProjNavMenu(false);
+                            }}
+                          >
+                            <span className="account-avatar small">
+                              {p.name.slice(0, 1).toUpperCase()}
+                            </span>
+                            {p.name}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          className="org-new"
+                          title="Back to the organization's projects"
+                          onClick={() => {
+                            setCrumb({});
+                            setActiveSpace(null);
+                            setProjNavMenu(false);
+                          }}
+                        >
+                          ▤ All projects
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 {PROJECT_NAV.map((g) => (
                   <div

@@ -374,13 +374,9 @@ button.danger:hover:not(:disabled) { background: #b91c1c; border-color: #b91c1c;
   border-top: 1px solid var(--border); margin-top: 4px; padding-top: 8px;
 }
 /* ── Project-context sidebar (the nav follows what you're in) ── */
-.nav-project-head { padding-bottom: 6px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
-.nav-project-head .nav-section-title {
-  text-transform: none; letter-spacing: 0; font-size: 12.5px; font-weight: 700; color: var(--text);
-  padding-bottom: 6px;
-}
-.sidebar nav button.proj-back { color: var(--muted); font-size: 13px; }
 .proj-content { min-width: 0; }
+/* Project switcher reuses the org switcher shell; mark the current project. */
+.org-menu button.on { color: var(--accent); font-weight: 600; }
 /* ── Login page (creative full-bleed) ── */
 .login-page {
   min-height: 100vh; display: flex; align-items: center; justify-content: center;
