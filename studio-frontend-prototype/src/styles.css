@@ -342,6 +342,11 @@ button.danger {
 button.danger:hover:not(:disabled) { background: #b91c1c; border-color: #b91c1c; }
 .danger-zone { border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
 .sidebar.collapsed .org-select-name, .sidebar.collapsed .org-select .chev { display: none; }
+/* Collapsed: the switcher becomes just its avatar, centered and borderless,
+   so it matches the icon rail instead of a stray bordered box. */
+.sidebar.collapsed .org-nav .org-select { border: none; background: none; padding: 9px 0; }
+.sidebar.collapsed .org-nav .org-select .account-avatar { margin: 0 auto; }
+.sidebar.collapsed .org-nav .org-menu { left: 0; right: auto; min-width: 200px; }
 .account-menu > button { text-align: left; }
 
 /* Small uppercase context label (org name above the portfolio, etc.). */
