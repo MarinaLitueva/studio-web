@@ -459,6 +459,13 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
   // and the portfolio share one selection. null = "resolve a sensible default".
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
   const [orgNavMenu, setOrgNavMenu] = useState(false);
+  // The open project's active tab. Lifted here so the sidebar can BE the project
+  // nav when a project is open (the experiment) instead of a nav inside the page.
+  const [projectTab, setProjectTab] = useState<ProjectTab>("overview");
+  // Opening a different project starts on its Overview.
+  useEffect(() => {
+    setProjectTab("overview");
+  }, [crumb.projectId]);
   // Admin area (console pattern): a separate mode with its own sidebar for
   // organizations / members / workspaces administration.
   const [adminOpen, setAdminOpen] = useState(false);
@@ -783,6 +790,12 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
     null;
   const activeOrg = orgOptions.find((o) => o.id === activeOrgResolvedId) ?? null;
 
+  // The experiment: when a project is open the sidebar shows that project's nav
+  // instead of the organization's. A project is "open" when we're on the
+  // projects view with a project in the crumb and no admin/space overlay.
+  const activeProject = workspaces.find((w) => w.id === crumb.projectId) ?? null;
+  const inProject = !adminOpen && view === "projects" && !!activeProject;
+
   const panelView: PanelView = dash ? "dashboard" : view;
 
   const refresh = useCallback(async () => {
@@ -1021,38 +1034,72 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
                 )}
               </div>
             </div>
-            {NAV_SECTIONS.map((sec) => {
-              // Every item exists unconditionally now: nothing in the sidebar
-              // depends on having picked a container first.
-              const items = sec.items;
-              return (
-              <div
-                key={sec.title ?? "_top"}
-                className={`nav-section${sec.title ? ` nav-section-${sec.title.toLowerCase()}` : ""}`}
-              >
-                {sec.title && (
-                  <div className="nav-section-title">
-                    {sec.title === "Work" && crumb.projectId
-                      ? workspaces.find((w) => w.id === crumb.projectId)?.name ?? sec.title
-                      : sec.title}
-                  </div>
-                )}
-                {items.map((n) => (
+            {inProject && activeProject ? (
+              // ── Project context: the sidebar IS the project's nav ──
+              <>
+                <div className="nav-section nav-project-head">
+                  <div className="nav-section-title">{activeProject.name}</div>
                   <button
-                    key={n.id}
-                    className={view === n.id && !activeSpace ? "active" : ""}
-                    title={n.label}
+                    className="proj-back"
+                    title="Back to the organization's projects"
                     onClick={() => {
-                      setView(n.id);
-                      setActiveSpace(null); // portal navigation leaves the space
+                      setCrumb({});
+                      setActiveSpace(null);
                     }}
                   >
-                    <span className="ico"><NavIcon name={n.icon} /></span> {n.label}
+                    <span className="ico">←</span> All projects
                   </button>
+                </div>
+                {PROJECT_NAV.map((g) => (
+                  <div
+                    key={g.group}
+                    className={`nav-section nav-section-${g.group.toLowerCase().replace(/\s+/g, "-")}`}
+                  >
+                    <div className="nav-section-title">{g.group}</div>
+                    {g.items.map((t) => (
+                      <button
+                        key={t.id}
+                        className={projectTab === t.id && !crumb.nestedId && !activeSpace ? "active" : ""}
+                        title={t.label}
+                        onClick={() => {
+                          setCrumb({ projectId: activeProject.id }); // leave any open Work
+                          setProjectTab(t.id);
+                          setActiveSpace(null);
+                        }}
+                      >
+                        <span className="ico"><NavIcon name={t.icon} /></span> {t.label}
+                      </button>
+                    ))}
+                  </div>
                 ))}
-              </div>
-              );
-            })}
+              </>
+            ) : (
+              // ── Organization context: work surfaces of the whole org ──
+              NAV_SECTIONS.map((sec) => {
+                const items = sec.items;
+                return (
+                  <div
+                    key={sec.title ?? "_top"}
+                    className={`nav-section${sec.title ? ` nav-section-${sec.title.toLowerCase()}` : ""}`}
+                  >
+                    {sec.title && <div className="nav-section-title">{sec.title}</div>}
+                    {items.map((n) => (
+                      <button
+                        key={n.id}
+                        className={view === n.id && !activeSpace ? "active" : ""}
+                        title={n.label}
+                        onClick={() => {
+                          setView(n.id);
+                          setActiveSpace(null); // portal navigation leaves the space
+                        }}
+                      >
+                        <span className="ico"><NavIcon name={n.icon} /></span> {n.label}
+                      </button>
+                    ))}
+                  </div>
+                );
+              })
+            )}
             </>
           )}
           {spaces.length > 0 && (
@@ -1344,6 +1391,8 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
             setCrumb={setCrumb}
             projectLabel={projectLabel}
             setProjectLabel={setProjectLabel}
+            projectTab={projectTab}
+            setProjectTab={setProjectTab}
             onChanged={refresh}
             onOpenStudio={setStudio}
           />
@@ -1776,6 +1825,8 @@ function ProjectsView({
   setCrumb,
   projectLabel,
   setProjectLabel,
+  projectTab,
+  setProjectTab,
   onChanged,
   onOpenStudio,
 }: {
@@ -1790,6 +1841,9 @@ function ProjectsView({
   setCrumb: (c: Crumb) => void;
   projectLabel?: string;
   setProjectLabel: (n: string | undefined) => void;
+  /** Open project's active tab — the sidebar owns this now (see the shell). */
+  projectTab: ProjectTab;
+  setProjectTab: (t: ProjectTab) => void;
   onChanged: () => void;
   onOpenStudio: (target: StudioTarget) => void;
 }) {
@@ -1859,6 +1913,8 @@ function ProjectsView({
           token={token}
           root={root}
           filters={filters}
+          tab={projectTab}
+          setTab={setProjectTab}
           onBack={() => setCrumb({})}
           onOpenStudio={onOpenStudio}
           onOpenNested={(p) => {
@@ -1876,23 +1932,24 @@ function ProjectsView({
  *  it the unit of work rather than a container you have to select first. */
 type ProjectTab = "overview" | "nested" | "artifacts" | "people" | "integrations" | "secrets";
 
-/** Left workbench nav, grouped like the mockups. Ids are unchanged (the content
- *  switch below still keys off them); only the labels and layout moved. */
-const PROJECT_NAV: { group: string; items: { id: ProjectTab; label: string }[] }[] = [
+/** Project-scoped nav. When a project is open this replaces the organization
+ *  nav in the sidebar (the experiment: the sidebar follows what you're in).
+ *  Ids are unchanged — the content switch still keys off them. */
+const PROJECT_NAV: { group: string; items: { id: ProjectTab; icon: string; label: string }[] }[] = [
   {
     group: "Project",
     items: [
-      { id: "overview", label: "Overview" },
-      { id: "nested", label: "Works" },
-      { id: "artifacts", label: "Artifacts" },
-      { id: "people", label: "Team" },
+      { id: "overview", icon: "home", label: "Overview" },
+      { id: "nested", icon: "grid", label: "Works" },
+      { id: "artifacts", icon: "file", label: "Artifacts" },
+      { id: "people", icon: "users", label: "Team" },
     ],
   },
   {
     group: "Project setup",
     items: [
-      { id: "integrations", label: "Connectors" },
-      { id: "secrets", label: "Secrets" },
+      { id: "integrations", icon: "plug", label: "Connectors" },
+      { id: "secrets", icon: "key", label: "Secrets" },
     ],
   },
 ];
@@ -1901,6 +1958,8 @@ function ProjectDetail({
   token,
   root,
   filters,
+  tab,
+  setTab,
   onBack,
   onOpenStudio,
   onOpenNested,
@@ -1909,13 +1968,14 @@ function ProjectDetail({
   token: string;
   root: Workspace;
   filters: Filters;
+  /** Active tab and its setter — owned by the shell so the SIDEBAR is the nav. */
+  tab: ProjectTab;
+  setTab: (t: ProjectTab) => void;
   onBack: () => void;
   onOpenStudio: (target: StudioTarget) => void;
   onOpenNested: (p: Project) => void;
   onChanged: () => void;
 }) {
-  const [tab, setTab] = useState<ProjectTab>("overview");
-
   return (
     <>
       <div className="topbar">
@@ -1934,26 +1994,9 @@ function ProjectDetail({
         </div>
       </div>
 
-      <div className="workbench">
-        <nav className="wb-nav">
-          {PROJECT_NAV.map((g) => (
-            <div key={g.group} className="wb-group">
-              <div className="wb-group-title">{g.group}</div>
-              {g.items.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  className={tab === t.id ? "wb-item on" : "wb-item"}
-                  onClick={() => setTab(t.id)}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
-          ))}
-        </nav>
-
-        <div className="wb-content">
+      {/* The nav for these tabs now lives in the sidebar (the experiment); this
+          page is just the content of the selected tab. */}
+      <div className="proj-content">
           {tab === "overview" && (
             <WorkspaceDashboard token={token} ws={root} embedded onBack={onBack} onOpenStudio={onOpenStudio} />
           )}
@@ -1983,7 +2026,6 @@ function ProjectDetail({
             <ConnectorsView token={token} workspace={root} filters={filters} />
           )}
           {tab === "secrets" && <SecretsView token={token} workspaces={[root]} filters={filters} />}
-        </div>
       </div>
     </>
   );

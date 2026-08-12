@@ -373,6 +373,14 @@ button.danger:hover:not(:disabled) { background: #b91c1c; border-color: #b91c1c;
   color: var(--accent); font-weight: 600;
   border-top: 1px solid var(--border); margin-top: 4px; padding-top: 8px;
 }
+/* ── Project-context sidebar (the nav follows what you're in) ── */
+.nav-project-head { padding-bottom: 6px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
+.nav-project-head .nav-section-title {
+  text-transform: none; letter-spacing: 0; font-size: 12.5px; font-weight: 700; color: var(--text);
+  padding-bottom: 6px;
+}
+.sidebar nav button.proj-back { color: var(--muted); font-size: 13px; }
+.proj-content { min-width: 0; }
 /* ── Login page (creative full-bleed) ── */
 .login-page {
   min-height: 100vh; display: flex; align-items: center; justify-content: center;
@@ -425,10 +433,12 @@ button.danger:hover:not(:disabled) { background: #b91c1c; border-color: #b91c1c;
 .sidebar.collapsed .nav-section { margin-top: 2px; display: flex; flex-direction: column; align-items: center; gap: 4px; width: 100%; }
 /* Group break (e.g. Work → Monitor) reads as a short centered divider instead
    of a random gap. */
-.sidebar.collapsed .nav-section-monitor {
+.sidebar.collapsed .nav-section-monitor,
+.sidebar.collapsed .nav-section-project-setup {
   margin-top: 10px; padding-top: 10px; position: relative;
 }
-.sidebar.collapsed .nav-section-monitor::before {
+.sidebar.collapsed .nav-section-monitor::before,
+.sidebar.collapsed .nav-section-project-setup::before {
   content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
   width: 24px; height: 1px; background: var(--border);
 }
