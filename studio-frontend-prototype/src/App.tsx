@@ -407,7 +407,6 @@ const NAV_SECTIONS: {
   title: string | null;
   items: { id: View; icon: string; label: string }[];
 }[] = [
-  { title: null, items: [{ id: "home", icon: "home", label: "Home" }] },
   {
     title: "Work",
     items: [
@@ -445,7 +444,7 @@ const PLATFORM_NAV: { id: AdminView; icon: string; label: string }[] = [
 ];
 
 function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () => void }) {
-  const [view, setView] = useState<View>("home");
+  const [view, setView] = useState<View>("projects");
   /** Position in the project → nested project drill-down. Two levels, one noun. */
   const [crumb, setCrumb] = useState<Crumb>({});
   /** Name of the opened nested project, kept for the crumb: the record is not
@@ -453,6 +452,11 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
   const [projectLabel, setProjectLabel] = useState<string | undefined>();
   const [accountMenu, setAccountMenu] = useState(false);
   const [productMenu, setProductMenu] = useState(false);
+  // Active organization — the top context, now that the level above projects is
+  // back. Lifted to the shell so the sidebar switcher (where "Home" used to be)
+  // and the portfolio share one selection. null = "resolve a sensible default".
+  const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
+  const [orgNavMenu, setOrgNavMenu] = useState(false);
   // Admin area (console pattern): a separate mode with its own sidebar for
   // organizations / members / workspaces administration.
   const [adminOpen, setAdminOpen] = useState(false);
@@ -753,17 +757,29 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
       ? { ...home, orgId: home.id, orgName: home.name }
       : null;
 
-  // Organizations that actually group projects, derived from the loaded
-  // workspaces (each carries orgId/orgName). Same source as the portfolio
-  // switcher, so the account menu and the portfolio never disagree — and an
-  // organization with no projects never shows up empty (which is exactly what
-  // made an admin-only sibling org read as "nothing here").
-  const menuOrgs = (() => {
-    const m = new Map<string, string>();
-    for (const w of workspaces) if (w.orgId) m.set(w.orgId, w.orgName);
-    if (m.size === 0 && implicitOrgId) m.set(implicitOrgId, home?.name ?? "Organization");
-    return Array.from(m, ([id, name]) => ({ id, name }));
+  // The organizations offered in the switcher: every one that holds projects
+  // (derived from the loaded workspaces, which carry orgId/orgName) plus any
+  // other visible, accessible org — so a freshly created, still-empty org is
+  // switchable straight away. Self-managed orgs are barriered (no children
+  // reachable), so they only appear if they already own a project here.
+  const orgOptions = (() => {
+    const m = new Map<string, { id: string; name: string }>();
+    for (const w of workspaces) if (w.orgId) m.set(w.orgId, { id: w.orgId, name: w.orgName });
+    for (const o of orgs) if (!o.self_managed && !m.has(o.id)) m.set(o.id, { id: o.id, name: o.name });
+    if (m.size === 0 && implicitOrgId) m.set(implicitOrgId, { id: implicitOrgId, name: home?.name ?? "Organization" });
+    return Array.from(m.values());
   })();
+  // Resolve the active org. Honour an explicit pick, else default to one that
+  // actually CONTAINS projects — never an empty sibling, which is what made the
+  // portfolio read as "nothing here".
+  const orgsWithProjects = new Set(workspaces.map((w) => w.orgId));
+  const activeOrgResolvedId =
+    (activeOrgId && orgOptions.some((o) => o.id === activeOrgId) ? activeOrgId : null) ??
+    orgOptions.find((o) => orgsWithProjects.has(o.id))?.id ??
+    orgOptions[0]?.id ??
+    implicitOrgId ??
+    null;
+  const activeOrg = orgOptions.find((o) => o.id === activeOrgResolvedId) ?? null;
 
   const panelView: PanelView = dash ? "dashboard" : view;
 
@@ -948,7 +964,60 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
               </div>
             </>
           ) : (
-            NAV_SECTIONS.map((sec) => {
+            <>
+            {/* Organization switcher — sits where "Home" used to, because the
+                organization IS the home context: pick one and its projects
+                open. A static pill when there is only one; creation lives in
+                the account menu below. */}
+            <div className="nav-section org-nav">
+              <div className="org-select-wrap">
+                <button
+                  type="button"
+                  className="org-select"
+                  disabled={orgOptions.length <= 1}
+                  title={activeOrg?.name ?? "Organization"}
+                  onClick={() => setOrgNavMenu((v) => !v)}
+                >
+                  <span className="account-avatar small">
+                    {(activeOrg?.name ?? "?").slice(0, 1).toUpperCase()}
+                  </span>
+                  <span className="org-select-name">{activeOrg?.name ?? "Select organization"}</span>
+                  {orgOptions.length > 1 && <span className="chev">▾</span>}
+                </button>
+                {orgNavMenu && orgOptions.length > 1 && (
+                  <div className="org-menu">
+                    {orgOptions.map((o) => (
+                      <button
+                        key={o.id}
+                        type="button"
+                        onClick={() => {
+                          setActiveOrgId(o.id);
+                          setCrumb({});
+                          setView("projects");
+                          setActiveSpace(null);
+                          setOrgNavMenu(false);
+                        }}
+                      >
+                        <span className="account-avatar small">{o.name.slice(0, 1).toUpperCase()}</span>
+                        {o.name}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      className="org-new"
+                      title="Create an organization in the account menu"
+                      onClick={() => {
+                        setOrgNavMenu(false);
+                        setAccountMenu(true);
+                      }}
+                    >
+                      ＋ New organization
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+            {NAV_SECTIONS.map((sec) => {
               // Every item exists unconditionally now: nothing in the sidebar
               // depends on having picked a container first.
               const items = sec.items;
@@ -976,7 +1045,8 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
                 ))}
               </div>
               );
-            })
+            })}
+            </>
           )}
           {spaces.length > 0 && (
             <div className="nav-spaces">
@@ -1052,7 +1122,8 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
                   back, so the menu groups by it instead of a flat column. */}
               <ContextPane
                 token={token}
-                orgs={menuOrgs}
+                orgs={orgOptions}
+                homeId={home?.id ?? null}
                 createOrgId={implicitOrgId}
                 workspaces={workspaces}
                 crumb={crumb}
@@ -1255,7 +1326,8 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
           <ProjectsView
             token={token}
             workspaces={workspaces}
-            implicitOrgId={implicitOrgId}
+            orgId={activeOrgResolvedId}
+            activeOrg={activeOrg}
             filters={filters}
             crumb={crumb}
             setCrumb={setCrumb}
@@ -1488,6 +1560,7 @@ function FilterPanel({
 function ContextPane({
   token,
   orgs,
+  homeId,
   createOrgId,
   workspaces,
   crumb,
@@ -1497,6 +1570,8 @@ function ContextPane({
   token: string;
   /** Organizations that group the projects — derived from the loaded set. */
   orgs: { id: string; name: string }[];
+  /** Parent tenant a brand-new organization is created under (the home root). */
+  homeId: string | null;
   /** Fallback parent for a brand-new project when no org is in context. */
   createOrgId: string | null;
   workspaces: Workspace[];
@@ -1505,34 +1580,45 @@ function ContextPane({
   onChanged: () => void;
 }) {
   const [q, setQ] = useState("");
-  const [adding, setAdding] = useState(false);
+  // Which creator is open, if any — a new organization, or a new project.
+  const [adding, setAdding] = useState<"org" | "ws" | null>(null);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Which organization's projects to show. Defaults to the org owning the
-  // project in context, else the first org that has any — never an empty one.
+  // project in context, else the first org that actually has projects — never
+  // an empty one, even though empty orgs are still listed and selectable.
   const [pickedOrg, setPickedOrg] = useState<string | null>(null);
   const ownerOrgId = workspaces.find((w) => w.id === crumb.projectId)?.orgId;
-  const activeOrgId = pickedOrg ?? ownerOrgId ?? orgs[0]?.id ?? null;
+  const activeOrgId =
+    pickedOrg ??
+    ownerOrgId ??
+    orgs.find((o) => workspaces.some((w) => w.orgId === o.id))?.id ??
+    orgs[0]?.id ??
+    null;
 
   const orgList = orgs.filter((o) => matches(q, o.name));
   const list = workspaces
     .filter((w) => (activeOrgId ? w.orgId === activeOrgId : true) && matches(q, w.name))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  async function create() {
-    const parent = activeOrgId ?? createOrgId;
+  async function create(kind: "org" | "ws") {
+    // An organization is created under the home root; a project under the org
+    // currently in context (falling back to the implicit one).
+    const parent = kind === "org" ? homeId : activeOrgId ?? createOrgId;
     if (!parent || !name.trim()) return;
     setBusy(true);
     setError(null);
     try {
-      await api.createTenant(token, {
+      const created = await api.createTenant(token, {
         name: name.trim(),
         parent_id: parent,
-        tenant_type: TENANT_TYPES.workspace,
+        tenant_type: kind === "org" ? TENANT_TYPES.organization : TENANT_TYPES.workspace,
       });
       setName("");
-      setAdding(false);
+      setAdding(null);
+      // Jump straight into a freshly created org so the user can fill it.
+      if (kind === "org" && created?.id) setPickedOrg(created.id);
       onChanged();
     } catch (e) {
       setError(errText(e));
@@ -1550,21 +1636,41 @@ function ContextPane({
         onChange={(e) => setQ(e.target.value)}
       />
 
-      {orgList.length > 0 && (
-        <>
-          <div className="ctx-head">
-            <span>Organizations</span>
-          </div>
-          {orgList.map((o) => (
-            <div key={o.id} className={`ctx-row${activeOrgId === o.id ? " on" : ""}`}>
-              <button type="button" className="grow" onClick={() => setPickedOrg(o.id)}>
-                <span className="account-avatar small">{o.name.slice(0, 1).toUpperCase()}</span>
-                {o.name}
-              </button>
-            </div>
-          ))}
-        </>
+      <div className="ctx-head">
+        <span>Organizations</span>
+        <button
+          type="button"
+          title="New organization"
+          disabled={!homeId}
+          onClick={() => setAdding((v) => (v === "org" ? null : "org"))}
+        >
+          +
+        </button>
+      </div>
+      {adding === "org" && (
+        <div className="ctx-add">
+          <input
+            autoFocus
+            placeholder="Organization name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void create("org");
+            }}
+          />
+          <button type="button" disabled={busy || !name.trim()} onClick={() => void create("org")}>
+            Create
+          </button>
+        </div>
       )}
+      {orgList.map((o) => (
+        <div key={o.id} className={`ctx-row${activeOrgId === o.id ? " on" : ""}`}>
+          <button type="button" className="grow" onClick={() => setPickedOrg(o.id)}>
+            <span className="account-avatar small">{o.name.slice(0, 1).toUpperCase()}</span>
+            {o.name}
+          </button>
+        </div>
+      ))}
 
       <div className="ctx-head">
         <span>Projects</span>
@@ -1572,12 +1678,12 @@ function ContextPane({
           type="button"
           title="New project"
           disabled={!activeOrgId && !createOrgId}
-          onClick={() => setAdding((v) => !v)}
+          onClick={() => setAdding((v) => (v === "ws" ? null : "ws"))}
         >
           +
         </button>
       </div>
-      {adding && (
+      {adding === "ws" && (
         <div className="ctx-add">
           <input
             autoFocus
@@ -1585,10 +1691,10 @@ function ContextPane({
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") void create();
+              if (e.key === "Enter") void create("ws");
             }}
           />
-          <button type="button" disabled={busy || !name.trim()} onClick={() => void create()}>
+          <button type="button" disabled={busy || !name.trim()} onClick={() => void create("ws")}>
             Create
           </button>
         </div>
@@ -1650,7 +1756,8 @@ function Breadcrumbs({
 function ProjectsView({
   token,
   workspaces,
-  implicitOrgId,
+  orgId,
+  activeOrg,
   filters,
   crumb,
   setCrumb,
@@ -1661,7 +1768,10 @@ function ProjectsView({
 }: {
   token: string;
   workspaces: Workspace[];
-  implicitOrgId: string | null;
+  /** Active organization, chosen in the sidebar switcher and resolved by the
+   *  shell to one that actually holds projects. New projects are created here. */
+  orgId: string | null;
+  activeOrg: { id: string; name: string } | null;
   filters: Filters;
   crumb: Crumb;
   setCrumb: (c: Crumb) => void;
@@ -1670,26 +1780,8 @@ function ProjectsView({
   onChanged: () => void;
   onOpenStudio: (target: StudioTarget) => void;
 }) {
-  // Organizations are visible again: the portfolio is scoped to one org at a
-  // time. The target case is a single org, so the switcher only appears when
-  // there is more than one. Orgs are derived from the workspaces already loaded
-  // (each carries its orgId/orgName).
-  const orgOptions = (() => {
-    const m = new Map<string, string>();
-    for (const w of workspaces) if (w.orgId) m.set(w.orgId, w.orgName);
-    if (m.size === 0 && implicitOrgId) m.set(implicitOrgId, "Organization");
-    return Array.from(m, ([id, name]) => ({ id, name }));
-  })();
-  const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
-  // Default to an organization that actually CONTAINS projects — implicitOrgId
-  // can point at an empty sibling org (e.g. a self-managed one), which would
-  // scope the portfolio to nothing even though the user has projects.
-  const orgId =
-    activeOrgId ??
-    (orgOptions.some((o) => o.id === implicitOrgId) ? implicitOrgId : orgOptions[0]?.id) ??
-    implicitOrgId ??
-    null;
-  const activeOrg = orgOptions.find((o) => o.id === orgId) ?? orgOptions[0] ?? null;
+  // The organization is now chosen in the sidebar, so the portfolio just shows
+  // the projects of the one in context.
   const orgRoots = workspaces.filter((w) => w.orgId === orgId);
 
   const root = workspaces.find((w) => w.id === crumb.projectId);
@@ -1700,8 +1792,6 @@ function ProjectsView({
         token={token}
         roots={orgRoots}
         org={activeOrg}
-        orgs={orgOptions}
-        onSwitchOrg={setActiveOrgId}
         query={filters.query}
         selfManagedOnly={filters.selfManagedOnly}
         sort={filters.sort}
