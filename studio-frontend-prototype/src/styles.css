@@ -343,6 +343,17 @@ button.danger:hover:not(:disabled) { background: #b91c1c; border-color: #b91c1c;
 .danger-zone { border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
 .sidebar.collapsed .org-select-name, .sidebar.collapsed .org-select .chev { display: none; }
 .account-menu > button { text-align: left; }
+
+/* Organization context above the Projects portfolio (reuses .org-select). */
+.org-context { margin-bottom: 6px; }
+.org-context .eyebrow {
+  font-size: 10.5px; letter-spacing: 0.07em; text-transform: uppercase;
+  color: var(--muted); font-weight: 600; margin-bottom: 4px;
+}
+.org-context .org-select-wrap { width: max-content; min-width: 200px; max-width: 320px; }
+.org-select { cursor: pointer; }
+.org-select:hover:not(:disabled) { border-color: var(--accent); }
+.org-select:disabled { opacity: 1; cursor: default; }
 /* ── Login page (creative full-bleed) ── */
 .login-page {
   min-height: 100vh; display: flex; align-items: center; justify-content: center;

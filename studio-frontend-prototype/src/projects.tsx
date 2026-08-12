@@ -126,6 +126,7 @@ export function ProjectsPortfolio({
   onChanged: () => void;
 }) {
   const [nested, setNested] = useState<Record<string, Project[]>>({});
+  const [orgMenu, setOrgMenu] = useState(false);
   const [people, setPeople] = useState<Record<string, User[]>>({});
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [creating, setCreating] = useState(false);
@@ -229,37 +230,45 @@ export function ProjectsPortfolio({
     <>
       <div className="topbar">
         <div>
-          {/* Organization is the top context again: projects live inside it. A
-              switcher appears only when the user can see more than one org. */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-            <span
-              style={{
-                fontSize: 10.5,
-                letterSpacing: "0.07em",
-                textTransform: "uppercase",
-                color: "var(--muted)",
-                fontWeight: 600,
-              }}
-            >
-              Organization
-            </span>
-            {orgs.length > 1 ? (
-              <select
-                value={org?.id ?? ""}
-                onChange={(e) => onSwitchOrg(e.target.value)}
-                style={{ fontSize: 13, padding: "3px 8px" }}
+          {/* Organization is the top context again: projects live inside it.
+              The styled switcher (ported from the old main flow) is interactive
+              only when more than one org is visible — the single-org target case
+              shows it as a static context pill. */}
+          <div className="org-context">
+            <div className="eyebrow">Organization</div>
+            <div className="org-select-wrap">
+              <button
+                type="button"
+                className="org-select"
+                disabled={orgs.length <= 1}
+                onClick={() => setOrgMenu((v) => !v)}
               >
-                {orgs.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.name}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <span style={{ fontWeight: 600 }}>{org?.name ?? "—"}</span>
-            )}
+                <span className="account-avatar small">
+                  {(org?.name ?? "?").slice(0, 1).toUpperCase()}
+                </span>
+                <span className="org-select-name">{org?.name ?? "Select organization"}</span>
+                {orgs.length > 1 && <span className="chev">▾</span>}
+              </button>
+              {orgMenu && orgs.length > 1 && (
+                <div className="org-menu">
+                  {orgs.map((o) => (
+                    <button
+                      key={o.id}
+                      type="button"
+                      onClick={() => {
+                        onSwitchOrg(o.id);
+                        setOrgMenu(false);
+                      }}
+                    >
+                      <span className="account-avatar small">{o.name.slice(0, 1).toUpperCase()}</span>
+                      {o.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-          <h1>Projects</h1>
+          <h1 style={{ marginTop: 8 }}>Projects</h1>
           <p className="subtitle" style={{ margin: 0 }}>
             A project is a product — it owns its connectors, artifacts and people. Open one to work
             inside it; its Works are the stages of work on it, each with its own repositories and
