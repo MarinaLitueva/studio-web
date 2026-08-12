@@ -753,6 +753,18 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
       ? { ...home, orgId: home.id, orgName: home.name }
       : null;
 
+  // Organizations that actually group projects, derived from the loaded
+  // workspaces (each carries orgId/orgName). Same source as the portfolio
+  // switcher, so the account menu and the portfolio never disagree — and an
+  // organization with no projects never shows up empty (which is exactly what
+  // made an admin-only sibling org read as "nothing here").
+  const menuOrgs = (() => {
+    const m = new Map<string, string>();
+    for (const w of workspaces) if (w.orgId) m.set(w.orgId, w.orgName);
+    if (m.size === 0 && implicitOrgId) m.set(implicitOrgId, home?.name ?? "Organization");
+    return Array.from(m, ([id, name]) => ({ id, name }));
+  })();
+
   const panelView: PanelView = dash ? "dashboard" : view;
 
   const refresh = useCallback(async () => {
@@ -1035,11 +1047,13 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
                 <button onClick={onLogout}>Sign out</button>
               </div>
 
-              {/* Right: where you are working — one flat list of projects,
-                  because in concept v2 there is no level above them to group by. */}
+              {/* Right: where you are working — organizations first, then the
+                  projects of the one in context. The level above projects is
+                  back, so the menu groups by it instead of a flat column. */}
               <ContextPane
                 token={token}
-                orgId={implicitOrgId}
+                orgs={menuOrgs}
+                createOrgId={implicitOrgId}
                 workspaces={workspaces}
                 crumb={crumb}
                 onPick={(next) => {
@@ -1465,22 +1479,26 @@ function FilterPanel({
 
 /* ── Projects ── */
 
-/** The right pane of the account popover: pick the project you are working in.
+/** The right pane of the account popover: pick where you are working.
  *
- *  One flat list. Concept v2 removed the level above a project, so there is
- *  nothing left to group by — and a two-column switcher whose first column
- *  always held exactly one entry was a decision the user never got to make. */
+ *  Organizations first, then the projects OF the one in context — the level
+ *  above a project is back, so the menu groups by it instead of showing one
+ *  flat column. The organization list is derived from the loaded projects, so
+ *  an org with nothing in it never appears here empty. */
 function ContextPane({
   token,
-  orgId,
+  orgs,
+  createOrgId,
   workspaces,
   crumb,
   onPick,
   onChanged,
 }: {
   token: string;
-  /** Hidden organization the new project is created in. */
-  orgId: string | null;
+  /** Organizations that group the projects — derived from the loaded set. */
+  orgs: { id: string; name: string }[];
+  /** Fallback parent for a brand-new project when no org is in context. */
+  createOrgId: string | null;
   workspaces: Workspace[];
   crumb: Crumb;
   onPick: (c: Crumb) => void;
@@ -1491,17 +1509,26 @@ function ContextPane({
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Which organization's projects to show. Defaults to the org owning the
+  // project in context, else the first org that has any — never an empty one.
+  const [pickedOrg, setPickedOrg] = useState<string | null>(null);
+  const ownerOrgId = workspaces.find((w) => w.id === crumb.projectId)?.orgId;
+  const activeOrgId = pickedOrg ?? ownerOrgId ?? orgs[0]?.id ?? null;
 
-  const list = workspaces.filter((w) => matches(q, w.name)).sort((a, b) => a.name.localeCompare(b.name));
+  const orgList = orgs.filter((o) => matches(q, o.name));
+  const list = workspaces
+    .filter((w) => (activeOrgId ? w.orgId === activeOrgId : true) && matches(q, w.name))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   async function create() {
-    if (!orgId || !name.trim()) return;
+    const parent = activeOrgId ?? createOrgId;
+    if (!parent || !name.trim()) return;
     setBusy(true);
     setError(null);
     try {
       await api.createTenant(token, {
         name: name.trim(),
-        parent_id: orgId,
+        parent_id: parent,
         tenant_type: TENANT_TYPES.workspace,
       });
       setName("");
@@ -1518,17 +1545,33 @@ function ContextPane({
     <div className="pane-right">
       <input
         className="ctx-search"
-        placeholder="Search projects…"
+        placeholder="Search…"
         value={q}
         onChange={(e) => setQ(e.target.value)}
       />
 
+      {orgList.length > 0 && (
+        <>
+          <div className="ctx-head">
+            <span>Organizations</span>
+          </div>
+          {orgList.map((o) => (
+            <div key={o.id} className={`ctx-row${activeOrgId === o.id ? " on" : ""}`}>
+              <button type="button" className="grow" onClick={() => setPickedOrg(o.id)}>
+                <span className="account-avatar small">{o.name.slice(0, 1).toUpperCase()}</span>
+                {o.name}
+              </button>
+            </div>
+          ))}
+        </>
+      )}
+
       <div className="ctx-head">
-        <span>Your projects</span>
+        <span>Projects</span>
         <button
           type="button"
           title="New project"
-          disabled={!orgId}
+          disabled={!activeOrgId && !createOrgId}
           onClick={() => setAdding((v) => !v)}
         >
           +
@@ -1638,7 +1681,14 @@ function ProjectsView({
     return Array.from(m, ([id, name]) => ({ id, name }));
   })();
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
-  const orgId = activeOrgId ?? implicitOrgId ?? orgOptions[0]?.id ?? null;
+  // Default to an organization that actually CONTAINS projects — implicitOrgId
+  // can point at an empty sibling org (e.g. a self-managed one), which would
+  // scope the portfolio to nothing even though the user has projects.
+  const orgId =
+    activeOrgId ??
+    (orgOptions.some((o) => o.id === implicitOrgId) ? implicitOrgId : orgOptions[0]?.id) ??
+    implicitOrgId ??
+    null;
   const activeOrg = orgOptions.find((o) => o.id === orgId) ?? orgOptions[0] ?? null;
   const orgRoots = workspaces.filter((w) => w.orgId === orgId);
 
