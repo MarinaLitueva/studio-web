@@ -23,6 +23,12 @@ spec:
             - name: STUDIO_PG_PASSWORD
               valueFrom:
                 secretKeyRef: { name: studio-secrets, key: pg-password }
+            # Sealing key for the persistent credstore value store (#66): base64
+            # of 32 bytes, STABLE across restarts. Without it the backend drops
+            # to an in-memory store and every user-typed secret dies on restart.
+            - name: STUDIO_CREDSTORE_KEY
+              valueFrom:
+                secretKeyRef: { name: studio-secrets, key: credstore-key }
           readinessProbe:
             httpGet: { path: /healthz, port: 8090 }
             initialDelaySeconds: 5

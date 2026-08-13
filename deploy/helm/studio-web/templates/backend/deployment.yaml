@@ -83,13 +83,16 @@ spec:
             - name: STUDIO_TEST_USER_3_TOKEN
               valueFrom: { secretKeyRef: { name: studio-web-test-users, key: test_user_3_token } }
             # Sealing key for the persistent credstore value store (#66),
-            # base64 of 32 bytes. Optional by design: without it the gear
-            # stands down with a WARN and the in-memory fallback wins — the
-            # pod still boots, but every user-typed secret (repo PATs) dies
-            # with each restart. Set it in any environment that restarts pods,
-            # which is all of them.
+            # base64 of 32 bytes. REQUIRED by default: without it the gear
+            # stands down to an in-memory fallback and every user-typed secret
+            # (repo PATs, connector tokens, per-user AI keys) dies on each pod
+            # restart. `optional` is now false so a missing key fails the pod
+            # loudly instead of silently losing secrets. A throwaway env that
+            # intentionally runs without persistent secrets can opt out with
+            # `backend.credstore.optionalKey: true`. Keep the value STABLE:
+            # rotating it makes all previously stored secrets unreadable.
             - name: STUDIO_CREDSTORE_KEY
-              valueFrom: { secretKeyRef: { name: {{ .Values.backend.appSecrets.existingSecret }}, key: credstore_key, optional: true } }
+              valueFrom: { secretKeyRef: { name: {{ .Values.backend.appSecrets.existingSecret }}, key: credstore_key, optional: {{ .Values.backend.credstore.optionalKey | default false }} } }
             # Keycloak Admin API for invites (keycloak-idp-plugin). Optional:
             # without the secret the plugin self-deprioritizes (invites off).
             {{- if .Values.backend.idpAdmin.baseUrl }}

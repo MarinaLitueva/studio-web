@@ -23,11 +23,19 @@ backend:
   auth:
     existingSecret: "studio-web-idp"
   # Application secrets (keys: llm_api_key [required], fs_signing_seed
-  # [required], credstore_key [strongly recommended: base64 of 32 bytes,
+  # [required], credstore_key [REQUIRED: base64 of 32 bytes,
   # `openssl rand -base64 32`; without it user-typed secrets die with every
-  # pod restart], s2s_client_secret [optional], idp_admin_secret [optional]).
+  # pod restart — see credstore.optionalKey], s2s_client_secret [optional],
+  # idp_admin_secret [optional]).
   appSecrets:
     existingSecret: "studio-web-app"
+  # Persistent credstore sealing key (STUDIO_CREDSTORE_KEY, from appSecrets
+  # key `credstore_key`). Required by default: a missing key fails the pod
+  # rather than silently dropping to the in-memory store and losing every
+  # user-typed secret on restart (#66). Set optionalKey: true ONLY for a
+  # throwaway env that intentionally keeps no persistent secrets.
+  credstore:
+    optionalKey: false
   # Interim token auth (INFRA-3767): while no OIDC realm exists, the k8s
   # profile runs static-authn and needs a Secret with key `admin_token`.
   # The k8s profile REQUIRES the variable, so leaving this empty fails the
