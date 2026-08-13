@@ -164,7 +164,7 @@ gears:
           type: "object"
           x-gts-traits:
             inheritance_policy: "override_only"
-        - "$id": "gts://gts.cf.core.am.tenant_metadata.v1~cf.studio.access.v1~"
+        - "$id": "gts://gts.cf.core.am.tenant_metadata.v1~cf.studio.access.config.v1~"
           # Organization access config (ADR-0006): {model, roles[]}. Free-form
           # object like workspace.settings; shape enforced client-side until the
           # base tenant_metadata schema is relaxed upstream (gears issue #4).

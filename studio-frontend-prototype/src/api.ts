@@ -44,7 +44,7 @@ export const USER_MEMBER_HANDLE = "gts.cf.core.rg.type.v1~cf.core.am.user.v1~";
 export const WS_SETTINGS_TYPE = "gts.cf.core.am.tenant_metadata.v1~cf.studio.workspace.settings.v1~";
 // Organization access config (model + roles) — AM tenant metadata, same
 // mechanism as workspace settings (schema seeded by the backend config).
-export const ACCESS_TYPE = "gts.cf.core.am.tenant_metadata.v1~cf.studio.access.v1~";
+export const ACCESS_TYPE = "gts.cf.core.am.tenant_metadata.v1~cf.studio.access.config.v1~";
 
 /** One journey stage from `GET /studio-project/v1/stages`.
  *  Fetched rather than hardcoded: the gear validates against this catalogue,
