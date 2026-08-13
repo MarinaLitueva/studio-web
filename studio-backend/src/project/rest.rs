@@ -68,6 +68,9 @@ fn to_api(e: ServiceError, resource: &str) -> CanonicalError {
         ServiceError::NotFound => StudioProjectError::not_found("Project not found")
             .with_resource(resource.to_owned())
             .create(),
+        ServiceError::Forbidden(m) => StudioProjectError::permission_denied()
+            .with_reason(m)
+            .create(),
         ServiceError::Storage(m) => CanonicalError::internal(m).create(),
     }
 }
@@ -349,6 +352,7 @@ async fn patch_project(
 
     let project = svc
         .update(
+            &ctx,
             tenant,
             id,
             req.name.as_deref(),

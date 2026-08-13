@@ -35,6 +35,8 @@ pub enum ServiceError {
     Conflict(String),
     /// No such project in this tenant — 404.
     NotFound,
+    /// The PDP denied a write — 403.
+    Forbidden(String),
     /// Ours — 500.
     Storage(String),
 }
@@ -45,6 +47,7 @@ impl core::fmt::Display for ServiceError {
             Self::Invalid(e) => write!(f, "{e}"),
             Self::Conflict(m) => write!(f, "{m}"),
             Self::NotFound => write!(f, "project not found"),
+            Self::Forbidden(m) => write!(f, "{m}"),
             Self::Storage(m) => write!(f, "{m}"),
         }
     }
@@ -145,6 +148,7 @@ impl ProjectService {
         ctx: &SecurityContext,
         new: NewProject,
     ) -> Result<Project, ServiceError> {
+        self.authorize(ctx, new.tenant_id, None, "create").await?;
         let mut project = self.repo.insert(&new).await?;
 
         if let Some(rg) = &self.rg {
@@ -257,6 +261,34 @@ impl ProjectService {
         }
     }
 
+    /// Write authorization: ask the PDP whether this subject may perform
+    /// `action` on the project. Only the decision matters here (no row scoping),
+    /// so a denial is a 403. No enforcer → allowed (tenant-scoped fallback).
+    async fn authorize(
+        &self,
+        ctx: &SecurityContext,
+        tenant_id: Uuid,
+        id: Option<Uuid>,
+        action: &str,
+    ) -> Result<(), ServiceError> {
+        let Some(enforcer) = &self.enforcer else {
+            return Ok(());
+        };
+        let req = AccessRequest::new()
+            .context_tenant_id(tenant_id)
+            .require_constraints(false);
+        match enforcer
+            .access_scope_with(ctx, &PROJECT_RESOURCE, action, id, &req)
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(EnforcerError::Denied { .. }) => {
+                Err(ServiceError::Forbidden(format!("not permitted to {action} this project")))
+            }
+            Err(e) => Err(ServiceError::Storage(format!("authz: {e:?}"))),
+        }
+    }
+
     /// Apply a patch. Every field is optional; the status is checked against
     /// the ladder in [`Status::can_transition_to`].
     ///
@@ -265,12 +297,14 @@ impl ProjectService {
     /// [`ServiceError::NotFound`], [`ServiceError::Conflict`] on a rename clash.
     pub async fn update(
         &self,
+        ctx: &SecurityContext,
         tenant_id: Uuid,
         id: Uuid,
         name: Option<&str>,
         stages: Option<&[String]>,
         status: Option<Status>,
     ) -> Result<Project, ServiceError> {
+        self.authorize(ctx, tenant_id, Some(id), "update").await?;
         let current = self.get(tenant_id, id).await?;
 
         let name = name.map(super::model::normalize_name).transpose()?;
@@ -303,6 +337,7 @@ impl ProjectService {
         tenant_id: Uuid,
         id: Uuid,
     ) -> Result<(), ServiceError> {
+        self.authorize(ctx, tenant_id, Some(id), "delete").await?;
         let project = self.get(tenant_id, id).await?;
 
         // RG first: a leftover group with no project is invisible junk, whereas
