@@ -2364,6 +2364,15 @@ const WORKER_CATEGORIES = ["documenting", "coding", "review", "analysis"];
 // definition and credstore rejects tenant sharing for it.
 const PAT_SECRET_TYPE = "gts.cf.core.credstore.secret.v1~cf.core.credstore.api_key.v1~";
 
+// Personal AI keys are per-user, so they use the private-only `personal_token`
+// type (credstore rejects tenant sharing for it) and are written with
+// sharing: "private". The IDE launch resolves `openai-key`/`anthropic-key`
+// under the launching user's identity and the credstore returns that user's
+// private secret ahead of any org-wide one — so a key set in Profile overrides
+// the organization fallback for that user only.
+const PERSONAL_SECRET_TYPE =
+  "gts.cf.core.credstore.secret.v1~cf.core.credstore.personal_token.v1~";
+
 function WorkspaceDashboard({
   token,
   ws,
@@ -5679,6 +5688,131 @@ function decodeJwtClaims(token: string): Record<string, unknown> | null {
   }
 }
 
+/** Per-user AI keys the in-IDE agents authenticate with. `anthropic-key` →
+ *  ANTHROPIC_API_KEY (Claude Code), `openai-key` → OPENAI_API_KEY (Codex).
+ *  Stored as PRIVATE credstore secrets so only the owner's launches see them. */
+const AI_KEYS: { ref: string; label: string; env: string; hint: string }[] = [
+  {
+    ref: "anthropic-key",
+    label: "Anthropic API key",
+    env: "ANTHROPIC_API_KEY",
+    hint: "Claude Code agent in the IDE",
+  },
+  {
+    ref: "openai-key",
+    label: "OpenAI API key",
+    env: "OPENAI_API_KEY",
+    hint: "Codex agent in the IDE",
+  },
+];
+
+function AiKeysCard({ token }: { token: string }) {
+  const [status, setStatus] = useState<Record<string, "ok" | "broken" | "checking">>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+
+  const probe = useCallback(
+    async (ref: string) => {
+      setStatus((s) => ({ ...s, [ref]: "checking" }));
+      const r = await api.checkSecret(token, ref);
+      setStatus((s) => ({ ...s, [ref]: r }));
+    },
+    [token],
+  );
+
+  useEffect(() => {
+    for (const k of AI_KEYS) void probe(k.ref);
+  }, [probe]);
+
+  async function saveKey(ref: string, label: string) {
+    // Write-only: prompt for the value, store it, and never read it back.
+    const value = window.prompt(`Paste your ${label} — stored encrypted, never shown again:`);
+    if (!value?.trim()) return;
+    setBusy(ref);
+    setError(null);
+    setNote(null);
+    try {
+      await api.putSecret(token, ref, value.trim(), PERSONAL_SECRET_TYPE, "private");
+      await probe(ref);
+      setNote(`${label} saved — new IDE sessions you launch will use it.`);
+    } catch (e) {
+      setError(errText(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function removeKey(ref: string, label: string) {
+    if (
+      !window.confirm(
+        `Delete your ${label}? Sessions you launch will fall back to the organization key, if one is set.`,
+      )
+    )
+      return;
+    setBusy(ref);
+    setError(null);
+    setNote(null);
+    try {
+      await api.deleteSecret(token, ref);
+      setStatus((s) => ({ ...s, [ref]: "broken" }));
+      setNote(`${label} removed.`);
+    } catch (e) {
+      setError(errText(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="card">
+      <h2>AI keys</h2>
+      <p className="hint">
+        Personal keys for the in-IDE AI agents. Stored encrypted in your private credstore and
+        injected only into sessions you launch — nobody else can read them, and they take
+        precedence over the organization key. Write-only: a saved value is never displayed back.
+      </p>
+      <ul className="rows">
+        {AI_KEYS.map((k) => {
+          const st = status[k.ref];
+          return (
+            <li key={k.ref}>
+              <div className="grow">
+                <div className="name">{k.label}</div>
+                <div className="sub">
+                  {k.hint} — <code>{k.env}</code>
+                </div>
+              </div>
+              {st === "ok" && <span className="badge workspace">set ✓</span>}
+              {st === "broken" && <span className="sub">not set</span>}
+              {st === "checking" && <span className="sub">…</span>}
+              <button
+                className="ghost"
+                disabled={busy === k.ref}
+                onClick={() => void saveKey(k.ref, k.label)}
+              >
+                {st === "ok" ? "Replace" : "Set"}
+              </button>
+              {st === "ok" && (
+                <button
+                  className="ghost"
+                  title="Delete your key"
+                  disabled={busy === k.ref}
+                  onClick={() => void removeKey(k.ref, k.label)}
+                >
+                  ✕
+                </button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {note && <p className="hint">{note}</p>}
+      {error && <div className="error">{error}</div>}
+    </div>
+  );
+}
+
 function ProfileView({ me, home, token }: { me: Me; home: Tenant | null; token: string }) {
   const [theme, setTheme] = useState("light");
   const [language, setLanguage] = useState("en");
@@ -5786,6 +5920,8 @@ function ProfileView({ me, home, token }: { me: Me; home: Tenant | null; token: 
           API: <a href="/cf/docs">/cf/docs</a>
         </p>
       </div>
+
+      <AiKeysCard token={token} />
 
       <div className="card">
         <h2>Preferences</h2>

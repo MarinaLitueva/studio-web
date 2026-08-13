@@ -693,15 +693,22 @@ export const api = {
   /**
    * credstore: create a secret (used for repo access tokens).
    *
-   * `sharing: "tenant"` is deliberate — a repository credential belongs to the
-   * workspace, so any member launching a session can use it. (The
-   * `personal_token` secret type would reject tenant sharing: it is
-   * private-only by definition.)
+   * `sharing` defaults to "tenant" — a repository credential belongs to the
+   * workspace, so any member launching a session can use it. Pass "private"
+   * for a per-user secret (e.g. a personal AI key): the credstore keeps it to
+   * its owner and returns it ahead of any tenant secret with the same ref. The
+   * `personal_token` secret type requires "private" — it rejects tenant sharing.
    */
-  putSecret: async (token: string, reference: string, value: string, secretType?: string) => {
+  putSecret: async (
+    token: string,
+    reference: string,
+    value: string,
+    secretType?: string,
+    sharing: "tenant" | "private" | "shared" = "tenant",
+  ) => {
     const payload = {
       value,
-      sharing: "tenant",
+      sharing,
       ...(secretType ? { type: secretType } : {}),
     };
     try {
