@@ -207,6 +207,12 @@ impl AuthZResolverPluginClient for Service {
             return Ok(deny());
         }
 
+        // First-party / unrestricted token (`token_scopes` contains "*"): a
+        // platform / service caller is never role-gated — anti-lockout backstop.
+        if request.context.token_scopes.iter().any(|s| s == "*") {
+            return Ok(tenant_clamp(&request, tid));
+        }
+
         // RECURSION GUARD: authorizing a read of AM tenant-metadata must not read
         // the config to decide (that read is itself PEP-gated → would recurse).
         let rt = request.resource.resource_type.as_str();

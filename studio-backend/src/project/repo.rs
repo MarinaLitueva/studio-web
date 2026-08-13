@@ -131,6 +131,26 @@ impl ProjectRepo {
         row.map(to_domain).transpose()
     }
 
+    /// Find one project by id under a PDP-supplied [`AccessScope`] (the Studio
+    /// PEP read path). Returns `None` when the id isn't visible in the scope.
+    ///
+    /// # Errors
+    /// Propagates storage failures.
+    pub async fn find_scoped(
+        &self,
+        scope: &AccessScope,
+        id: Uuid,
+    ) -> Result<Option<Project>, RepoError> {
+        let conn = self.db.conn()?;
+        let row = entity::Entity::find()
+            .secure()
+            .scope_with(scope)
+            .filter(Condition::all().add(entity::Column::Id.eq(id)))
+            .one(&conn)
+            .await?;
+        row.map(to_domain).transpose()
+    }
+
     /// Every project in the tenant, newest first.
     ///
     /// # Errors

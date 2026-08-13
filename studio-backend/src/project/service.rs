@@ -227,6 +227,36 @@ impl ProjectService {
             .ok_or(ServiceError::NotFound)
     }
 
+    /// Authorized read (the PEP path used by the REST surface): the PDP decides
+    /// whether this subject may see the project, and a denial is a 404 so we
+    /// never leak that a project exists in a tenant the subject can't see.
+    ///
+    /// # Errors
+    /// [`ServiceError::NotFound`] when denied or absent.
+    pub async fn get_scoped(
+        &self,
+        ctx: &SecurityContext,
+        tenant_id: Uuid,
+        id: Uuid,
+    ) -> Result<Project, ServiceError> {
+        let Some(enforcer) = &self.enforcer else {
+            return self.get(tenant_id, id).await;
+        };
+        let req = AccessRequest::new().context_tenant_id(tenant_id);
+        match enforcer
+            .access_scope_with(ctx, &PROJECT_RESOURCE, "get", Some(id), &req)
+            .await
+        {
+            Ok(scope) => self
+                .repo
+                .find_scoped(&scope, id)
+                .await?
+                .ok_or(ServiceError::NotFound),
+            Err(EnforcerError::Denied { .. }) => Err(ServiceError::NotFound),
+            Err(e) => Err(ServiceError::Storage(format!("authz: {e:?}"))),
+        }
+    }
+
     /// Apply a patch. Every field is optional; the status is checked against
     /// the ladder in [`Status::can_transition_to`].
     ///

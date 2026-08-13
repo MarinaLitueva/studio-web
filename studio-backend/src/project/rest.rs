@@ -320,7 +320,7 @@ async fn get_project(
     let svc = projects.get()?;
     let tenant = q.tenant.unwrap_or_else(|| ctx.subject_tenant_id());
     let project = svc
-        .get(tenant, id)
+        .get_scoped(&ctx, tenant, id)
         .await
         .map_err(|e| to_api(e, &id.to_string()))?;
     Ok(Json(to_dto(project)))
