@@ -105,6 +105,7 @@ types_registry = { package = "cf-gears-types-registry", git = "https://github.co
 tenant_resolver = { package = "cf-gears-tenant-resolver", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
 authn_resolver = { package = "cf-gears-authn-resolver", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
 authz_resolver = { package = "cf-gears-authz-resolver", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
+authz_resolver_sdk = { package = "cf-gears-authz-resolver-sdk", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
 resource_group = { package = "cf-gears-resource-group", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
 
 # ── Dev plugins (static auth for the demo; replace with OIDC for real deployments) ──
