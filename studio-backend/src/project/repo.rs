@@ -146,6 +146,23 @@ impl ProjectRepo {
         rows.into_iter().map(to_domain).collect()
     }
 
+    /// Every project visible under a PDP-supplied [`AccessScope`] (the Studio
+    /// PEP path). The scope already encodes the granted tenants, so this
+    /// replaces the manual per-tenant clamp with the authorization decision.
+    ///
+    /// # Errors
+    /// Propagates storage failures.
+    pub async fn list_scoped(&self, scope: &AccessScope) -> Result<Vec<Project>, RepoError> {
+        let conn = self.db.conn()?;
+        let rows = entity::Entity::find()
+            .secure()
+            .scope_with(scope)
+            .order_by(entity::Column::CreatedAt, sea_orm::Order::Desc)
+            .all(&conn)
+            .await?;
+        rows.into_iter().map(to_domain).collect()
+    }
+
     /// Apply the mutable parts of a project. `None` leaves a field alone.
     ///
     /// # Errors

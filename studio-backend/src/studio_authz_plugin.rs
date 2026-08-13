@@ -328,10 +328,11 @@ fn deny() -> EvaluationResponse {
 /// key off the real Studio GTS resource-type ids.
 fn privilege_for(resource_type: &str, action: &str) -> Option<&'static str> {
     match (resource_type, action) {
-        (rt, "list" | "get") if rt.contains("studio.project") => Some("project.view"),
-        (rt, "create") if rt.contains("studio.project") => Some("project.create"),
-        (rt, "update") if rt.contains("studio.project") => Some("project.edit"),
-        (rt, "delete") if rt.contains("studio.project") => Some("project.delete"),
+        // studio-project is the backend "project" = the portal's Work.
+        (rt, "list" | "get") if rt.contains("studio.project") => Some("work.view"),
+        (rt, "create") if rt.contains("studio.project") => Some("work.create"),
+        (rt, "update") if rt.contains("studio.project") => Some("work.edit"),
+        (rt, "delete") if rt.contains("studio.project") => Some("work.archive"),
         _ => None,
     }
 }

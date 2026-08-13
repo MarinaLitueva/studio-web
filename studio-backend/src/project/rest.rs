@@ -284,7 +284,7 @@ async fn list_projects(
     let svc = projects.get()?;
     let tenant = q.tenant.unwrap_or_else(|| ctx.subject_tenant_id());
     let items = svc
-        .list(tenant)
+        .list(&ctx, tenant)
         .await
         .map_err(|e| to_api(e, &tenant.to_string()))?;
     Ok(Json(ProjectListDto {

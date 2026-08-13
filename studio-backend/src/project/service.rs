@@ -8,9 +8,10 @@
 
 use std::sync::Arc;
 
+use authz_resolver_sdk::{AccessRequest, EnforcerError, PolicyEnforcer, ResourceType};
 use resource_group_sdk::api::ResourceGroupClient;
 use resource_group_sdk::models::{CreateGroupRequest, CreateTypeRequest};
-use toolkit_security::SecurityContext;
+use toolkit_security::{pep_properties, SecurityContext};
 use tracing::{info, warn};
 use uuid::Uuid;
 
@@ -66,17 +67,31 @@ impl From<RepoError> for ServiceError {
     }
 }
 
+/// The Studio resource the PDP knows projects (Works) as. Its `resource_type`
+/// contains `studio.project`, which the Studio AuthZ plugin maps to `work.*`.
+const PROJECT_RESOURCE: ResourceType = ResourceType::from_static(
+    "gts.cf.core.rg.type.v1~cf.studio.project.v1~",
+    &[pep_properties::OWNER_TENANT_ID, pep_properties::RESOURCE_ID],
+);
+
 pub struct ProjectService {
     repo: Arc<ProjectRepo>,
     /// `None` when resource-group is not in the assembly: projects still work,
     /// they just have no member list.
     rg: Option<Arc<dyn ResourceGroupClient>>,
+    /// The Studio PDP enforcer. `None` when the authz-resolver client is not in
+    /// the assembly — reads then fall back to tenant-scoped listing.
+    enforcer: Option<PolicyEnforcer>,
 }
 
 impl ProjectService {
     #[must_use]
-    pub fn new(repo: Arc<ProjectRepo>, rg: Option<Arc<dyn ResourceGroupClient>>) -> Self {
-        Self { repo, rg }
+    pub fn new(
+        repo: Arc<ProjectRepo>,
+        rg: Option<Arc<dyn ResourceGroupClient>>,
+        enforcer: Option<PolicyEnforcer>,
+    ) -> Self {
+        Self { repo, rg, enforcer }
     }
 
     /// Register the project RG type if it is not there yet.
@@ -181,8 +196,26 @@ impl ProjectService {
 
     /// # Errors
     /// Propagates storage failures.
-    pub async fn list(&self, tenant_id: Uuid) -> Result<Vec<Project>, ServiceError> {
-        Ok(self.repo.list(tenant_id).await?)
+    pub async fn list(
+        &self,
+        ctx: &SecurityContext,
+        tenant_id: Uuid,
+    ) -> Result<Vec<Project>, ServiceError> {
+        let Some(enforcer) = &self.enforcer else {
+            return Ok(self.repo.list(tenant_id).await?);
+        };
+        // Context tenant = the workspace being listed; the PDP reads the org's
+        // access config (inherited) and returns a scope over the granted tenants.
+        let req = AccessRequest::new().context_tenant_id(tenant_id);
+        match enforcer
+            .access_scope_with(ctx, &PROJECT_RESOURCE, "list", None, &req)
+            .await
+        {
+            Ok(scope) => Ok(self.repo.list_scoped(&scope).await?),
+            // No grant for this subject here → nothing to show, not an error.
+            Err(EnforcerError::Denied { .. }) => Ok(Vec::new()),
+            Err(e) => Err(ServiceError::Storage(format!("authz: {e:?}"))),
+        }
     }
 
     /// # Errors

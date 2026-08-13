@@ -168,7 +168,7 @@ gears:
           description: "Studio organization access model + roles (free-form)"
           type: "object"
           x-gts-traits:
-            inheritance_policy: "override_only"
+            inheritance_policy: "inherit"
 
   nodes-registry:
     database:

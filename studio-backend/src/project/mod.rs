@@ -39,6 +39,7 @@ mod service;
 use std::sync::{Arc, OnceLock};
 
 use async_trait::async_trait;
+use authz_resolver_sdk::{AuthZResolverClient, Capability, PolicyEnforcer};
 use axum::Router;
 use resource_group_sdk::api::ResourceGroupClient;
 use tokio_util::sync::CancellationToken;
@@ -63,7 +64,7 @@ const BOOTSTRAP_ACTOR: Uuid = Uuid::from_u128(0x0000_0000_0000_0000_0000_0000_00
 /// Projects gear.
 #[toolkit::gear(
     name = "studio-project",
-    deps = [resource_group],
+    deps = [resource_group, authz_resolver],
     capabilities = [db, rest, stateful]
 )]
 #[derive(Default)]
@@ -99,7 +100,24 @@ impl toolkit::Gear for StudioProjectGear {
             }
         };
 
-        let service = Arc::new(ProjectService::new(repo, rg));
+        // The Studio PDP: build a PolicyEnforcer from the authz-resolver client
+        // so list/get become PEPs. Optional — a trimmed deployment without the
+        // resolver falls back to tenant-scoped listing rather than refusing boot.
+        let enforcer = ctx
+            .client_hub()
+            .get::<dyn AuthZResolverClient>()
+            .ok()
+            .map(|authz| {
+                PolicyEnforcer::new(authz).with_capabilities(vec![Capability::TenantHierarchy])
+            });
+        if enforcer.is_none() {
+            warn!(
+                "studio-project: authz-resolver client unavailable — projects fall back to \
+                 tenant-scoped listing (no role enforcement)"
+            );
+        }
+
+        let service = Arc::new(ProjectService::new(repo, rg, enforcer));
         self.service
             .set(service)
             .map_err(|_| anyhow::anyhow!("{} gear already initialized", Self::MODULE_NAME))?;
