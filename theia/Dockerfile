@@ -67,11 +67,19 @@ USER node
 WORKDIR /app
 COPY --from=build --chown=node:node /app /app
 COPY --chown=node:node docker/entrypoint.sh /entrypoint.sh
+# Wrapper around the codex binary: @theia/ai-codex spawns codex without a
+# working directory, so it lands in /app/browser-app (not a git repo) and
+# refuses to run. The wrapper forces the session workspace as cwd and passes
+# --skip-git-repo-check. THEIA_CODEX_PATH points at it instead of the raw bin.
+COPY --chown=node:node docker/codex-studio.sh /usr/local/bin/codex-studio
+USER root
+RUN chmod +x /usr/local/bin/codex-studio
+USER node
 
 ENV STUDIO_GIT_MODE=disabled \
     STUDIO_DATA_DIR=/home/node/.studio-data \
     SHELL=/bin/bash \
-    THEIA_CODEX_PATH=/usr/local/bin/codex \
+    THEIA_CODEX_PATH=/usr/local/bin/codex-studio \
     THEIA_CLAUDE_CODE_PATH=/usr/local/lib/node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs
 
 VOLUME ["/workspace"]
