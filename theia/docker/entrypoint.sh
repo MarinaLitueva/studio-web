@@ -298,6 +298,31 @@ if [ ! -f "$SETTINGS_DIR/settings.json" ]; then
 SETTINGS
 fi
 
+# Codex (@theia/ai-codex spawns `codex exec`) does NOT pick up OPENAI_API_KEY
+# on its own: without ~/.codex/auth.json it defaults to ChatGPT OAuth and 401s
+# even with a valid key. Seed api-key auth from the per-user key the
+# studio-session gear injected — BEFORE the IDE starts — so each user's
+# session authenticates as themselves. Non-fatal: a failure must not block the
+# IDE (the user can still use Claude Code / fix the key). Runs the REAL codex
+# binary; THEIA_CODEX_PATH points at the studio wrapper, not this path.
+if [ -n "${OPENAI_API_KEY:-}" ]; then
+  if printf '%s' "$OPENAI_API_KEY" | /usr/local/bin/codex login --with-api-key >/dev/null 2>&1; then
+    echo "[entrypoint] codex: api-key auth configured for this session"
+  else
+    echo "[entrypoint] codex: 'login --with-api-key' failed (codex version/flag?) — codex may 401"
+  fi
+  # codex-cli's built-in default model (gpt-5-codex) is retired on the API and
+  # returns "Model not found". Pin a current codex model, overridable per
+  # deployment via STUDIO_CODEX_MODEL. Only sets it when config.toml doesn't
+  # already specify a model, so a user override wins.
+  CODEX_CFG="${HOME:-/root}/.codex/config.toml"
+  mkdir -p "$(dirname "$CODEX_CFG")"
+  if ! grep -qE '^[[:space:]]*model[[:space:]]*=' "$CODEX_CFG" 2>/dev/null; then
+    printf 'model = "%s"\n' "${STUDIO_CODEX_MODEL:-gpt-5.3-codex}" >> "$CODEX_CFG"
+    echo "[entrypoint] codex: default model ${STUDIO_CODEX_MODEL:-gpt-5.3-codex}"
+  fi
+fi
+
 # Theia binds loopback-only behind the gate; the session manager publishes
 # the gate's port on the host.
 exec npm --prefix /app/browser-app run start -- \

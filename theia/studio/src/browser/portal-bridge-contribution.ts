@@ -150,8 +150,10 @@ export class PortalBridgeContribution implements FrontendApplicationContribution
                 this.preferences.set('ai-features.openAiCustom.customOpenAiModels', [model], PreferenceScope.User),
                 this.preferences.set('ai-features.languageModelAliases', aliases, PreferenceScope.User),
                 // Without a default agent an un-mentioned chat message errors
-                // with "No agent was found to handle this request".
-                this.preferences.set('ai-features.chat.defaultChatAgent', 'Universal', PreferenceScope.User),
+                // with "No agent was found to handle this request". This image
+                // ships Codex and Claude Code (no Universal/Coder), so the
+                // default must name an agent that actually exists.
+                this.preferences.set('ai-features.chat.defaultChatAgent', 'Codex', PreferenceScope.User),
             ]);
         } catch (e) {
             console.warn('studio: Theia AI auto-config failed', e);
