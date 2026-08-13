@@ -1397,6 +1397,11 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
               <AccessView
                 token={token}
                 org={adminOrg ? { id: adminOrg.id, name: adminOrg.name } : activeOrg}
+                selfManaged={
+                  adminOrg
+                    ? adminOrg.self_managed
+                    : orgs.find((o) => o.id === activeOrgResolvedId)?.self_managed ?? false
+                }
                 projects={workspaces
                   .filter((w) => (adminOrg ? w.orgId === adminOrg.id : w.orgId === activeOrgResolvedId))
                   .map((w) => ({ id: w.id, name: w.name }))}
@@ -5238,10 +5243,14 @@ function OrganizationsView({
 function AccessView({
   token,
   org,
+  selfManaged,
   projects,
 }: {
   token: string;
   org: { id: string; name: string } | null;
+  /** Self-managed orgs raise a visibility barrier: their access is governed
+   *  from inside, and writes from outside 404. We show a notice, not the editor. */
+  selfManaged: boolean;
   /** Projects of this organization — the per-project grant scopes. */
   projects: { id: string; name: string }[];
 }) {
@@ -5408,7 +5417,11 @@ function AccessView({
             organization (like the automation level); enforcement arrives with the Studio PDP.
           </p>
         </div>
-        <button className="primary" disabled={!org || !cfg || !dirty || busy} onClick={() => void save()}>
+        <button
+          className="primary"
+          disabled={!org || !cfg || !dirty || busy || selfManaged}
+          onClick={() => void save()}
+        >
           {busy ? "Saving…" : saved && !dirty ? "Saved" : "Save"}
         </button>
       </div>
@@ -5419,6 +5432,15 @@ function AccessView({
         <p className="hint">Loading…</p>
       ) : !org || !cfg ? (
         <p className="empty">No organization in context.</p>
+      ) : selfManaged ? (
+        <div className="card">
+          <p className="hint" style={{ margin: 0 }}>
+            <b>{org.name} is self-managed.</b> It raises a visibility barrier — its access is
+            governed by admins inside the organization, and it can't be configured from here.
+            Convert it to managed (requested from inside, via dual consent) to manage its access on
+            this screen.
+          </p>
+        </div>
       ) : (
         <>
           <div className="card">
