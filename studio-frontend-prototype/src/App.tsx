@@ -6,6 +6,15 @@ import { ProjectsPortfolio } from "./projects";
 import { PeopleView } from "./people";
 import { StudioAI } from "./studio-ai";
 import {
+  ACCESS_MODELS,
+  defaultAccessConfig,
+  normalizeAccessConfig,
+  privilegesByGroup,
+  PRIVILEGES,
+  type AccessConfig,
+  type AccessModel,
+} from "./access";
+import {
   api,
   ApiError,
   UNAUTHENTICATED_EVENT,
@@ -333,6 +342,12 @@ function NavIcon({ name }: { name: string }) {
         <path d="M5 10v11h14V10" />
       </>
     ),
+    shield: (
+      <>
+        <path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" />
+        <path d="m9 12 2 2 4-4" />
+      </>
+    ),
     org: (
       <>
         <rect x="4" y="3" width="16" height="18" rx="1" />
@@ -427,7 +442,7 @@ const NAV_SECTIONS: {
   },
 ];
 
-type AdminView = "people" | "connectors" | "secrets" | "tenants" | "workspaces";
+type AdminView = "people" | "access" | "connectors" | "secrets" | "tenants" | "workspaces";
 
 /** Administration that survives concept v2: people, the shared catalogue,
  *  credentials. The tenant hierarchy (organizations, the raw workspace list)
@@ -437,6 +452,7 @@ const ADMIN_NAV: { id: AdminView; icon: string; label: string }[] = [
   // add, delete) is ordinary administration — not gated behind the platform flag.
   { id: "tenants", icon: "org", label: "Organizations" },
   { id: "people", icon: "users", label: "People" },
+  { id: "access", icon: "shield", label: "Access" },
   { id: "connectors", icon: "plug", label: "Integrations" },
   { id: "secrets", icon: "key", label: "Secrets" },
 ];
@@ -1375,6 +1391,12 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
                   setCrumb({ projectId: id });
                   setView("projects");
                 }}
+              />
+            )}
+            {adminView === "access" && (
+              <AccessView
+                token={token}
+                org={adminOrg ? { id: adminOrg.id, name: adminOrg.name } : activeOrg}
               />
             )}
             {adminView === "workspaces" && (
@@ -5198,6 +5220,215 @@ function OrganizationsView({
             ))}
           </ul>
         </div>
+      )}
+    </>
+  );
+}
+
+/* ── Access: model + roles (ADR-0006, P1) ── */
+
+/** Admin surface to choose the organization's access MODEL and, when it is
+ *  role-based, edit the roles (each role a set of privileges). Stored as AM
+ *  tenant metadata — the same mechanism as the automation trust ramp — so it is
+ *  backend-backed without a new gear. Enforcement (the Studio PDP) lands later;
+ *  this screen is where the model and the roles are authored. */
+function AccessView({ token, org }: { token: string; org: { id: string; name: string } | null }) {
+  const [cfg, setCfg] = useState<AccessConfig | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    setLoading(true);
+    setError(null);
+    if (!org) {
+      setCfg(null);
+      setLoading(false);
+      return;
+    }
+    api
+      .accessConfig(token, org.id)
+      .then((v) => {
+        if (!live) return;
+        setCfg(normalizeAccessConfig(v ?? defaultAccessConfig()));
+      })
+      .catch((e) => live && setError(errText(e)))
+      .finally(() => live && setLoading(false));
+    return () => {
+      live = false;
+    };
+  }, [token, org]);
+
+  function mutate(next: AccessConfig) {
+    setCfg(next);
+    setDirty(true);
+    setSaved(false);
+  }
+
+  function setModel(model: AccessModel) {
+    if (!cfg) return;
+    mutate({ ...cfg, model });
+  }
+
+  function togglePrivilege(roleKey: string, privId: string) {
+    if (!cfg) return;
+    mutate({
+      ...cfg,
+      roles: cfg.roles.map((r) => {
+        if (r.key !== roleKey) return r;
+        const has = r.privileges.includes(privId);
+        return {
+          ...r,
+          privileges: has ? r.privileges.filter((p) => p !== privId) : [...r.privileges, privId],
+        };
+      }),
+    });
+  }
+
+  function renameRole(roleKey: string, name: string) {
+    if (!cfg) return;
+    mutate({ ...cfg, roles: cfg.roles.map((r) => (r.key === roleKey ? { ...r, name } : r)) });
+  }
+
+  function addRole() {
+    if (!cfg) return;
+    const key = `role_${cfg.roles.length + 1}_${PRIVILEGES.length}`.replace(/[^a-z0-9_]/gi, "");
+    mutate({
+      ...cfg,
+      roles: [...cfg.roles, { key, name: "New role", privileges: ["project.view"] }],
+    });
+  }
+
+  function removeRole(roleKey: string) {
+    if (!cfg) return;
+    mutate({ ...cfg, roles: cfg.roles.filter((r) => r.key !== roleKey) });
+  }
+
+  async function save() {
+    if (!org || !cfg) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.putAccessConfig(token, org.id, cfg);
+      setDirty(false);
+      setSaved(true);
+    } catch (e) {
+      setError(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const groups = privilegesByGroup();
+
+  return (
+    <>
+      <div className="topbar">
+        <div>
+          <h1>Access</h1>
+          <p className="subtitle" style={{ margin: 0 }}>
+            Choose how access works in {org?.name ?? "this organization"}. Stored on the
+            organization (like the automation level); enforcement arrives with the Studio PDP.
+          </p>
+        </div>
+        <button className="primary" disabled={!org || !cfg || !dirty || busy} onClick={() => void save()}>
+          {busy ? "Saving…" : saved && !dirty ? "Saved" : "Save"}
+        </button>
+      </div>
+
+      {error && <div className="error">{error}</div>}
+
+      {loading ? (
+        <p className="hint">Loading…</p>
+      ) : !org || !cfg ? (
+        <p className="empty">No organization in context.</p>
+      ) : (
+        <>
+          <div className="card">
+            <h2>Access model</h2>
+            <div className="access-models">
+              {ACCESS_MODELS.map((m) => (
+                <label key={m.id} className={`access-model${cfg.model === m.id ? " on" : ""}`}>
+                  <input
+                    type="radio"
+                    name="access-model"
+                    checked={cfg.model === m.id}
+                    onChange={() => setModel(m.id)}
+                  />
+                  <div>
+                    <div className="name">{m.label}</div>
+                    <div className="sub">{m.blurb}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {cfg.model === "roles" ? (
+            <>
+              <div className="notice">
+                <b>Roles are authored here, not yet enforced.</b> Until the Studio PDP lands
+                (ADR-0006), what you define is stored on the organization and the app still runs
+                allow-all. Owner keeps every privilege.
+              </div>
+              {cfg.roles.map((role) => (
+                <div key={role.key} className="card role-card">
+                  <div className="role-head">
+                    <input
+                      className="role-name"
+                      value={role.name}
+                      onChange={(e) => renameRole(role.key, e.target.value)}
+                    />
+                    {role.system ? (
+                      <span className="badge" title="Seeded role — cannot be deleted">
+                        system
+                      </span>
+                    ) : (
+                      <button className="ghost" onClick={() => removeRole(role.key)}>
+                        Delete
+                      </button>
+                    )}
+                    <span className="sub" style={{ marginLeft: "auto" }}>
+                      {role.privileges.length} / {PRIVILEGES.length} privileges
+                    </span>
+                  </div>
+                  <div className="role-grid">
+                    {groups.map((g) => (
+                      <div key={g.group} className="role-group">
+                        <div className="field-label">{g.group}</div>
+                        {g.items.map((p) => {
+                          const locked = role.key === "owner"; // owner = all, never editable
+                          return (
+                            <label key={p.id} className="priv">
+                              <input
+                                type="checkbox"
+                                disabled={locked}
+                                checked={role.privileges.includes(p.id)}
+                                onChange={() => togglePrivilege(role.key, p.id)}
+                              />
+                              {p.label}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              <button onClick={addRole}>＋ Add role</button>
+            </>
+          ) : (
+            <div className="card">
+              <p className="hint" style={{ margin: 0 }}>
+                Tenant access is on: anyone who is a member of the organization or a project can act
+                within it. Switch to <b>Role-based access</b> above to define roles and privileges.
+              </p>
+            </div>
+          )}
+        </>
       )}
     </>
   );

@@ -42,6 +42,9 @@ export const USER_MEMBER_HANDLE = "gts.cf.core.rg.type.v1~cf.core.am.user.v1~";
 
 // Workspace settings live as AM tenant metadata (schema seeded by the backend config).
 export const WS_SETTINGS_TYPE = "gts.cf.core.am.tenant_metadata.v1~cf.studio.workspace.settings.v1~";
+// Organization access config (model + roles) — AM tenant metadata, same
+// mechanism as workspace settings (schema seeded by the backend config).
+export const ACCESS_TYPE = "gts.cf.core.am.tenant_metadata.v1~cf.studio.access.v1~";
 
 /** One journey stage from `GET /studio-project/v1/stages`.
  *  Fetched rather than hardcoded: the gear validates against this catalogue,
@@ -557,6 +560,28 @@ export const api = {
     request<unknown>(`/account-management/v1/tenants/${tenantId}/metadata/${WS_SETTINGS_TYPE}`, token, {
       method: "PUT",
       body: JSON.stringify(value), // transparent payload; GTS-validated server-side
+    }),
+
+  /* ── Organization access config (AM tenant metadata) ── */
+
+  /** The org's access model + role definitions. `null` = never set (defaults). */
+  accessConfig: async (token: string, tenantId: string): Promise<import("./access").AccessConfig | null> => {
+    try {
+      const entry = await request<{ value: import("./access").AccessConfig }>(
+        `/account-management/v1/tenants/${tenantId}/metadata/${ACCESS_TYPE}`,
+        token,
+      );
+      return entry.value;
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return null; // not set yet
+      throw e;
+    }
+  },
+
+  putAccessConfig: (token: string, tenantId: string, value: import("./access").AccessConfig) =>
+    request<unknown>(`/account-management/v1/tenants/${tenantId}/metadata/${ACCESS_TYPE}`, token, {
+      method: "PUT",
+      body: JSON.stringify(value),
     }),
 
   /* ── Per-user settings (simple-user-settings gear: fixed theme/language) ── */
