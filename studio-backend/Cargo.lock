@@ -1965,6 +1965,7 @@ dependencies = [
  "cf-gears-api-gateway",
  "cf-gears-authn-resolver",
  "cf-gears-authz-resolver",
+ "cf-gears-authz-resolver-sdk",
  "cf-gears-credstore",
  "cf-gears-credstore-sdk",
  "cf-gears-file-storage",
