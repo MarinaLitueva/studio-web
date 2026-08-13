@@ -1,19 +1,18 @@
-/* ── People & Team (concept v2, organization restored) ────────────────────────
+/* ── People & Team ────────────────────────────────────────────────────────────
  *
  * Two surfaces, one component:
  *
- *   mode="org"  — the organization's PEOPLE. Every account that belongs to the
- *                 organization (AM users owned by the org tenant). Inviting here
- *                 creates the account IN the organization — that part is real and
- *                 backend-backed (the org tenant becomes the person's home).
+ *   mode="org"  — the organization's PEOPLE. Every account owned by the org
+ *                 tenant. Inviting here creates the account IN the organization
+ *                 (its home tenant) — real and backend-backed.
  *
- *   mode="team" — a project's TEAM. A subset of the organization's people who
- *                 work on this project. The platform can't record that today (an
- *                 AM user has exactly one owning tenant; a root project has no
- *                 Resource-Group member list of its own), so team membership is a
- *                 browser-local overlay — see `teamGrants` in roles.ts. It is
- *                 labelled unenforced and never sent to the backend, exactly like
- *                 the role overlay this screen already carries.
+ *   mode="team" — a project's TEAM. Membership is now REAL: it is the set of
+ *                 role grants in the organization's access config (AM tenant
+ *                 metadata) scoped to this project. Adding/removing a member or
+ *                 changing their role writes that config — the same store the
+ *                 Studio PDP reads to enforce access. Only meaningful when the
+ *                 org's access model is "roles"; under "tenant" access everyone
+ *                 in scope can work, so there is no per-project team to manage.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -21,14 +20,10 @@ import type { FormEvent } from "react";
 import { api, type Project, type User } from "./api";
 import { errText, initials, matches } from "./format";
 import {
-  PROJECT_ROLES,
-  ROLE_BLURB,
-  ROLE_LABEL,
-  effectiveRole,
-  roleGrants,
-  teamGrants,
-  type ProjectRole,
-} from "./roles";
+  normalizeAccessConfig,
+  type AccessConfig,
+  type GrantDef,
+} from "./access";
 import type { RootProject } from "./projects";
 
 interface Person {
@@ -59,12 +54,12 @@ export function PeopleView({
   onOpenProject: (rootId: string) => void;
 }) {
   const [people, setPeople] = useState<Person[] | null>(null);
+  const [cfg, setCfg] = useState<AccessConfig | null>(null);
   const [username, setUsername] = useState("");
   const [addPick, setAddPick] = useState("");
+  const [addRole, setAddRole] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  /** Bumped after an overlay write so the table re-reads localStorage. */
-  const [tick, setTick] = useState(0);
 
   const orgId = org?.id ?? null;
   const teamRoot = mode === "team" ? roots[0] ?? null : null;
@@ -74,7 +69,7 @@ export function PeopleView({
     setError(null);
     const list = ids ? ids.split(",") : [];
     try {
-      const [memberships, perRoot, orgUsers] = await Promise.all([
+      const [memberships, perRoot, orgUsers, access] = await Promise.all([
         api.memberships(token).then(
           (p) => p.items ?? [],
           () => [],
@@ -100,9 +95,14 @@ export function PeopleView({
               () => [] as User[],
             )
           : Promise.resolve([] as User[]),
+        orgId
+          ? api.accessConfig(token, orgId).then(
+              (v) => v,
+              () => null,
+            )
+          : Promise.resolve(null),
       ]);
 
-      // group id → nested project, so a membership row can name a Work.
       const byGroup = new Map<string, Project>();
       for (const r of perRoot) {
         for (const p of r.projects) if (p.members_group_id) byGroup.set(p.members_group_id, p);
@@ -131,6 +131,7 @@ export function PeopleView({
         }
       }
       setPeople([...merged.values()]);
+      setCfg(normalizeAccessConfig(access));
     } catch (e) {
       setError(errText(e));
       setPeople([]);
@@ -142,14 +143,29 @@ export function PeopleView({
   }, [load]);
 
   const rootName = (id: string): string => roots.find((r) => r.id === id)?.name ?? id.slice(0, 8);
+  const roleName = (key: string): string => cfg?.roles.find((r) => r.key === key)?.name ?? key;
 
-  /** Projects a person is on: real owning-tenant membership plus this session's
-   *  team overlay. */
-  function projectsOf(p: Person): { id: string; overlay: boolean }[] {
-    const out = p.rootIds.map((id) => ({ id, overlay: false }));
-    for (const r of roots) {
-      if (out.some((o) => o.id === r.id)) continue;
-      if (teamGrants.members(r.id).includes(p.user.id)) out.push({ id: r.id, overlay: true });
+  /** Member grants that apply to a project: those scoped to it, plus org-wide. */
+  function grantsForProject(projectId: string): GrantDef[] {
+    if (!cfg) return [];
+    return cfg.grants.filter(
+      (g) =>
+        g.subjectType === "member" &&
+        (g.scopeType === "org" || (g.scopeType === "project" && g.scopeId === projectId)),
+    );
+  }
+
+  /** Projects a person is on: owning-tenant membership + project role grants. */
+  function projectsOf(p: Person): { id: string; name: string; role?: string }[] {
+    const out: { id: string; name: string; role?: string }[] = p.rootIds.map((id) => ({
+      id,
+      name: rootName(id),
+    }));
+    for (const g of cfg?.grants ?? []) {
+      if (g.subjectType !== "member" || g.subjectId !== p.user.id) continue;
+      if (g.scopeType !== "project") continue;
+      if (out.some((o) => o.id === g.scopeId)) continue;
+      out.push({ id: g.scopeId, name: g.scopeName || rootName(g.scopeId), role: roleName(g.roleKey) });
     }
     return out;
   }
@@ -175,17 +191,51 @@ export function PeopleView({
     }
   }
 
-  /* ── Team add / remove (overlay) ── */
-  function addToTeam() {
-    if (!teamRoot || !addPick) return;
-    teamGrants.add(teamRoot.id, addPick);
-    setAddPick("");
-    setTick((t) => t + 1);
+  /* ── Team grants (real, written to the org access config) ── */
+  async function saveConfig(next: AccessConfig) {
+    if (!orgId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.putAccessConfig(token, orgId, next);
+      setCfg(next);
+    } catch (e) {
+      setError(errText(e));
+    } finally {
+      setBusy(false);
+    }
   }
-  function removeFromTeam(userId: string) {
-    if (!teamRoot) return;
-    teamGrants.remove(teamRoot.id, userId);
-    setTick((t) => t + 1);
+
+  function addToTeam() {
+    if (!cfg || !teamRoot || !addPick) return;
+    const role = addRole || cfg.roles.find((r) => r.key === "editor")?.key || cfg.roles[0]?.key;
+    if (!role) return;
+    const subj = (people ?? []).find((p) => p.user.id === addPick);
+    const grant: GrantDef = {
+      id: `g_${Date.now().toString(36)}_${cfg.grants.length}`,
+      subjectType: "member",
+      subjectId: addPick,
+      subjectName: subj ? subj.user.display_name ?? subj.user.username : addPick.slice(0, 8),
+      roleKey: role,
+      scopeType: "project",
+      scopeId: teamRoot.id,
+      scopeName: teamRoot.name,
+    };
+    setAddPick("");
+    void saveConfig({ ...cfg, grants: [...cfg.grants, grant] });
+  }
+
+  function removeGrant(id: string) {
+    if (!cfg) return;
+    void saveConfig({ ...cfg, grants: cfg.grants.filter((g) => g.id !== id) });
+  }
+
+  function setGrantRole(id: string, roleKey: string) {
+    if (!cfg) return;
+    void saveConfig({
+      ...cfg,
+      grants: cfg.grants.map((g) => (g.id === id ? { ...g, roleKey } : g)),
+    });
   }
 
   const all = people ?? [];
@@ -194,25 +244,6 @@ export function PeopleView({
     .sort((a, b) =>
       (a.user.display_name ?? a.user.username).localeCompare(b.user.display_name ?? b.user.username),
     );
-
-  // Team membership (real owning-tenant + overlay) for the current project.
-  const teamIds = new Set<string>();
-  if (teamRoot) {
-    for (const p of all) if (p.rootIds.includes(teamRoot.id)) teamIds.add(p.user.id);
-    for (const id of teamGrants.members(teamRoot.id)) teamIds.add(id);
-  }
-  const teamPeople = teamRoot ? filtered.filter((p) => teamIds.has(p.user.id)) : [];
-  const candidates = teamRoot
-    ? all
-        .filter((p) => !teamIds.has(p.user.id))
-        .sort((a, b) =>
-          (a.user.display_name ?? a.user.username).localeCompare(
-            b.user.display_name ?? b.user.username,
-          ),
-        )
-    : [];
-
-  const overlayTotal = teamGrants.count();
 
   /* ── Organization People ── */
   if (mode === "org") {
@@ -242,7 +273,7 @@ export function PeopleView({
                 : "Nobody matches the current filters."}
             </p>
           ) : (
-            <table className="ptable people" key={tick}>
+            <table className="ptable people">
               <thead>
                 <tr>
                   <th>Person</th>
@@ -274,11 +305,12 @@ export function PeopleView({
                             <button
                               key={o.id}
                               type="button"
-                              className={`chip${o.overlay ? "" : " on"}`}
-                              title={o.overlay ? "Team assignment (concept overlay)" : "Open this project"}
+                              className="chip on"
+                              title={o.role ? `${o.role} · open` : "Open this project"}
                               onClick={() => onOpenProject(o.id)}
                             >
-                              {rootName(o.id)}
+                              {o.name}
+                              {o.role ? ` · ${o.role}` : ""}
                             </button>
                           ))}
                           {on.length === 0 && <span className="sub">not on a project</span>}
@@ -303,8 +335,7 @@ export function PeopleView({
           </form>
           <p className="hint">
             The person is created in {org?.name ?? "the organization"} — that becomes their home
-            tenant, the one part of access the platform enforces today. Assign them to projects from
-            each project's Team tab.
+            tenant. Assign them to projects from each project's Team tab.
           </p>
         </div>
       </>
@@ -312,6 +343,15 @@ export function PeopleView({
   }
 
   /* ── Project Team ── */
+  const roleBased = cfg?.model === "roles";
+  const teamGrants = teamRoot ? grantsForProject(teamRoot.id) : [];
+  const grantedIds = new Set(teamGrants.map((g) => g.subjectId));
+  const candidates = all
+    .filter((p) => !grantedIds.has(p.user.id))
+    .sort((a, b) =>
+      (a.user.display_name ?? a.user.username).localeCompare(b.user.display_name ?? b.user.username),
+    );
+
   return (
     <>
       <div className="topbar">
@@ -319,133 +359,125 @@ export function PeopleView({
           <h1>Team</h1>
           <p className="subtitle" style={{ margin: 0 }}>
             People working on {teamRoot?.name ?? "this project"} — a subset of{" "}
-            {org?.name ?? "the organization"}. Add anyone from the organization below.
+            {org?.name ?? "the organization"}.
           </p>
         </div>
       </div>
 
-      <div className="notice">
-        <b>Team membership is a concept overlay.</b> The platform records one home tenant per
-        account (the organization) and does not yet store a per-project team, so assignments here
-        live in this browser and are never sent to the backend. Roles are likewise unenforced until
-        the Studio PDP lands (ADR-0004).
-        {overlayTotal > 0 && (
-          <>
-            {" "}
-            <button
-              className="ghost"
-              onClick={() => {
-                teamGrants.clear();
-                roleGrants.clear();
-                setTick((t) => t + 1);
-              }}
-            >
-              reset {overlayTotal} local assignment{overlayTotal === 1 ? "" : "s"}
-            </button>
-          </>
-        )}
-      </div>
-
       {error && <div className="error">{error}</div>}
 
-      <div className="card">
-        {people === null ? (
-          <p className="hint">Loading team…</p>
-        ) : !teamRoot ? (
-          <p className="empty">No project in context.</p>
-        ) : teamPeople.length === 0 ? (
-          <p className="empty">Nobody on the team yet — add someone from the organization below.</p>
-        ) : (
-          <table className="ptable people" key={tick}>
-            <thead>
-              <tr>
-                <th>Person</th>
-                <th>Role</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {teamPeople.map((p) => {
-                const isOverlay = teamGrants.members(teamRoot.id).includes(p.user.id);
-                const { role, granted } = effectiveRole(teamRoot.id, p.user.id, { isMember: true });
-                const name = p.user.display_name ?? p.user.username;
-                return (
-                  <tr key={p.user.id} className="prow">
-                    <td>
-                      <div className="pcell">
-                        <span className="account-avatar small">{initials(name)}</span>
-                        <div>
-                          <div className="pname plain">{name}</div>
-                          <div className="sub">{p.user.email ?? p.user.username}</div>
+      {people === null || cfg === null ? (
+        <p className="hint">Loading team…</p>
+      ) : !teamRoot ? (
+        <p className="empty">No project in context.</p>
+      ) : !roleBased ? (
+        <div className="card">
+          <p className="hint" style={{ margin: 0 }}>
+            <b>{org?.name ?? "This organization"} uses tenant access.</b> Everyone in the
+            organization can work in this project, so there's no per-project team to manage. Switch
+            to <b>Role-based access</b> in Admin → Access to grant roles to specific people here.
+          </p>
+        </div>
+      ) : (
+        <div className="card">
+          {teamGrants.length === 0 ? (
+            <p className="empty">Nobody on the team yet — add someone from the organization below.</p>
+          ) : (
+            <table className="ptable people">
+              <thead>
+                <tr>
+                  <th>Person</th>
+                  <th>Role</th>
+                  <th>Scope</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {teamGrants.map((g) => {
+                  const person = all.find((p) => p.user.id === g.subjectId);
+                  const name = person
+                    ? person.user.display_name ?? person.user.username
+                    : g.subjectName;
+                  const orgWide = g.scopeType === "org";
+                  return (
+                    <tr key={g.id} className="prow">
+                      <td>
+                        <div className="pcell">
+                          <span className="account-avatar small">{initials(name)}</span>
+                          <div>
+                            <div className="pname plain">{name}</div>
+                            <div className="sub">{person?.user.email ?? ""}</div>
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="inline" style={{ gap: 6, alignItems: "center" }}>
+                      </td>
+                      <td>
                         <select
-                          value={role}
-                          title={ROLE_BLURB[role]}
-                          onChange={(e) => {
-                            roleGrants.set(teamRoot.id, p.user.id, e.target.value as ProjectRole);
-                            setTick((t) => t + 1);
-                          }}
+                          value={g.roleKey}
+                          disabled={busy || orgWide}
+                          onChange={(e) => setGrantRole(g.id, e.target.value)}
                         >
-                          {PROJECT_ROLES.map((r) => (
-                            <option key={r} value={r}>
-                              {ROLE_LABEL[r]}
+                          {cfg.roles.map((r) => (
+                            <option key={r.key} value={r.key}>
+                              {r.name}
                             </option>
                           ))}
                         </select>
-                        <span
-                          className={`badge ${granted ? "warn" : ""}`}
-                          title={
-                            granted
-                              ? "Local concept grant — not enforced, not stored server-side"
-                              : "Derived from membership"
-                          }
-                        >
-                          {granted ? "local" : "derived"}
-                        </span>
-                      </div>
-                    </td>
-                    <td style={{ textAlign: "right" }}>
-                      {isOverlay && (
-                        <button
-                          className="ghost"
-                          title="Remove from this project's team"
-                          onClick={() => removeFromTeam(p.user.id)}
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
+                      </td>
+                      <td className="sub">
+                        {orgWide ? "organization-wide" : "this project"}
+                      </td>
+                      <td style={{ textAlign: "right" }}>
+                        {orgWide ? (
+                          <span className="sub" title="Managed on the organization's Access screen">
+                            in Access
+                          </span>
+                        ) : (
+                          <button
+                            className="ghost"
+                            disabled={busy}
+                            title="Remove from this project's team"
+                            onClick={() => removeGrant(g.id)}
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
 
-        <div className="inline" style={{ marginTop: 14, gap: 8 }}>
-          <select value={addPick} onChange={(e) => setAddPick(e.target.value)}>
-            <option value="">
-              {candidates.length ? "Add from organization…" : "Everyone is already on the team"}
-            </option>
-            {candidates.map((p) => (
-              <option key={p.user.id} value={p.user.id}>
-                {p.user.display_name ?? p.user.username}
+          <div className="inline" style={{ marginTop: 14, gap: 8 }}>
+            <select value={addPick} onChange={(e) => setAddPick(e.target.value)}>
+              <option value="">
+                {candidates.length ? "Add from organization…" : "Everyone is already on the team"}
               </option>
-            ))}
-          </select>
-          <button className="primary" disabled={!addPick} onClick={addToTeam}>
-            Add to team
-          </button>
+              {candidates.map((p) => (
+                <option key={p.user.id} value={p.user.id}>
+                  {p.user.display_name ?? p.user.username}
+                </option>
+              ))}
+            </select>
+            <select value={addRole} onChange={(e) => setAddRole(e.target.value)}>
+              <option value="">Role…</option>
+              {cfg.roles.map((r) => (
+                <option key={r.key} value={r.key}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+            <button className="primary" disabled={busy || !addPick} onClick={addToTeam}>
+              Add to team
+            </button>
+          </div>
+          <p className="hint">
+            Adding someone writes a role grant to {org?.name ?? "the organization"}'s access config —
+            the same store the Studio PDP enforces. Invite new accounts on the People page first.
+          </p>
         </div>
-        <p className="hint">
-          People come from {org?.name ?? "the organization"} — invite new accounts on the
-          organization's People page, then add them to a project here.
-        </p>
-      </div>
+      )}
     </>
   );
 }
