@@ -135,18 +135,35 @@ export function defaultRoles(): RoleDef[] {
   ];
 }
 
+/** A grant binds a subject (member or team) to a role within a scope
+ *  (the whole organization, or one project). This is the (member/team × role ×
+ *  scope) tuple the PDP will read. */
+export interface GrantDef {
+  id: string;
+  subjectType: "member" | "team";
+  subjectId: string;
+  subjectName: string;
+  roleKey: string;
+  scopeType: "org" | "project";
+  /** Tenant id (org) or project id; empty string means the whole organization. */
+  scopeId: string;
+  scopeName: string;
+}
+
 export interface AccessConfig {
   model: AccessModel;
   roles: RoleDef[];
+  grants: GrantDef[];
 }
 
 export function defaultAccessConfig(): AccessConfig {
-  return { model: "tenant", roles: defaultRoles() };
+  return { model: "tenant", roles: defaultRoles(), grants: [] };
 }
 
 /** Fill in any missing pieces so an older/partial stored config still renders. */
 export function normalizeAccessConfig(v: Partial<AccessConfig> | null | undefined): AccessConfig {
   const model: AccessModel = v?.model === "roles" ? "roles" : "tenant";
   const roles = v?.roles && v.roles.length ? v.roles : defaultRoles();
-  return { model, roles };
+  const grants = Array.isArray(v?.grants) ? (v!.grants as GrantDef[]) : [];
+  return { model, roles, grants };
 }

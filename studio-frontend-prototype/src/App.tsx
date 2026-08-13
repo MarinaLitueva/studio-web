@@ -1397,6 +1397,9 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
               <AccessView
                 token={token}
                 org={adminOrg ? { id: adminOrg.id, name: adminOrg.name } : activeOrg}
+                projects={workspaces
+                  .filter((w) => (adminOrg ? w.orgId === adminOrg.id : w.orgId === activeOrgResolvedId))
+                  .map((w) => ({ id: w.id, name: w.name }))}
               />
             )}
             {adminView === "workspaces" && (
@@ -5232,13 +5235,30 @@ function OrganizationsView({
  *  tenant metadata — the same mechanism as the automation trust ramp — so it is
  *  backend-backed without a new gear. Enforcement (the Studio PDP) lands later;
  *  this screen is where the model and the roles are authored. */
-function AccessView({ token, org }: { token: string; org: { id: string; name: string } | null }) {
+function AccessView({
+  token,
+  org,
+  projects,
+}: {
+  token: string;
+  org: { id: string; name: string } | null;
+  /** Projects of this organization — the per-project grant scopes. */
+  projects: { id: string; name: string }[];
+}) {
   const [cfg, setCfg] = useState<AccessConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Grant subjects: organization members, and teams (RG groups).
+  const [members, setMembers] = useState<{ id: string; name: string }[]>([]);
+  const [teams, setTeams] = useState<{ id: string; name: string }[]>([]);
+  // Add-grant form.
+  const [gSubjectType, setGSubjectType] = useState<"member" | "team">("member");
+  const [gSubject, setGSubject] = useState("");
+  const [gRole, setGRole] = useState("");
+  const [gScope, setGScope] = useState(""); // "" = whole org, else project id
 
   useEffect(() => {
     let live = true;
@@ -5262,10 +5282,64 @@ function AccessView({ token, org }: { token: string; org: { id: string; name: st
     };
   }, [token, org]);
 
+  // Grant subjects: org accounts (owned by the org tenant or its projects) and
+  // teams (RG groups). Best-effort — a failed load just leaves a picker empty.
+  useEffect(() => {
+    let live = true;
+    if (!org) {
+      setMembers([]);
+      setTeams([]);
+      return;
+    }
+    const ids = [org.id, ...projects.map((p) => p.id)];
+    Promise.all(
+      ids.map((id) => api.tenantUsers(token, id).then((p) => p.items ?? [], () => [])),
+    ).then((lists) => {
+      if (!live) return;
+      const m = new Map<string, { id: string; name: string }>();
+      for (const u of lists.flat()) m.set(u.id, { id: u.id, name: u.display_name ?? u.username });
+      setMembers([...m.values()].sort((a, b) => a.name.localeCompare(b.name)));
+    });
+    api.groups(token).then(
+      (p) =>
+        live &&
+        setTeams((p.items ?? []).map((g) => ({ id: g.id, name: g.name ?? g.id.slice(0, 8) }))),
+      () => live && setTeams([]),
+    );
+    return () => {
+      live = false;
+    };
+  }, [token, org, projects]);
+
   function mutate(next: AccessConfig) {
     setCfg(next);
     setDirty(true);
     setSaved(false);
+  }
+
+  const subjectPool = gSubjectType === "member" ? members : teams;
+
+  function addGrant() {
+    if (!cfg || !gSubject || !gRole) return;
+    const subj = subjectPool.find((s) => s.id === gSubject);
+    const scopeProj = projects.find((p) => p.id === gScope);
+    const grant: import("./access").GrantDef = {
+      id: `g_${Date.now().toString(36)}_${cfg.grants.length}`,
+      subjectType: gSubjectType,
+      subjectId: gSubject,
+      subjectName: subj?.name ?? gSubject.slice(0, 8),
+      roleKey: gRole,
+      scopeType: gScope ? "project" : "org",
+      scopeId: gScope,
+      scopeName: gScope ? scopeProj?.name ?? gScope.slice(0, 8) : org?.name ?? "Organization",
+    };
+    mutate({ ...cfg, grants: [...cfg.grants, grant] });
+    setGSubject("");
+  }
+
+  function removeGrant(id: string) {
+    if (!cfg) return;
+    mutate({ ...cfg, grants: cfg.grants.filter((g) => g.id !== id) });
   }
 
   function setModel(model: AccessModel) {
@@ -5419,6 +5493,92 @@ function AccessView({ token, org }: { token: string; org: { id: string; name: st
                 </div>
               ))}
               <button onClick={addRole}>＋ Add role</button>
+
+              <div className="card" style={{ marginTop: 16 }}>
+                <h2>Grants</h2>
+                <p className="hint" style={{ marginTop: 0 }}>
+                  Assign a role to a member or a team, scoped to the whole organization or a single
+                  project. This is the (subject × role × scope) the PDP will read.
+                </p>
+                {cfg.grants.length === 0 ? (
+                  <p className="empty">No grants yet — add one below.</p>
+                ) : (
+                  <table className="ptable">
+                    <thead>
+                      <tr>
+                        <th>Subject</th>
+                        <th>Role</th>
+                        <th>Scope</th>
+                        <th />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cfg.grants.map((g) => (
+                        <tr key={g.id}>
+                          <td>
+                            <span className="badge">{g.subjectType}</span> {g.subjectName}
+                          </td>
+                          <td>{cfg.roles.find((r) => r.key === g.roleKey)?.name ?? g.roleKey}</td>
+                          <td className="sub">
+                            {g.scopeType === "org" ? `${g.scopeName} (org)` : g.scopeName}
+                          </td>
+                          <td style={{ textAlign: "right" }}>
+                            <button className="ghost" onClick={() => removeGrant(g.id)}>
+                              Remove
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+
+                <div className="grant-add">
+                  <select
+                    value={gSubjectType}
+                    onChange={(e) => {
+                      setGSubjectType(e.target.value as "member" | "team");
+                      setGSubject("");
+                    }}
+                  >
+                    <option value="member">Member</option>
+                    <option value="team">Team</option>
+                  </select>
+                  <select value={gSubject} onChange={(e) => setGSubject(e.target.value)}>
+                    <option value="">
+                      {subjectPool.length
+                        ? `Select ${gSubjectType}…`
+                        : gSubjectType === "team"
+                          ? "No teams yet"
+                          : "No members yet"}
+                    </option>
+                    {subjectPool.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                  <select value={gRole} onChange={(e) => setGRole(e.target.value)}>
+                    <option value="">Select role…</option>
+                    {cfg.roles.map((r) => (
+                      <option key={r.key} value={r.key}>
+                        {r.name}
+                      </option>
+                    ))}
+                  </select>
+                  <select value={gScope} onChange={(e) => setGScope(e.target.value)}>
+                    <option value="">Whole organization</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button className="primary" disabled={!gSubject || !gRole} onClick={addGrant}>
+                    Add grant
+                  </button>
+                </div>
+              </div>
             </>
           ) : (
             <div className="card">
