@@ -13,6 +13,7 @@ import {
   PRIVILEGES,
   type AccessConfig,
   type AccessModel,
+  type GrantDef,
 } from "./access";
 import {
   api,
@@ -1405,6 +1406,8 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
                 projects={workspaces
                   .filter((w) => (adminOrg ? w.orgId === adminOrg.id : w.orgId === activeOrgResolvedId))
                   .map((w) => ({ id: w.id, name: w.name }))}
+                meId={me.subject_id}
+                meName={userName}
               />
             )}
             {adminView === "workspaces" && (
@@ -5245,6 +5248,8 @@ function AccessView({
   org,
   selfManaged,
   projects,
+  meId,
+  meName,
 }: {
   token: string;
   org: { id: string; name: string } | null;
@@ -5253,6 +5258,9 @@ function AccessView({
   selfManaged: boolean;
   /** Projects of this organization — the per-project grant scopes. */
   projects: { id: string; name: string }[];
+  /** The current user — so we never let them lock themselves out. */
+  meId: string;
+  meName: string;
 }) {
   const [cfg, setCfg] = useState<AccessConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -5351,9 +5359,38 @@ function AccessView({
     mutate({ ...cfg, grants: cfg.grants.filter((g) => g.id !== id) });
   }
 
+  const selfGranted = (c: AccessConfig): boolean =>
+    c.grants.some((g) => g.subjectType === "member" && g.subjectId === meId);
+
+  /** Give the current user an org-wide Owner grant so enabling roles can't lock
+   *  them out. Returns the config with the grant appended (idempotent). */
+  function withSelfOwner(c: AccessConfig): AccessConfig {
+    if (selfGranted(c)) return c;
+    const ownerKey = c.roles.some((r) => r.key === "owner") ? "owner" : c.roles[0]?.key ?? "owner";
+    const grant: GrantDef = {
+      id: `g_self_${Date.now().toString(36)}`,
+      subjectType: "member",
+      subjectId: meId,
+      subjectName: `${meName} (you)`,
+      roleKey: ownerKey,
+      scopeType: "org",
+      scopeId: "",
+      scopeName: org?.name ?? "Organization",
+    };
+    return { ...c, grants: [...c.grants, grant] };
+  }
+
+  function grantMyself() {
+    if (!cfg) return;
+    mutate(withSelfOwner(cfg));
+  }
+
   function setModel(model: AccessModel) {
     if (!cfg) return;
-    mutate({ ...cfg, model });
+    // Switching to role-based without a grant for yourself would hide everything
+    // from you once enforcement is on — seed a self Owner grant up front.
+    const next = model === "roles" ? withSelfOwner({ ...cfg, model }) : { ...cfg, model };
+    mutate(next);
   }
 
   function togglePrivilege(roleKey: string, privId: string) {
@@ -5466,10 +5503,19 @@ function AccessView({
           {cfg.model === "roles" ? (
             <>
               <div className="notice">
-                <b>Roles are authored here, not yet enforced.</b> Until the Studio PDP lands
-                (ADR-0006), what you define is stored on the organization and the app still runs
-                allow-all. Owner keeps every privilege.
+                <b>Enforcement is rolling out.</b> The Studio PDP now filters a project's{" "}
+                <i>Works</i> by these grants (ADR-0006); other surfaces still run allow-all until
+                their checks land. Owner keeps every privilege.
               </div>
+              {!selfGranted(cfg) && (
+                <div className="notice notice-danger">
+                  <b>You have no grant here.</b> With role-based access on, you'd be locked out of
+                  this organization's projects.{" "}
+                  <button className="ghost" onClick={grantMyself}>
+                    Grant myself Owner
+                  </button>
+                </div>
+              )}
               {cfg.roles.map((role) => (
                 <div key={role.key} className="card role-card">
                   <div className="role-head">

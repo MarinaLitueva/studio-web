@@ -387,6 +387,7 @@ button.danger:hover:not(:disabled) { background: #b91c1c; border-color: #b91c1c;
 .role-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px 18px; }
 .role-group .field-label { margin-bottom: 4px; }
 .priv { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 2px 0; }
+.notice-danger { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); background: var(--danger-soft); }
 .grant-add { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; align-items: center; }
 .grant-add select { min-width: 140px; }
 @media (max-width: 720px) { .access-models { grid-template-columns: 1fr; } }
