@@ -7,6 +7,7 @@ import { AccountsApiService } from '@/app/api';
 import './globals.css'; // Global styles with CSS variables
 import '@/app/events/bootstrapEvents'; // Register app-level events (type augmentation)
 import { registerBootstrapEffects } from '@/app/effects/bootstrapEffects'; // Register app-level effects
+import { keycloakOidcProvider } from '@/app/auth/keycloakOidcProvider';
 import App from './App';
 
 // Import all themes
@@ -37,10 +38,13 @@ const app = createFrontXApp({
     typeSystem: gtsPlugin,
     mfeHandlers: [new MfeHandlerMF(FRONTX_MFE_ENTRY_MF)],
   },
+  // Default frontxApiTransport(): Bearer on every REST call of the host and
+  // all MFEs, one deduplicated refresh-and-retry after a 401.
+  auth: { provider: keycloakOidcProvider },
 });
 
-// Register app-level effects (pass store dispatch)
-registerBootstrapEffects(app.store.dispatch);
+// Register app-level effects (identity flows through app.auth)
+registerBootstrapEffects(app);
 
 // Register all themes (default theme has default:true, activates automatically)
 app.themeRegistry.register(defaultTheme);
