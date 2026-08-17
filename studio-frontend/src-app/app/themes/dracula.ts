@@ -73,8 +73,32 @@ export const draculaTheme: ThemeConfig = {
     '--left-menu': hslToVar(dracula.backgroundDark),
     '--left-menu-foreground': hslToVar(dracula.comment),
     '--left-menu-hover': hslToVar(dracula.currentLine),
-    '--left-menu-selected': hslToVar(dracula.purple),
+    '--left-menu-active': hslToVar(dracula.currentLine),
+    '--left-menu-active-foreground': hslToVar(dracula.foreground),
     '--left-menu-border': hslToVar(dracula.currentLine),
+
+    '--avatar-yellow': '40 100% 42.4%',
+    '--avatar-orange': '24.6 99.1% 55.1%',
+    '--avatar-blue': '223.6 90.4% 71.4%',
+    '--avatar-mint': '160 85.3% 40%',
+    '--avatar-brown': '21.6 39.3% 62.5%',
+    '--avatar-grey': '0 0% 60.8%',
+    '--avatar-pink': '338.8 100% 71.2%',
+    '--avatar-turquoise': '186.1 85.4% 40.4%',
+    '--avatar-purple': '278.8 100% 73.9%',
+    '--avatar-magenta': '260.5 90.2% 72%',
+    '--avatar-red': '4.3 100% 69.8%',
+    '--avatar-green': '119 53.2% 46.1%',
+    '--avatar-foreground': '0 0% 6.7%',
+
+    // Typography — see default.ts for why the token mirrors ui-kit's name.
+    '--font-sans': "'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif",
+    '--text-body-size': '0.9375rem',
+    '--text-body-line-height': '1.25rem',
+    '--text-heading-1-size': '1.25rem',
+    '--text-heading-1-line-height': '1.75rem',
+    '--text-label-size': '0.8125rem',
+    '--text-label-line-height': '1rem',
 
     // Spacing
     '--spacing-xs': '0.25rem',

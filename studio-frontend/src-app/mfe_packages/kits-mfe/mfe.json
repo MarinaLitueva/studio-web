@@ -23,7 +23,7 @@
       "entry": "gts.frontx.mfes.mfe.entry.v1~frontx.mfes.mfe.entry_mf.v1~constructor_studio.kits.mfe.main.v1",
       "presentation": {
         "label": "Kits",
-        "icon": "lucide:package",
+        "icon": "material-symbols:widgets",
         "route": "/kits",
         "order": 50
       }

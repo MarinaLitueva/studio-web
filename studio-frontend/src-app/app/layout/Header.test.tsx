@@ -1,29 +1,27 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { clearUser } from '@gears-frontx/react';
+import { cleanup, render, screen } from '@testing-library/react';
 
-const { mockAuth, mockDispatch, headerState } = vi.hoisted(() => ({
-  mockAuth: { logout: vi.fn() },
-  mockDispatch: vi.fn(),
-  headerState: {
-    user: { displayName: 'Studio Admin', email: 'admin@studio' },
-    loading: false,
-  },
-}));
+const SCREEN_DOMAIN = 'gts.frontx.mfes.ext.domain.v1~frontx.screensets.layout.screen.v1';
+
+const projects = {
+  id: 'ext.projects',
+  domain: SCREEN_DOMAIN,
+  entry: 'entry.projects',
+  presentation: { label: 'Projects', icon: 'lucide:folder-kanban', route: '/projects', order: 20 },
+};
+
+const { mounted } = vi.hoisted(() => ({ mounted: { value: [] as unknown[] } }));
 
 vi.mock('@gears-frontx/react', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@gears-frontx/react')>()),
-  useFrontX: () => ({ auth: mockAuth }),
-  useAppDispatch: () => mockDispatch,
-  useAppSelector: (selector: (state: Record<string, unknown>) => unknown) =>
-    selector({ 'layout/header': headerState }),
+  useMountedExtensions: () => mounted.value,
 }));
 
 import { Header } from './Header';
 
 describe('Header', () => {
   beforeEach(() => {
-    mockAuth.logout.mockResolvedValue({ type: 'none' });
+    mounted.value = [projects];
   });
 
   afterEach(() => {
@@ -31,16 +29,28 @@ describe('Header', () => {
     vi.clearAllMocks();
   });
 
-  it('renders the user identity', () => {
+  it('titles the header with the mounted screen label', () => {
     render(<Header />);
-    expect(screen.getByText('Studio Admin')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Projects' })).toBeTruthy();
   });
 
-  it('sign-out clears the header user and logs out via the auth runtime', async () => {
+  it('renders no title while no screen is mounted', () => {
+    mounted.value = [];
     render(<Header />);
-    fireEvent.click(screen.getByText('Sign out'));
+    expect(screen.queryByRole('heading')).toBeNull();
+  });
 
-    await waitFor(() => expect(mockAuth.logout).toHaveBeenCalled());
-    expect(mockDispatch).toHaveBeenCalledWith(clearUser());
+  it('renders its children alongside the title', () => {
+    render(
+      <Header>
+        <span>breadcrumb</span>
+      </Header>
+    );
+    expect(screen.getByText('breadcrumb')).toBeTruthy();
+  });
+
+  it('no longer owns the sign-out control — the menu does', () => {
+    render(<Header />);
+    expect(screen.queryByText('Sign out')).toBeNull();
   });
 });

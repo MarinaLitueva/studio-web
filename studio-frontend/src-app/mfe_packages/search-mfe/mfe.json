@@ -23,7 +23,7 @@
       "entry": "gts.frontx.mfes.mfe.entry.v1~frontx.mfes.mfe.entry_mf.v1~constructor_studio.search.mfe.main.v1",
       "presentation": {
         "label": "Search",
-        "icon": "lucide:search",
+        "icon": "material-symbols:search",
         "route": "/search",
         "order": 10
       }

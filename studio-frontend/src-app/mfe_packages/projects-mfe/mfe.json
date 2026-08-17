@@ -23,7 +23,7 @@
       "entry": "gts.frontx.mfes.mfe.entry.v1~frontx.mfes.mfe.entry_mf.v1~constructor_studio.projects.mfe.main.v1",
       "presentation": {
         "label": "Projects",
-        "icon": "lucide:folder-kanban",
+        "icon": "material-symbols:folder",
         "route": "/projects",
         "order": 20
       }

@@ -71,13 +71,56 @@ export default {
         warning: 'hsl(var(--warning))',
         success: 'hsl(var(--success))',
         info: 'hsl(var(--info))',
+        // The only colours here written with an alpha slot: the menu's hover
+        // surface is the raised surface at partial opacity, which needs
+        // `bg-mainMenu-hover/65` to resolve. The rest of the palette omits the
+        // slot, so opacity modifiers do not work on it — extend the same way if
+        // that is ever needed.
         mainMenu: {
-          DEFAULT: 'hsl(var(--left-menu))',
-          foreground: 'hsl(var(--left-menu-foreground))',
-          hover: 'hsl(var(--left-menu-hover))',
-          selected: 'hsl(var(--left-menu-selected))',
-          border: 'hsl(var(--left-menu-border))',
+          DEFAULT: 'hsl(var(--left-menu) / <alpha-value>)',
+          foreground: 'hsl(var(--left-menu-foreground) / <alpha-value>)',
+          hover: 'hsl(var(--left-menu-hover) / <alpha-value>)',
+          active: {
+            DEFAULT: 'hsl(var(--left-menu-active) / <alpha-value>)',
+            foreground: 'hsl(var(--left-menu-active-foreground) / <alpha-value>)',
+          },
+          border: 'hsl(var(--left-menu-border) / <alpha-value>)',
         },
+        // Categorical palette an avatar picks from deterministically by name.
+        // The hue names and their order are the contract — the index an avatar
+        // resolves to is a position in that order, so reordering repaints every
+        // avatar in the product. Keep in step with AVATAR_HUES in ui/avatar.tsx.
+        avatar: {
+          yellow: 'hsl(var(--avatar-yellow))',
+          orange: 'hsl(var(--avatar-orange))',
+          blue: 'hsl(var(--avatar-blue))',
+          mint: 'hsl(var(--avatar-mint))',
+          brown: 'hsl(var(--avatar-brown))',
+          grey: 'hsl(var(--avatar-grey))',
+          pink: 'hsl(var(--avatar-pink))',
+          turquoise: 'hsl(var(--avatar-turquoise))',
+          purple: 'hsl(var(--avatar-purple))',
+          magenta: 'hsl(var(--avatar-magenta))',
+          red: 'hsl(var(--avatar-red))',
+          green: 'hsl(var(--avatar-green))',
+          foreground: 'hsl(var(--avatar-foreground))',
+        },
+      },
+      fontFamily: {
+        // Resolved from the themed token, like every other value here — so a
+        // theme can rebrand the family and nothing else has to change.
+        sans: 'var(--font-sans)',
+      },
+      fontSize: {
+        // Named text roles, mirroring ui-kit's ramp. Each carries the role's
+        // line-height with it, so size and leading can never drift apart at a
+        // call site. Only the roles the shell renders live here.
+        body: ['var(--text-body-size)', { lineHeight: 'var(--text-body-line-height)' }],
+        'heading-1': [
+          'var(--text-heading-1-size)',
+          { lineHeight: 'var(--text-heading-1-line-height)' },
+        ],
+        label: ['var(--text-label-size)', { lineHeight: 'var(--text-label-line-height)' }],
       },
       spacing: {
         xs: 'var(--spacing-xs)',

@@ -54,9 +54,38 @@ export const defaultTheme: ThemeConfig = {
     // Left menu colors
     '--left-menu': '210 40% 96.1%',
     '--left-menu-foreground': '215.4 16.3% 46.9%',
+    // Raised surface shown translucent on hover and opaque when active, plus the
+    // strong foreground both engaged states share. The accent on an active
+    // item's icon is the brand --primary, not a menu-local copy of it.
     '--left-menu-hover': '0 0% 100%',
-    '--left-menu-selected': '258 74.1% 62.2%',
+    '--left-menu-active': '0 0% 100%',
+    '--left-menu-active-foreground': '222.2 47.4% 11.2%',
     '--left-menu-border': '214.3 31.8% 91.4%',
+
+    '--avatar-yellow': '31.3 100% 35.7%',
+    '--avatar-orange': '17.1 100% 42%',
+    '--avatar-blue': '219.1 66.5% 54.3%',
+    '--avatar-mint': '160.2 59.5% 32.9%',
+    '--avatar-brown': '21 32.8% 46.1%',
+    '--avatar-grey': '60 0.5% 40.6%',
+    '--avatar-pink': '339 74.1% 51.6%',
+    '--avatar-turquoise': '187.3 59.8% 35.1%',
+    '--avatar-purple': '278.9 100% 57.6%',
+    '--avatar-magenta': '259 66.5% 54.3%',
+    '--avatar-red': '347.1 92.7% 43.1%',
+    '--avatar-green': '116.6 47.5% 35.9%',
+    '--avatar-foreground': '0 0% 100%',
+
+    // Typography. Same token name and stack as @gears-frontx/ui-kit's
+    // --font-sans, so shell chrome and MFE screens read as one product.
+    // The font FILES are the app's build concern — see globals.css.
+    '--font-sans': "'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif",
+    '--text-body-size': '0.9375rem',       // Body 15/20
+    '--text-body-line-height': '1.25rem',
+    '--text-heading-1-size': '1.25rem',    // Heading 1 20/28
+    '--text-heading-1-line-height': '1.75rem',
+    '--text-label-size': '0.8125rem',      // Label 13/16
+    '--text-label-line-height': '1rem',
 
     // Spacing
     '--spacing-xs': '0.25rem',

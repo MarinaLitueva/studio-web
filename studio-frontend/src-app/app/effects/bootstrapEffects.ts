@@ -9,6 +9,7 @@
 
 import { eventBus, setUser, setHeaderLoading, apiRegistry, type FrontXApp } from '@gears-frontx/react';
 import { AccountsApiService } from '@/app/api';
+import { setMfeBootstrapStatus } from '@/app/slices/mfeBootstrapSlice';
 
 /**
  * Header identity assembly: display data (name, email) comes from the token
@@ -29,6 +30,12 @@ function claimString(claims: Record<string, unknown> | undefined, key: string): 
 // @cpt-begin:cpt-frontx-flow-framework-composition-app-bootstrap:p1:inst-1
 export function registerBootstrapEffects(app: FrontXApp): void {
   const dispatch = app.store.dispatch;
+
+  // Mirror the MFE bootstrap status into the store so the menu can tell
+  // "still loading" from "no screens registered".
+  eventBus.on('app/mfe/bootstrap', ({ status }) => {
+    dispatch(setMfeBootstrapStatus(status));
+  });
 
   // Listen for 'app/user/fetch' event
   eventBus.on('app/user/fetch', async () => {

@@ -73,8 +73,35 @@ export const draculaLargeTheme: ThemeConfig = {
     '--left-menu': hslToVar(dracula.backgroundDark),
     '--left-menu-foreground': hslToVar(dracula.comment),
     '--left-menu-hover': hslToVar(dracula.currentLine),
-    '--left-menu-selected': hslToVar(dracula.purple),
+    '--left-menu-active': hslToVar(dracula.currentLine),
+    '--left-menu-active-foreground': hslToVar(dracula.foreground),
     '--left-menu-border': hslToVar(dracula.currentLine),
+
+    '--avatar-yellow': '40 100% 42.4%',
+    '--avatar-orange': '24.6 99.1% 55.1%',
+    '--avatar-blue': '223.6 90.4% 71.4%',
+    '--avatar-mint': '160 85.3% 40%',
+    '--avatar-brown': '21.6 39.3% 62.5%',
+    '--avatar-grey': '0 0% 60.8%',
+    '--avatar-pink': '338.8 100% 71.2%',
+    '--avatar-turquoise': '186.1 85.4% 40.4%',
+    '--avatar-purple': '278.8 100% 73.9%',
+    '--avatar-magenta': '260.5 90.2% 72%',
+    '--avatar-red': '4.3 100% 69.8%',
+    '--avatar-green': '119 53.2% 46.1%',
+    '--avatar-foreground': '0 0% 6.7%',
+
+    // Typography — see default.ts for why the token mirrors ui-kit's name.
+    // The Body role is scaled by the same 1.5x this theme already applies to
+    // spacing, which is what its name and "larger typography" promise mean:
+    // 15/20 becomes 22.5/30.
+    '--font-sans': "'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif",
+    '--text-body-size': '1.40625rem',
+    '--text-body-line-height': '1.875rem',
+    '--text-heading-1-size': '1.875rem',
+    '--text-heading-1-line-height': '2.625rem',
+    '--text-label-size': '1.21875rem',
+    '--text-label-line-height': '1.5rem',
 
     // Spacing (1.5x scaled)
     '--spacing-xs': '0.375rem',

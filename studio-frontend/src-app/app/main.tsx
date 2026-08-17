@@ -1,12 +1,13 @@
 /// <reference types="vite/client" />
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { FrontXProvider, apiRegistry, createFrontXApp, MfeHandlerMF, gtsPlugin, FRONTX_MFE_ENTRY_MF, themeSchema, languageSchema, extensionScreenSchema } from '@gears-frontx/react';
+import { FrontXProvider, apiRegistry, createFrontXApp, registerSlice, MfeHandlerMF, gtsPlugin, FRONTX_MFE_ENTRY_MF, themeSchema, languageSchema, extensionScreenSchema } from '@gears-frontx/react';
 import { Toaster } from '@/app/components/ui/sonner';
 import { AccountsApiService } from '@/app/api';
 import './globals.css'; // Global styles with CSS variables
 import '@/app/events/bootstrapEvents'; // Register app-level events (type augmentation)
 import { registerBootstrapEffects } from '@/app/effects/bootstrapEffects'; // Register app-level effects
+import { mfeBootstrapSlice } from '@/app/slices/mfeBootstrapSlice';
 import { keycloakOidcProvider } from '@/app/auth/keycloakOidcProvider';
 import App from './App';
 
@@ -43,7 +44,8 @@ const app = createFrontXApp({
   auth: { provider: keycloakOidcProvider },
 });
 
-// Register app-level effects (identity flows through app.auth)
+// Register app-level slices and effects (identity flows through app.auth)
+registerSlice(mfeBootstrapSlice);
 registerBootstrapEffects(app);
 
 // Register all themes (default theme has default:true, activates automatically)

@@ -9,6 +9,11 @@
  */
 
 .screen {
+  /* The document registers Inter under the family name 'Inter Variable'
+   * (@fontsource-variable). ui-kit's own --font-sans says 'Inter', which no
+   * longer matches any @font-face — so restate the token here, or this screen
+   * silently falls back to system-ui. See globals.css in the shell. */
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   min-height: 100%;
   padding: 2rem;
   background: var(--background);

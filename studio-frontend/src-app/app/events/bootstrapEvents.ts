@@ -17,5 +17,7 @@ declare module '@gears-frontx/react' {
   interface EventPayloadMap {
     /** Fetch current user - no payload needed */
     'app/user/fetch': void;
+    /** MFE manifest fetch + extension registration reached a terminal state */
+    'app/mfe/bootstrap': { status: 'pending' | 'ready' | 'failed' };
   }
 }

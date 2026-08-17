@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   useFrontX,
+  eventBus,
   ExtensionDomainSlot,
   screenDomain,
 } from '@gears-frontx/react';
@@ -26,10 +27,16 @@ export function MfeScreenContainer() {
   useEffect(() => {
     if (bootstrappedRef.current) return;
     bootstrappedRef.current = true;
+    // The status is broadcast, not just kept locally: registration itself is
+    // invisible to the store (see mfeBootstrapSlice), so this is what tells the
+    // menu that the screen list is final — and whether to show a placeholder or
+    // the "no screens" state while it is not.
     bootstrapMFE(app).then(() => {
       setBootstrapped(true);
+      eventBus.emit('app/mfe/bootstrap', { status: 'ready' });
     }).catch((error) => {
       console.error('[MFE Bootstrap] Failed to bootstrap MFE:', error);
+      eventBus.emit('app/mfe/bootstrap', { status: 'failed' });
     });
   }, [app]);
 

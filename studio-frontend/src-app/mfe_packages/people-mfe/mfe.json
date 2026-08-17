@@ -23,7 +23,7 @@
       "entry": "gts.frontx.mfes.mfe.entry.v1~frontx.mfes.mfe.entry_mf.v1~constructor_studio.people.mfe.main.v1",
       "presentation": {
         "label": "People",
-        "icon": "lucide:users",
+        "icon": "material-symbols:group",
         "route": "/people",
         "order": 30
       }

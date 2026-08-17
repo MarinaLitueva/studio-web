@@ -7,6 +7,7 @@ import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
 
 import { cn } from "@/app/lib/utils"
+import { Skeleton } from "./skeleton"
 
 const Sidebar = (
   {
@@ -28,7 +29,7 @@ const Sidebar = (
       className={cn(
         "group flex flex-col border-r border-mainMenu-border transition-[width] duration-200 ease-linear",
         "bg-mainMenu text-mainMenu-foreground",
-        collapsed ? "w-14" : "w-64",
+        collapsed ? "w-14" : "w-[232px]",
         className
       )}
       {...props}
@@ -92,9 +93,16 @@ SidebarMenuItem.displayName = "SidebarMenuItem"
 
 type SidebarMenuButtonVariant = "default" | "outline"
 type SidebarMenuButtonSize = "default" | "sm" | "lg"
+/** Which text role the button's label sits on. */
+type SidebarMenuButtonTextRole = "body" | "label"
+
+const SIDEBAR_MENU_BUTTON_TEXT_ROLE_CLASSES: Record<SidebarMenuButtonTextRole, string> = {
+  body: "text-body",
+  label: "text-label",
+}
 
 const SIDEBAR_MENU_BUTTON_BASE_CLASSES =
-  "peer/menu-button flex w-full items-center gap-2 rounded-md p-2 text-left text-sm outline-none ring-sidebar-ring transition-[width,height,padding] focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 group-data-[collapsible=icon]:!p-2 [&>span:last-child]:truncate [&>span:last-child]:overflow-hidden [&>svg]:size-5 [&>svg]:shrink-0 text-mainMenu-foreground hover:bg-mainMenu-hover data-[active=true]:bg-mainMenu-selected data-[active=true]:text-white data-[active=true]:font-medium"
+  "peer/menu-button group/menu-button flex w-full items-center gap-2.5 rounded-lg px-2.5 text-left font-medium tracking-normal outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 group-data-[collapsible=icon]:!px-2.5 [&>span:last-child]:truncate [&>span:last-child]:overflow-hidden [&>svg]:shrink-0 text-mainMenu-foreground hover:bg-mainMenu-hover/65 hover:text-mainMenu-active-foreground data-[active=true]:bg-mainMenu-active data-[active=true]:text-mainMenu-active-foreground"
 
 const SIDEBAR_MENU_BUTTON_VARIANT_CLASSES: Record<SidebarMenuButtonVariant, string> = {
   default: "",
@@ -102,20 +110,23 @@ const SIDEBAR_MENU_BUTTON_VARIANT_CLASSES: Record<SidebarMenuButtonVariant, stri
 }
 
 const SIDEBAR_MENU_BUTTON_SIZE_CLASSES: Record<SidebarMenuButtonSize, string> = {
-  default: "h-10 text-sm",
-  sm: "h-7 text-xs",
-  lg: "h-12 text-sm group-data-[collapsible=icon]:!p-0",
+  default: "h-[38px]",
+  sm: "h-7",
+  lg: "h-12 group-data-[collapsible=icon]:!p-0",
 }
 
 function sidebarMenuButtonVariants({
   variant = "default",
   size = "default",
+  textRole = "body",
 }: {
   variant?: SidebarMenuButtonVariant
   size?: SidebarMenuButtonSize
+  textRole?: SidebarMenuButtonTextRole
 }) {
   return cn(
     SIDEBAR_MENU_BUTTON_BASE_CLASSES,
+    SIDEBAR_MENU_BUTTON_TEXT_ROLE_CLASSES[textRole],
     SIDEBAR_MENU_BUTTON_VARIANT_CLASSES[variant],
     SIDEBAR_MENU_BUTTON_SIZE_CLASSES[size]
   )
@@ -128,6 +139,7 @@ const SidebarMenuButton = (
     isActive = false,
     variant = "default",
     size = "default",
+    textRole = "body",
     tooltip,
     className,
     ...props
@@ -136,6 +148,7 @@ const SidebarMenuButton = (
     isActive?: boolean;
     variant?: SidebarMenuButtonVariant;
     size?: SidebarMenuButtonSize;
+    textRole?: SidebarMenuButtonTextRole;
     tooltip?: string;
     ref?: React.Ref<HTMLButtonElement>;
   }
@@ -149,7 +162,7 @@ const SidebarMenuButton = (
       data-size={size}
       data-active={isActive}
       title={tooltip}
-      className={cn(sidebarMenuButtonVariants({ variant, size }), className)}
+      className={cn(sidebarMenuButtonVariants({ variant, size, textRole }), className)}
       {...props}
     />
   )
@@ -166,7 +179,15 @@ const SidebarMenuIcon = (
   }
 ) => (<span
   ref={ref}
-  className={cn("size-5 min-w-[1.5rem] flex-shrink-0 [&>svg]:w-full [&>svg]:h-full", className)}
+  data-sidebar="menu-icon"
+  className={cn(
+    "size-[18px] min-w-[18px] flex-shrink-0 [&>svg]:w-full [&>svg]:h-full",
+    // Tinted with the brand accent when the enclosing button is the active
+    // screen. Reads --primary directly: the menu used to carry its own
+    // --left-menu-selected holding byte-identical values in every theme.
+    "group-data-[active=true]/menu-button:text-primary",
+    className
+  )}
   {...props}
 />)
 SidebarMenuIcon.displayName = "SidebarMenuIcon"
@@ -210,7 +231,9 @@ const SidebarHeader = (
     <div
       ref={ref}
       className={cn(
-        "flex flex-col h-16",
+        // Same height and surface as the app header next to it, so the brand
+        // row and the screen title sit on one baseline.
+        "flex flex-col h-16 shrink-0 bg-background border-b border-mainMenu-border",
         className
       )}
       {...props}
@@ -238,11 +261,62 @@ const SidebarHeader = (
           </div>
         )}
       </div>
-      <div className="border-b border-mainMenu-border mx-4" />
     </div>
   )
 }
 SidebarHeader.displayName = "SidebarHeader"
+
+/**
+ * Stand-in rows for the menu while the screen list is still unknown — not empty,
+ * unknown. Built from SidebarMenuButton so the row metrics are literally the ones
+ * real items use and cannot drift apart.
+ *
+ * TODO: belongs in @gears-frontx/ui-kit alongside Sidebar itself
+ */
+const SidebarMenuSkeleton = (
+  {
+    count = 5,
+    collapsed = false,
+  }: {
+    count?: number;
+    collapsed?: boolean;
+  }
+) => (
+  <>
+    {Array.from({ length: count }, (_, row) => (
+      <SidebarMenuItem key={row}>
+        {/* Inert: presentational only, and out of the tab order. */}
+        <SidebarMenuButton aria-hidden tabIndex={-1} className="pointer-events-none">
+          <SidebarMenuIcon>
+            <Skeleton inheritColor className="h-full w-full" />
+          </SidebarMenuIcon>
+          {!collapsed && <Skeleton inheritColor className="h-3 flex-1" />}
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    ))}
+  </>
+)
+SidebarMenuSkeleton.displayName = "SidebarMenuSkeleton"
+
+/**
+ * Bottom region of the sidebar — identity and the collapse toggle. Separated
+ * from the scrolling menu by a rule, and never scrolls with it.
+ */
+const SidebarFooter = (
+  {
+    ref,
+    className,
+    ...props
+  }: React.ComponentProps<"div"> & {
+    ref?: React.Ref<HTMLDivElement>;
+  }
+) => (<div
+  ref={ref}
+  data-sidebar="footer"
+  className={cn("mt-auto shrink-0 border-t border-mainMenu-border p-2", className)}
+  {...props}
+/>)
+SidebarFooter.displayName = "SidebarFooter"
 
 export {
   Sidebar,
@@ -252,5 +326,7 @@ export {
   SidebarMenuButton,
   SidebarMenuLabel,
   SidebarMenuIcon,
+  SidebarMenuSkeleton,
   SidebarHeader,
+  SidebarFooter,
 }
