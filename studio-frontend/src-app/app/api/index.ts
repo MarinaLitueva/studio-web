@@ -4,5 +4,5 @@
  */
 
 export { AccountsApiService, ACCOUNTS_API_BASE_URL } from './AccountsApiService';
-export { type Me } from './types';
+export { type Me, type Page, type Tenant, TENANT_TYPES } from './types';
 export { accountsMockMap } from './mocks';

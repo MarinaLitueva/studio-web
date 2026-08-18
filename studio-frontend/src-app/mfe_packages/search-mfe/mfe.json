@@ -18,14 +18,13 @@
   ],
   "extensions": [
     {
-      "id": "gts.frontx.mfes.ext.extension.v1~frontx.screensets.layout.screen.v1~constructor_studio.search.screens.main.v1",
-      "domain": "gts.frontx.mfes.ext.domain.v1~frontx.screensets.layout.screen.v1",
+      "id": "gts.frontx.mfes.ext.extension.v1~frontx.screensets.layout.overlay.v1~constructor_studio.overlays.search.main.v1",
+      "domain": "gts.frontx.mfes.ext.domain.v1~frontx.screensets.layout.overlay.v1",
       "entry": "gts.frontx.mfes.mfe.entry.v1~frontx.mfes.mfe.entry_mf.v1~constructor_studio.search.mfe.main.v1",
       "presentation": {
-        "label": "Search",
+        "label": "Search Constructor Studio",
         "icon": "material-symbols:search",
-        "route": "/search",
-        "order": 10
+        "route": "/search"
       }
     }
   ]

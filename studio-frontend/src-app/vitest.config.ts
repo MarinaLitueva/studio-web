@@ -72,7 +72,15 @@ export default defineConfig({
     },
     server: {
       deps: {
-        inline: [...VITEST_SERVER_DEPS_INLINE],
+        inline: [
+          ...VITEST_SERVER_DEPS_INLINE,
+          // ui-kit's ESM imports its per-component CSS chunks; externalized
+          // deps load through Node's native ESM loader, which cannot import
+          // .css — inline the kit so Vite's transform pipeline handles it.
+          // Same reason as in vitest.mfe.base.ts, now that shell chrome uses
+          // kit components too.
+          /@gears-frontx\/ui-kit/,
+        ],
       },
     },
   },

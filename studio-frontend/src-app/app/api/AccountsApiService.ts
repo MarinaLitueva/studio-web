@@ -9,7 +9,7 @@ import {
   RestProtocol,
   RestMockPlugin,
 } from '@gears-frontx/react';
-import type { Me } from './types';
+import type { Me, Page, Tenant } from './types';
 import { accountsMockMap } from './mocks';
 
 /**
@@ -49,4 +49,24 @@ export class AccountsApiService extends BaseApiService {
 
   /** Identity check against the backend: who does this token authenticate as. */
   readonly me = this.protocol(RestEndpointProtocol).query<Me>('/me');
+
+  /**
+   * One tenant by id. The shell resolves the signed-in user's home tenant this
+   * way (`/me` returns only its id, never its name), which is what the top-bar
+   * context switcher shows when the scope is the organization.
+   */
+  readonly tenant = this.protocol(RestEndpointProtocol).queryWith<Tenant, { tenantId: string }>(
+    ({ tenantId }) => `/tenants/${tenantId}`
+  );
+
+  /**
+   * A tenant's children. Organizations the user can switch to are the children
+   * of their home tenant whose `tenant_type` is the organization type — the
+   * filtering is the caller's, since account-management has no type query
+   * parameter.
+   */
+  readonly tenantChildren = this.protocol(RestEndpointProtocol).queryWith<
+    Page<Tenant>,
+    { tenantId: string }
+  >(({ tenantId }) => `/tenants/${tenantId}/children`);
 }

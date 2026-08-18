@@ -18,3 +18,11 @@ export function fetchCurrentUser(): void {
   eventBus.emit('app/user/fetch');
 }
 // @cpt-end:cpt-frontx-flow-framework-composition-app-bootstrap:p1:inst-1
+
+/**
+ * Resolve the organizations the top bar's context slot offers.
+ * Emits 'app/context/fetch'; the effect reads /me and account-management.
+ */
+export function fetchAppContext(): void {
+  eventBus.emit('app/context/fetch');
+}

@@ -1,6 +1,11 @@
 /**
  * Sidebar Component - Based on shadcn/ui sidebar
- * Simplified for desktop-only collapsible navigation
+ *
+ * A surface and a column, nothing more: width, borders and placement belong to
+ * the consumer. They used to live here, pinned to 232px with a 56px icon rail,
+ * which is what a permanent left column needed — the navigation is a 320px
+ * overlay drawer now (see layout/Menu.tsx), and a primitive that hardcodes one
+ * layout cannot serve both.
  */
 
 import * as React from "react"
@@ -27,9 +32,8 @@ const Sidebar = (
       data-state={collapsed ? "collapsed" : "expanded"}
       data-collapsible={collapsed ? "icon" : ""}
       className={cn(
-        "group flex flex-col border-r border-mainMenu-border transition-[width] duration-200 ease-linear",
+        "group flex flex-col",
         "bg-mainMenu text-mainMenu-foreground",
-        collapsed ? "w-14" : "w-[232px]",
         className
       )}
       {...props}

@@ -1,29 +1,41 @@
 /**
- * Menu Component
+ * Menu Component — the global navigation drawer.
  *
- * Side navigation menu displaying MFE extensions with presentation metadata.
- * Uses local shadcn/ui Sidebar components for proper styling and collapsible behavior.
+ * A 320px panel that opens over the content, top bar included, rather than the
+ * permanent column it used to be. Consequences of that change, all deliberate:
  *
- * Owns the signed-in identity and the sign-out control: the menu is the one
- * always-present chrome, so identity lives at its foot rather than in the
- * header, which belongs to the mounted screen.
+ * - No collapsed rail. A drawer is open or closed; there is no third state, so
+ *   the icons-only width and its toggle row are gone.
+ * - No identity footer. Sign-out cannot live inside a panel that is closed most
+ *   of the time — it moved to the top bar (see UserMenu.tsx).
+ * - Selecting an item closes the drawer, because the drawer covers the very
+ *   screen the selection mounts.
+ *
+ * Open/closed rides on the framework's `layout/menu` slice, reusing its
+ * `collapsed` flag: `collapsed === true` means the drawer is closed. That keeps
+ * the existing `layout/menu/collapsed` event as the one channel anything in the
+ * app — an MFE included — can open or close the drawer through, instead of
+ * inventing a second one. main.tsx sets it closed at boot, since the slice's own
+ * default is the open state a permanent column wanted.
+ *
+ * The item list is still registry-driven: whatever registers in the screen
+ * domain appears, ordered by `presentation.order`.
  */
 
 import React, { useCallback, useMemo } from 'react';
 import {
   useFrontX,
-  useAppDispatch,
   useAppSelector,
   useDomainExtensions,
   useMountedExtensions,
   eventBus,
-  clearUser,
   FRONTX_ACTION_MOUNT_EXT,
   FRONTX_SCREEN_DOMAIN,
   type ScreenExtension,
   type MenuState,
-  type HeaderState,
 } from '@gears-frontx/react';
+import { Separator } from '@gears-frontx/ui-kit/separator';
+import { Button } from '@gears-frontx/ui-kit/button';
 import {
   MFE_BOOTSTRAP_SLICE_KEY,
   type MfeBootstrapState,
@@ -31,17 +43,12 @@ import {
 import {
   Sidebar,
   SidebarContent,
-  SidebarHeader,
-  SidebarFooter,
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
   SidebarMenuIcon,
-  SidebarMenuLabel,
   SidebarMenuSkeleton,
 } from '@/app/components/ui/sidebar';
-import { Avatar, AvatarImage, AvatarFallback } from '@/app/components/ui/avatar';
-import { Skeleton } from '@/app/components/ui/skeleton';
 import { Icon } from '@iconify/react';
 
 export interface MenuProps {
@@ -49,42 +56,36 @@ export interface MenuProps {
 }
 
 /**
- * The name an avatar resolves its colour and initials from. Falls back to the
- * email so a user without a display name still gets a stable colour rather than
- * the uncoloured state.
+ * Where the drawer's rule goes. `presentation.order` is a flat sort key — the
+ * screen extension schema has no notion of groups — so the shell reads a band
+ * out of it: below 100 are the working areas, 100 and above is the tenant level
+ * (My Organization). The rule is drawn at the crossing. Recorded in
+ * docs/adr/0008 so the next person does not have to infer it from a magic
+ * number in an MFE manifest.
  */
-function avatarNameOf(user: { displayName?: string; email?: string } | null | undefined): string {
-  return user?.displayName?.trim() || user?.email || '';
-}
+const TENANT_ORDER_BAND = 100;
 
 export const Menu: React.FC<MenuProps> = ({ children }) => {
   const app = useFrontX();
-  const { mfeRegistry, auth } = app;
-  const dispatch = useAppDispatch();
+  const { mfeRegistry } = app;
 
-  // Collapsed state lives in the framework's `layout/menu` slice, so anything
-  // in the app (or an MFE) can collapse the menu by emitting the same event.
   const collapsed = useAppSelector(
-    (state) => (state['layout/menu'] as MenuState | undefined)?.collapsed ?? false
+    (state) => (state['layout/menu'] as MenuState | undefined)?.collapsed ?? true
   );
+  const open = !collapsed;
+
   const bootstrapStatus = useAppSelector(
     (state) => (state[MFE_BOOTSTRAP_SLICE_KEY] as MfeBootstrapState | undefined)?.status ?? 'pending'
   );
-  const headerState = useAppSelector((state) => state['layout/header'] as HeaderState | undefined);
-  const user = headerState?.user;
-  const userLoading = headerState?.loading ?? false;
 
-  // Currently-mounted screen extension (subscribes to store changes; no polling).
   // Index 0 is meaningful because the host registers the screen domain with
   // ExclusiveMountStrategy in `bootstrap.ts` (single mount per domain).
   const mountedScreens = useMountedExtensions(FRONTX_SCREEN_DOMAIN);
   const mountedId = mountedScreens[0]?.id;
 
-  // Subscribed, not polled. This used to re-read the registry on a 500 ms
-  // interval, which added up to half a second of blank menu after registration
-  // finished. `useDomainExtensions` reads the same registry but re-renders on
-  // store changes — and the store does change once bootstrap flips its status,
-  // which happens after every extension is registered.
+  // Subscribed, not polled: `useDomainExtensions` reads the registry and
+  // re-renders on store changes, and the store does change once bootstrap flips
+  // its status — which happens after every extension is registered.
   const registered = useDomainExtensions(FRONTX_SCREEN_DOMAIN) as ScreenExtension[];
   const extensions = useMemo(
     () =>
@@ -93,6 +94,10 @@ export const Menu: React.FC<MenuProps> = ({ children }) => {
       ),
     [registered]
   );
+
+  const close = useCallback(() => {
+    eventBus.emit('layout/menu/collapsed', { collapsed: true });
+  }, []);
 
   const handleMenuItemClick = useCallback(
     async (extensionId: string) => {
@@ -104,146 +109,108 @@ export const Menu: React.FC<MenuProps> = ({ children }) => {
           payload: { subject: extensionId },
         },
       });
+      // Choosing a global area means the session is no longer inside a project.
+      // The shell knows this without being told by any MFE.
+      eventBus.emit('app/context/project/closed');
+      close();
     },
-    [mfeRegistry]
+    [close, mfeRegistry]
   );
 
-  const toggleCollapsed = useCallback(() => {
-    eventBus.emit('layout/menu/collapsed', { collapsed: !collapsed });
-  }, [collapsed]);
-
-  const signOut = useCallback(async () => {
-    dispatch(clearUser());
-    // RP-initiated logout redirects to the IdP; static-token sessions end
-    // locally and the AuthGate flips to the login screen via subscribe().
-    const transition = await auth?.logout();
-    if (transition?.type === 'redirect') window.location.href = transition.redirectUrl;
-  }, [auth, dispatch]);
+  if (!open) return null;
 
   return (
-    <Sidebar collapsed={collapsed}>
-      {/* Brand: full product name when expanded, short mark when collapsed.
-          No onClick — the collapse control is its own row at the foot. */}
-      <SidebarHeader
-        collapsed={collapsed}
-        logo={
-          collapsed ? (
-            <span className="text-heading-1 font-semibold text-foreground">CS</span>
-          ) : undefined
-        }
-        logoText={
-          collapsed ? undefined : (
-            <span className="whitespace-nowrap text-heading-1 font-semibold text-foreground">
-              Constructor Studio
-            </span>
-          )
-        }
+    <>
+      {/* Scrim covers everything to the right of the panel — the panel itself
+          stays at full brightness, as drawn. */}
+      <button
+        type="button"
+        aria-label="Close global navigation"
+        onClick={close}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') close();
+        }}
+        className="fixed inset-y-0 right-0 left-80 z-modal cursor-default bg-[rgb(15_18_24_/_0.48)]"
       />
 
-      {/* Menu items */}
-      <SidebarContent>
-        <SidebarMenu>
-          {extensions.length === 0 ? (
-            // While the manifest is in flight the screen list is not empty —
-            // it is unknown. Showing the "no screens" hint here is what made the
-            // menu flash a paragraph of text and then replace it with items.
-            bootstrapStatus === 'pending' ? (
-              <SidebarMenuSkeleton collapsed={collapsed} />
-            ) : collapsed ? null : (
-              <div className="px-3 py-4 text-label text-muted-foreground">
-                {bootstrapStatus === 'failed'
-                  ? 'Screens could not be loaded. Check the console for the manifest error.'
-                  : 'No screens yet. Add an MFE package by copying the _blank-mfe reference scaffold in mfe_packages/.'}
-              </div>
-            )
-          ) : (
-            extensions.map((ext) => {
-              const isActive = ext.id === mountedId;
-              const pres = ext.presentation;
-              return (
-                <SidebarMenuItem key={ext.id}>
-                  <SidebarMenuButton
-                    isActive={isActive}
-                    onClick={() => handleMenuItemClick(ext.id)}
-                    tooltip={collapsed ? pres.label : undefined}
-                  >
-                    {pres.icon && (
-                      <SidebarMenuIcon>
-                        {/* Size comes from SidebarMenuIcon's box (18px). */}
-                        <Icon icon={pres.icon} />
-                      </SidebarMenuIcon>
-                    )}
-                    {!collapsed && <span>{pres.label}</span>}
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              );
-            })
-          )}
-        </SidebarMenu>
-      </SidebarContent>
+      <Sidebar
+        // Over the top bar too: the drawer is the whole navigation, not a
+        // column beside it.
+        className="fixed inset-y-0 left-0 z-modal w-80 border border-border bg-card shadow-lg"
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') close();
+        }}
+      >
+        {/* The panel's own header. Not SidebarHeader: that primitive puts its
+            logo slot inside an 18px icon box, which would squash the 40px close
+            control the mockup puts where the burger was. */}
+        <div className="flex h-14 shrink-0 items-center border-b border-border px-[7px]">
+          {/* Same control as the top bar's burger, in the place it occupied —
+              40px with a 20px glyph, which is the kit's `lg`. */}
+          <Button
+            variant="ghost"
+            size="lg"
+            aria-label="Close global navigation"
+            onClick={close}
+            icon={<Icon icon="material-symbols:close" />}
+            className="rounded-lg hover:[--button-bg:var(--muted)] hover:[--button-fg:var(--foreground)]"
+          />
+          <span className="ml-3 whitespace-nowrap text-[16px] font-semibold leading-6 text-foreground">
+            Constructor Studio
+          </span>
+        </div>
 
-      <SidebarFooter>
-        {/* Identity. Sign-out is an icon on the row and hides with the labels;
-            collapsed, the avatar alone stands for the session. */}
-        {userLoading ? (
-          <div className="flex items-center gap-2 p-2">
-            <Skeleton className="h-8 w-8 rounded-full" />
-            {!collapsed && <Skeleton className="h-4 w-28" />}
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 p-2">
-            <Avatar className="h-8 w-8">
-              {user?.avatarUrl && (
-                <AvatarImage src={user.avatarUrl} alt={user?.displayName || user?.email || 'User'} />
-              )}
-              <AvatarFallback name={avatarNameOf(user)} />
-            </Avatar>
-            {!collapsed && (
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium text-foreground">
-                  {user?.displayName || user?.email || 'User'}
+        <SidebarContent className="gap-0 px-[11px] pt-[14px]">
+          <SidebarMenu className="gap-1.5">
+            {extensions.length === 0 ? (
+              // While the manifest is in flight the screen list is not empty —
+              // it is unknown. Showing the "no screens" hint here is what made
+              // the menu flash a paragraph and then replace it with items.
+              bootstrapStatus === 'pending' ? (
+                <SidebarMenuSkeleton />
+              ) : (
+                <div className="px-2.5 py-4 text-label text-muted-foreground">
+                  {bootstrapStatus === 'failed'
+                    ? 'Screens could not be loaded. Check the console for the manifest error.'
+                    : 'No screens yet. Add an MFE package by copying the _blank-mfe reference scaffold in mfe_packages/.'}
                 </div>
-                {user?.displayName && user?.email && (
-                  <div className="truncate text-xs text-mainMenu-foreground">{user.email}</div>
-                )}
-              </div>
-            )}
-            {!collapsed && (
-              <button
-                type="button"
-                aria-label="Sign out"
-                title="Sign out"
-                onClick={() => void signOut()}
-                className="rounded-lg p-1.5 text-mainMenu-foreground transition-colors hover:bg-mainMenu-hover/65 hover:text-mainMenu-active-foreground"
-              >
-                <Icon icon="lucide:log-out" className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-        )}
+              )
+            ) : (
+              extensions.map((ext, index) => {
+                const isActive = ext.id === mountedId;
+                const pres = ext.presentation;
+                const order = pres.order ?? 999;
+                const previousOrder = extensions[index - 1]?.presentation.order ?? 999;
+                const startsTenantBand =
+                  index > 0 && order >= TENANT_ORDER_BAND && previousOrder < TENANT_ORDER_BAND;
 
-        {/* Collapse toggle */}
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              // Label role (13/16): the toggle is chrome for the menu, not one
-              // of its destinations, so it sits a step below the items.
-              textRole="label"
-              aria-label={collapsed ? 'Expand menu' : 'Collapse menu'}
-              tooltip={collapsed ? 'Expand menu' : undefined}
-              onClick={toggleCollapsed}
-            >
-              <SidebarMenuIcon>
-                <Icon icon={collapsed ? 'lucide:chevron-right' : 'lucide:chevron-left'} />
-              </SidebarMenuIcon>
-              {!collapsed && <SidebarMenuLabel>Collapse</SidebarMenuLabel>}
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarFooter>
+                return (
+                  <React.Fragment key={ext.id}>
+                    {startsTenantBand && <Separator className="mb-[13px] mt-1.5" />}
+                    <SidebarMenuItem>
+                      <SidebarMenuButton
+                        isActive={isActive}
+                        onClick={() => handleMenuItemClick(ext.id)}
+                      >
+                        {pres.icon && (
+                          <SidebarMenuIcon>
+                            {/* Size comes from SidebarMenuIcon's box (18px). */}
+                            <Icon icon={pres.icon} />
+                          </SidebarMenuIcon>
+                        )}
+                        <span>{pres.label}</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  </React.Fragment>
+                );
+              })
+            )}
+          </SidebarMenu>
+        </SidebarContent>
 
-      {children}
-    </Sidebar>
+        {children}
+      </Sidebar>
+    </>
   );
 };
 
