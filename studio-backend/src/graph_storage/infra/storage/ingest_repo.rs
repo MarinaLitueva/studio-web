@@ -11,9 +11,9 @@
 //! scoped, so the invariant holds — but it is worth naming: on the write side
 //! the tenant column is set by this layer, not enforced by the compiler.
 
-use sea_orm::{ActiveValue::Set, EntityTrait, sea_query::OnConflict};
+use sea_orm::{ActiveValue::Set, DbErr, EntityTrait, sea_query::OnConflict};
 use time::OffsetDateTime;
-use toolkit_db::secure::{AccessScope, DBRunner, SecureInsertManyExt};
+use toolkit_db::secure::{AccessScope, DBRunner, ScopeError, SecureInsertManyExt};
 use uuid::Uuid;
 
 use crate::graph_storage::domain::error::DomainError;
@@ -21,6 +21,22 @@ use crate::graph_storage::infra::storage::entity::{graph_edge, graph_node, graph
 
 fn storage_err(e: impl std::fmt::Display) -> DomainError {
     DomainError::Storage(e.to_string())
+}
+
+/// Treat "the conflict clause matched every row" as success.
+///
+/// `ON CONFLICT DO NOTHING` that skips every row inserts nothing, and `SeaORM`
+/// reports that as [`DbErr::RecordNotInserted`]. For an upsert keyed on a
+/// natural key it is the success case, not a failure: the rows are already
+/// there, which is exactly what the caller asked for. Without this, registering
+/// an already-registered type answers 500, and re-ingesting an unchanged batch
+/// of edges fails — which contradicts the convergence this module's own module
+/// comment promises.
+fn tolerate_nothing_inserted<T>(result: Result<T, ScopeError>) -> Result<(), DomainError> {
+    match result {
+        Ok(_) | Err(ScopeError::Db(DbErr::RecordNotInserted)) => Ok(()),
+        Err(e) => Err(storage_err(e)),
+    }
 }
 
 /// Upsert a GTS type and return its interned id.
@@ -44,7 +60,7 @@ pub async fn upsert_type<C: DBRunner>(
         ..Default::default()
     };
 
-    graph_type::Entity::insert_many([row])
+    let inserted = graph_type::Entity::insert_many([row])
         .secure()
         .scope_unchecked(scope)
         .map_err(storage_err)?
@@ -54,8 +70,8 @@ pub async fn upsert_type<C: DBRunner>(
                 .to_owned(),
         )
         .exec(conn)
-        .await
-        .map_err(storage_err)?;
+        .await;
+    tolerate_nothing_inserted(inserted)?;
 
     interned_type_id(conn, scope, type_id).await
 }
@@ -194,7 +210,7 @@ pub async fn upsert_edges<C: DBRunner>(
         })
         .collect();
 
-    graph_edge::Entity::insert_many(models)
+    let inserted = graph_edge::Entity::insert_many(models)
         .secure()
         .scope_unchecked(scope)
         .map_err(storage_err)?
@@ -204,8 +220,8 @@ pub async fn upsert_edges<C: DBRunner>(
                 .to_owned(),
         )
         .exec(conn)
-        .await
-        .map_err(storage_err)?;
+        .await;
+    tolerate_nothing_inserted(inserted)?;
 
     Ok(count)
 }
