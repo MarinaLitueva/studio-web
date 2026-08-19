@@ -51,17 +51,22 @@ jobs:
         with:
           workspaces: studio-backend
 
+      # Always build against the newest gears-rust main (the deps track the
+      # branch). This re-resolves the git deps to head and rewrites Cargo.lock;
+      # builds below run WITHOUT --locked so they accept it.
+      - name: Update dependencies (latest gears-rust main)
+        run: cargo update
       - name: Format
         run: cargo fmt --check
       - name: Lint
         run: cargo clippy --all-targets -- -D warnings
       - name: Build
-        run: cargo build --locked
+        run: cargo build
       - name: Test
-        run: cargo test --locked
+        run: cargo test
       - name: "Smoke: assembly resolves 13 gears"
         run: |
-          cargo run --locked -- --config config/dev.yaml --list-gears | tee gears.txt
+          cargo run -- --config config/dev.yaml --list-gears | tee gears.txt
           grep -q 'account-management' gears.txt
 
   # The FrontX-based studio-frontend/ (ADR-0006) is the deployed portal;

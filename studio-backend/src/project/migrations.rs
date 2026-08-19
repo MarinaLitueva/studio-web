@@ -90,33 +90,31 @@ CREATE TABLE IF NOT EXISTS studio_projects (
     {SHAPE_CHECK}
 );"
                 ),
-                sea_orm::DatabaseBackend::MySql => {
+                // Postgres and Sqlite are the only supported engines; MySQL and any
+                // future backend fall through to the same unsupported-engine error
+                // (DatabaseBackend is #[non_exhaustive] in sea-orm 2.0).
+                _ => {
                     return Err(DbErr::Custom(MYSQL_NOT_SUPPORTED.to_owned()));
                 }
             };
 
-            conn.execute(sea_orm::Statement::from_string(backend, table))
-                .await?;
+            conn.execute_unprepared(&table).await?;
 
             // A project name is how people refer to it in conversation, so two
             // projects with one name inside a workspace is a usability bug, not
             // a modelling nicety. Unique per tenant, not globally: two
             // workspaces may each have their own "Payments v2".
-            conn.execute(sea_orm::Statement::from_string(
-                backend,
+            conn.execute_unprepared(
                 "CREATE UNIQUE INDEX IF NOT EXISTS ux_studio_projects_tenant_name \
-                 ON studio_projects (tenant_id, name);"
-                    .to_owned(),
-            ))
+                 ON studio_projects (tenant_id, name);",
+            )
             .await?;
 
             // Listing a workspace's projects is the only hot read.
-            conn.execute(sea_orm::Statement::from_string(
-                backend,
+            conn.execute_unprepared(
                 "CREATE INDEX IF NOT EXISTS ix_studio_projects_tenant_status \
-                 ON studio_projects (tenant_id, status);"
-                    .to_owned(),
-            ))
+                 ON studio_projects (tenant_id, status);",
+            )
             .await?;
 
             Ok(())
@@ -143,11 +141,7 @@ CREATE TABLE IF NOT EXISTS studio_projects (
     }
 
     async fn conn_exec(manager: &SchemaManager<'_>, sql: &str) -> Result<(), DbErr> {
-        let backend = manager.get_database_backend();
-        manager
-            .get_connection()
-            .execute(sea_orm::Statement::from_string(backend, sql.to_owned()))
-            .await?;
+        manager.get_connection().execute_unprepared(sql).await?;
         Ok(())
     }
 }

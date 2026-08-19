@@ -32,7 +32,9 @@ WORKDIR /src/studio-backend
 # dependencies change and not when our sources do.
 FROM chef AS planner
 COPY studio-backend/ .
-RUN cargo chef prepare --recipe-path recipe.json
+# Track latest gears-rust main: refresh the lock before projecting the
+# recipe so the cached dep layer is built against head.
+RUN cargo update && cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS build
 COPY --from=planner /src/studio-backend/recipe.json recipe.json
@@ -47,7 +49,10 @@ COPY studio-backend/ .
 # empty = the normal dev build (llm feature on). The cargo-chef dep layer above
 # is unchanged, so both variants share it and only the final app compile differs.
 ARG CARGO_FEATURES=""
-RUN cargo build --release --locked ${CARGO_FEATURES} \
+# cargo update again here (the COPY above restored the committed lock) so the
+# final compile also resolves the latest gears-rust main; no --locked.
+RUN cargo update \
+ && cargo build --release ${CARGO_FEATURES} \
  && cp target/release/studio-backend /studio-backend
 
 FROM debian:bookworm-slim

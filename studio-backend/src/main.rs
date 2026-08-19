@@ -12,6 +12,7 @@ mod llm_proxy; // OpenAI-compatible LLM proxy for Theia AI in IDE sessions (llm 
 mod project; // projects: two creation shapes, stages, lifecycle (ADR-0005)
 mod registered_gears;
 mod secrets_bootstrap; // self-heal for config-seeded credstore secrets at boot
+mod spec_quality; // studio-spec-quality: authenticated wrapper over the external spec-quality detector service
 mod studio_authz_plugin; // Studio PDP: the AuthZ resolver plugin (ADR-0006)
 mod studio_session; // Studio's own gear: per-workspace Theia IDE containers
 

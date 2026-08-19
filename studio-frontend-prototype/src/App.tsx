@@ -5,6 +5,7 @@ import { errText, matches } from "./format";
 import { ProjectsPortfolio } from "./projects";
 import { PeopleView } from "./people";
 import { StudioAI } from "./studio-ai";
+import { SpecQuality } from "./spec-quality";
 import {
   ACCESS_MODELS,
   defaultAccessConfig,
@@ -331,6 +332,7 @@ type View =
   | "files"
   | "connectors"
   | "system"
+  | "spec-quality"
   | "profile";
 
 /** Monochrome line icons (lucide-style): consistent stroke, currentColor —
@@ -395,6 +397,13 @@ function NavIcon({ name }: { name: string }) {
         <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1" />
       </>
     ),
+    scan: (
+      <>
+        <rect x="4" y="4" width="16" height="16" rx="2" />
+        <path d="M4 12h16" />
+        <path d="M8 8h.01M8 16h.01" />
+      </>
+    ),
   };
   return (
     <svg
@@ -436,6 +445,10 @@ const NAV_SECTIONS: {
       { id: "chats", icon: "chat", label: "Chats" },
       { id: "files", icon: "file", label: "Files" },
     ],
+  },
+  {
+    title: "Analyze",
+    items: [{ id: "spec-quality", icon: "scan", label: "Spec Quality" }],
   },
   {
     title: "Monitor",
@@ -1515,6 +1528,7 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
         {view === "chats" && <ChatsView token={token} filters={filters} />}
         {view === "files" && <FilesView token={token} filters={filters} />}
         {view === "system" && <SystemView token={token} filters={filters} />}
+        {view === "spec-quality" && <SpecQuality token={token} />}
         {view === "profile" && <ProfileView me={me} home={home} token={token} />}
           </>
         )}
@@ -1574,7 +1588,7 @@ function FilterPanel({
 
   const count = activeFilterCount(view, filters);
   const set = (patch: Partial<Filters>) => onChange({ ...filters, ...patch });
-  const noFilters = view === "profile" || view === "dashboard";
+  const noFilters = view === "profile" || view === "dashboard" || view === "spec-quality";
   const hasSearch = !noFilters && view !== "system";
 
   if (!open) {

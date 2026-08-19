@@ -36,6 +36,15 @@ logging:
     file_level: debug
 
 gears:
+  # Wrapper over the external spec-quality detector service (bloat / purpose /
+  # leak / traceability). The service has its OWN bearer secret; it lives here
+  # (env STUDIO_SPEC_QUALITY_API_KEY) and never reaches the browser. Unset key
+  # = analysis calls 500 with a clear message; the backend still boots.
+  studio-spec-quality:
+    config:
+      base_url: "https://349ddd50986c491c844d92fdaefcadfe.constructor.pro"
+      api_key_env: "STUDIO_SPEC_QUALITY_API_KEY"
+
   api-gateway:
     config:
       # 0.0.0.0: session containers reach the gateway via

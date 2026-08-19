@@ -49,13 +49,18 @@ jobs:
         with:
           workspaces: studio-backend
 
+      # Track the latest gears-rust main: re-resolve git deps to head and
+      # rewrite the lock, then build without --locked so it is accepted.
+      - name: Update dependencies (latest gears-rust main)
+        working-directory: studio-backend
+        run: cargo update
       - name: Build (release)
         working-directory: studio-backend
         # --no-default-features drops the `llm` feature (mini-chat + oagw): the
         # DMZ deploy ships no LLM key and no IDE sessions, and oagw's post_init
         # would deadlock the first boot on a root tenant that account-management
         # only seeds later (see the mini_chat/api_egress notes in Cargo.toml).
-        run: cargo build --release --locked --no-default-features
+        run: cargo build --release --no-default-features
 
       - uses: actions/upload-artifact@v4
         with:

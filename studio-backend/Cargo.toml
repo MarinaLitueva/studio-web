@@ -24,11 +24,12 @@ default = ["llm"]
 llm = ["dep:mini_chat", "dep:api_egress"]
 
 [dependencies]
-# gears-rust is consumed as a git dependency pinned to one revision, not as a
-# sibling checkout. The pin lived in three places before (this file, ci.yml,
-# release.yml) and a fresh clone of studio-web did not build at all; now the
-# revision below is the single source of truth and `cargo build` works from a
-# bare clone. Bump deliberately, after a local build against the new rev.
+# gears-rust is consumed as a git dependency tracking the `main` BRANCH, not a
+# sibling checkout — so a build resolves the latest gears tip rather than a
+# frozen revision. Cargo.lock still records the exact commit last resolved; to
+# advance to the newest main, run `cargo update` (CI does this before every
+# build — see ci.yml / release.yml — so released binaries track head). A bare
+# clone still builds: cargo fetches the branch and writes the lock.
 mimalloc = "0.1"
 anyhow = "1"
 tokio = { version = "1", features = ["full"] }
@@ -46,12 +47,12 @@ tracing = "0.1"
 tokio-util = "0.7"
 utoipa = "5"
 uuid = { version = "1", features = ["serde", "v4", "v5"] }
-toolkit-macros = { package = "cf-gears-toolkit-macros", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
-credstore-sdk = { package = "cf-gears-credstore-sdk", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
+toolkit-macros = { package = "cf-gears-toolkit-macros", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
+credstore-sdk = { package = "cf-gears-credstore-sdk", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
 # Strict ${VAR} pre-expansion of the config file (#65): the toolkit loader
 # reads the YAML verbatim, so placeholders outside DSNs reached the runtime
 # as literals. Same expansion the toolkit itself applies to DSNs.
-toolkit-utils = { package = "cf-gears-toolkit-utils", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
+toolkit-utils = { package = "cf-gears-toolkit-utils", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
 # studio-connector: GtsTypeId on the account-management metadata boundary.
 # Same version gears-rust pins in its workspace manifest.
 gts = "0.11"
@@ -59,11 +60,11 @@ gts = "0.11"
 # ── keycloak-idp-plugin (in-crate; real user provisioning, ADR-0004) ──
 # "stream" is for the llm-proxy gear (SSE passthrough to the LLM upstream).
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
-account-management-sdk = { package = "cf-gears-account-management-sdk", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
-toolkit-odata = { package = "cf-gears-toolkit-odata", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
-types-registry-sdk = { package = "cf-gears-types-registry-sdk", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
-toolkit-security = { package = "cf-gears-toolkit-security", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
-toolkit-canonical-errors = { package = "cf-gears-toolkit-canonical-errors", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7", features = ["axum"] }
+account-management-sdk = { package = "cf-gears-account-management-sdk", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
+toolkit-odata = { package = "cf-gears-toolkit-odata", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
+types-registry-sdk = { package = "cf-gears-types-registry-sdk", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
+toolkit-security = { package = "cf-gears-toolkit-security", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
+toolkit-canonical-errors = { package = "cf-gears-toolkit-canonical-errors", git = "https://github.com/constructorfabric/gears-rust", branch = "main", features = ["axum"] }
 
 # ── studio-credstore-pg (in-crate; persistent credstore value store, issue #66) ──
 # The only value-store plugin CF/Gears ships keeps values in memory, so every
@@ -71,12 +72,12 @@ toolkit-canonical-errors = { package = "cf-gears-toolkit-canonical-errors", git 
 # encrypted in Postgres instead. `pg` + `sqlite` are named explicitly rather
 # than left to feature unification from the other gears: this crate is the one
 # that decides which engines the assembly can talk to.
-toolkit-db = { package = "cf-gears-toolkit-db", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7", features = ["pg", "sqlite"] }
+toolkit-db = { package = "cf-gears-toolkit-db", git = "https://github.com/constructorfabric/gears-rust", branch = "main", features = ["pg", "sqlite"] }
 # Entity/migration definitions. Feature set and the runtime-tokio (NOT
 # runtime-tokio-rustls) choice mirror the gears-rust workspace manifest: the
 # rustls variant would activate `ring` alongside aws-lc-rs and make rustls
 # panic when it can no longer auto-detect a single provider.
-sea-orm = { version = "1.1", default-features = false, features = [
+sea-orm = { version = "2.0", default-features = false, features = [
     "runtime-tokio",
     "with-uuid",
     "with-time",
@@ -91,33 +92,33 @@ base64 = "0.22"
 
 # ── studio-project (in-crate; projects with two creation shapes, ADR-0005) ──
 # Membership stays on Resource Group per ADR-0002, so the gear needs RG's client.
-resource_group_sdk = { package = "cf-gears-resource-group-sdk", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
+resource_group_sdk = { package = "cf-gears-resource-group-sdk", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
 
 # ── Core toolkit ──
-toolkit = { package = "cf-gears-toolkit", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7", features = ["bootstrap"] }
+toolkit = { package = "cf-gears-toolkit", git = "https://github.com/constructorfabric/gears-rust", branch = "main", features = ["bootstrap"] }
 
 # ── System gears (required set) ──
-api_gateway = { package = "cf-gears-api-gateway", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
-grpc_hub = { package = "cf-gears-grpc-hub", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
-gear_orchestrator = { package = "cf-gears-gear-orchestrator", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
-nodes_registry = { package = "cf-gears-nodes-registry", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
-types_registry = { package = "cf-gears-types-registry", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
-tenant_resolver = { package = "cf-gears-tenant-resolver", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
-authn_resolver = { package = "cf-gears-authn-resolver", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
-authz_resolver = { package = "cf-gears-authz-resolver", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
-authz_resolver_sdk = { package = "cf-gears-authz-resolver-sdk", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
-resource_group = { package = "cf-gears-resource-group", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
+api_gateway = { package = "cf-gears-api-gateway", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
+grpc_hub = { package = "cf-gears-grpc-hub", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
+gear_orchestrator = { package = "cf-gears-gear-orchestrator", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
+nodes_registry = { package = "cf-gears-nodes-registry", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
+types_registry = { package = "cf-gears-types-registry", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
+tenant_resolver = { package = "cf-gears-tenant-resolver", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
+authn_resolver = { package = "cf-gears-authn-resolver", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
+authz_resolver = { package = "cf-gears-authz-resolver", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
+authz_resolver_sdk = { package = "cf-gears-authz-resolver-sdk", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
+resource_group = { package = "cf-gears-resource-group", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
 
 # ── Dev plugins (static auth for the demo; replace with OIDC for real deployments) ──
-static_authn_plugin = { package = "cf-gears-static-authn-plugin", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
+static_authn_plugin = { package = "cf-gears-static-authn-plugin", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
 # Real login: OIDC JWT validation (used by config/oidc.yaml with Keycloak from compose)
-oidc_authn_plugin = { package = "cf-gears-oidc-authn-plugin", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
-static_authz_plugin = { package = "cf-gears-static-authz-plugin", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
+oidc_authn_plugin = { package = "cf-gears-oidc-authn-plugin", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
+static_authz_plugin = { package = "cf-gears-static-authz-plugin", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
 
 # ── The gear under demonstration ──
 # account-management ships its own Tenant Resolver plugin (src/tr_plugin) in-crate.
-account_management = { package = "cf-gears-account-management", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
-static_idp_plugin = { package = "cf-gears-static-idp-plugin", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
+account_management = { package = "cf-gears-account-management", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
+static_idp_plugin = { package = "cf-gears-static-idp-plugin", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
 
 # ── Feature gears: AI chat, per-user settings, file storage ──
 # mini-chat hard-depends on oagw (LLM egress); oagw depends on credstore.
@@ -134,12 +135,12 @@ static_idp_plugin = { package = "cf-gears-static-idp-plugin", git = "https://git
 # from an earlier boot). The DMZ deploy ships no LLM key and disables IDE
 # sessions, so the release image is built `--no-default-features`: no LLM
 # chain, no oagw, the boot reaches the run phase and bootstraps its own root.
-mini_chat = { package = "cf-gears-mini-chat", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7", optional = true }
-api_egress = { package = "cf-gears-oagw", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7", optional = true }
-credstore = { package = "cf-gears-credstore", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
-static_credstore_plugin = { package = "cf-gears-static-credstore-plugin", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
-simple_user_settings = { package = "cf-gears-simple-user-settings", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
-file_storage = { package = "cf-gears-file-storage", git = "https://github.com/constructorfabric/gears-rust", rev = "71218154aa3a41991a5cbb827ac76c23b53a27a7" }
+mini_chat = { package = "cf-gears-mini-chat", git = "https://github.com/constructorfabric/gears-rust", branch = "main", optional = true }
+api_egress = { package = "cf-gears-oagw", git = "https://github.com/constructorfabric/gears-rust", branch = "main", optional = true }
+credstore = { package = "cf-gears-credstore", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
+static_credstore_plugin = { package = "cf-gears-static-credstore-plugin", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
+simple_user_settings = { package = "cf-gears-simple-user-settings", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
+file_storage = { package = "cf-gears-file-storage", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
 kube = { version = "4.2.0", default-features = false, features = ["client", "runtime", "rustls-tls"] }
 k8s-openapi = { version = "0.28.0", features = ["v1_32"] }
 rustls = "0.23.43"
