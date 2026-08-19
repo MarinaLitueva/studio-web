@@ -16,9 +16,6 @@ export type { FooterProps } from './Footer';
 export { Menu } from './Menu';
 export type { MenuProps } from './Menu';
 
-export { Sidebar } from './Sidebar';
-export type { SidebarProps } from './Sidebar';
-
 export { Screen } from './Screen';
 export type { ScreenProps } from './Screen';
 
@@ -28,6 +25,6 @@ export type { PopupProps } from './Popup';
 export { Overlay } from './Overlay';
 export type { OverlayProps } from './Overlay';
 
-export { SearchDialog } from './SearchDialog';
+export { OverlayDialog } from './OverlayDialog';
 export { ContextSwitcher } from './ContextSwitcher';
 export { UserMenu } from './UserMenu';

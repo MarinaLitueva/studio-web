@@ -22,7 +22,7 @@ import {
 } from '@gears-frontx/ui-kit/dropdown-menu';
 import { Icon } from '@iconify/react';
 import { Avatar, AvatarImage, AvatarFallback } from '@/app/components/ui/avatar';
-import { Skeleton } from '@/app/components/ui/skeleton';
+import { Skeleton } from '@gears-frontx/ui-kit/skeleton';
 
 /**
  * The name an avatar resolves its colour and initials from. Falls back to the

@@ -18,25 +18,18 @@ import {
   eventBus,
   overlayDomain,
   FRONTX_ACTION_MOUNT_EXT,
-  type Extension,
 } from '@gears-frontx/react';
 import { Separator } from '@gears-frontx/ui-kit/separator';
 import { Button } from '@gears-frontx/ui-kit/button';
 import { Icon } from '@iconify/react';
 import { cn } from '@/app/lib/utils';
+import type { OverlayExtension } from './overlayExtension';
 import { ContextSwitcher } from './ContextSwitcher';
 import { UserMenu } from './UserMenu';
 
 export interface HeaderProps {
   children?: React.ReactNode;
 }
-
-/**
- * An overlay extension carries presentation metadata the same way a screen one
- * does, but the overlay domain pins no derived type, so the field is not in the
- * base `Extension` shape and has to be read off it.
- */
-type OverlayExtension = Extension & { presentation?: { route?: string } };
 
 /**
  * One 36px round control in the right-hand cluster.
@@ -48,19 +41,6 @@ type OverlayExtension = Extension & { presentation?: { route?: string } };
  * the button, which is what makes the glyph muted — the icon body paints from
  * `currentColor`, so the colour comes from the control rather than from a class
  * on the icon.
- *
- * Two knobs are the kit's own customisation points rather than overrides:
- * `--button-bg` for the filled circle the mockup draws (ghost is transparent by
- * default), and `--icon-size-sm` because the mockup's 18px glyph is not one of
- * the kit's steps.
- *
- * Unavailability is `aria-disabled`, not the native `disabled` attribute. The
- * kit dims a natively-disabled button to `opacity: .42`, and at that opacity the
- * muted circle all but dissolves into the header — which made the inbox pill a
- * visibly different colour from the search one, rather than the same control in
- * a different state. So the circle keeps its surface, the glyph carries the
- * state (no hover, dimmer foreground), and assistive tech is told the same thing
- * `disabled` would have told it.
  */
 const IconPill: React.FC<{
   icon: string;
@@ -104,6 +84,7 @@ export const Header: React.FC<HeaderProps> = ({ children }) => {
   // extension claims the route, so no MFE id is written into the shell.
   const overlayExtensions = useDomainExtensions(overlayDomain.id) as OverlayExtension[];
   const searchExtension = overlayExtensions.find((ext) => ext.presentation?.route === '/search');
+  // TODO: inbox is planned as a full-screen screen-domain MFE, not an overlay
   const inboxExtension = overlayExtensions.find((ext) => ext.presentation?.route === '/inbox');
 
   const openDrawer = useCallback(() => {
@@ -111,7 +92,7 @@ export const Header: React.FC<HeaderProps> = ({ children }) => {
     eventBus.emit('layout/menu/collapsed', { collapsed: false });
   }, []);
 
-  // Mounting is all it takes: SearchDialog derives its own visibility from
+  // Mounting is all it takes: OverlayDialog derives its own visibility from
   // whether the overlay domain has something mounted.
   const openOverlayExtension = useCallback(
     async (extensionId: string) => {
@@ -154,22 +135,24 @@ export const Header: React.FC<HeaderProps> = ({ children }) => {
       </div>
 
       <div className="ml-auto flex items-center gap-2">
+        {/* Whoever claims the route names and draws its own control — rename the
+            MFE and the tooltip follows. The literals below name the *place*, and
+            only ever show while nothing claims it. */}
         <IconPill
-          icon="material-symbols:search"
-          label="Search Constructor Studio"
+          icon={searchExtension?.presentation?.icon ?? 'material-symbols:search'}
+          label={searchExtension?.presentation?.label ?? 'Search'}
           disabled={!searchExtension}
           onClick={
             searchExtension ? () => void openOverlayExtension(searchExtension.id) : undefined
           }
         />
-        {/* The place, not the feature: no inbox MFE is registered yet, so this
-            stays inert. It lights up — unread indicator included — as soon as an
-            overlay extension claims the /inbox route.
-            TODO: drive `unread` from the inbox MFE's own state once it exists;
+        {/* No inbox MFE is registered yet, so this stays inert and lights up as
+            soon as one claims the /inbox route.
+            TODO: drive `unread` from the inbox MFE's own state once it exists —
             a hardcoded dot would claim messages nobody has. */}
         <IconPill
-          icon="material-symbols:inbox"
-          label="Inbox"
+          icon={inboxExtension?.presentation?.icon ?? 'material-symbols:inbox'}
+          label={inboxExtension?.presentation?.label ?? 'Inbox'}
           disabled={!inboxExtension}
           onClick={inboxExtension ? () => void openOverlayExtension(inboxExtension.id) : undefined}
         />

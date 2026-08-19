@@ -14,7 +14,12 @@
    * longer matches any @font-face — so restate the token here, or this screen
    * silently falls back to system-ui. See globals.css in the shell. */
   --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  min-height: 100%;
+
+  /* This MFE opens in the shell's overlay frame, and that frame shrink-wraps
+   * its content — so the footprint is stated here, by the thing that knows what
+   * it draws, not by the shell. The shell only clamps it to the viewport. */
+  width: 40rem;
+  height: 32.5rem;
   padding: 2rem;
   background: var(--background);
   color: var(--foreground);

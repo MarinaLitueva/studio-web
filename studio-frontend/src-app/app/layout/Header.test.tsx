@@ -8,7 +8,11 @@ const searchOverlay = {
   id: 'ext.search.overlay',
   domain: OVERLAY_DOMAIN,
   entry: 'entry.search',
-  presentation: { label: 'Search', icon: 'material-symbols:search', route: '/search' },
+  presentation: {
+    label: 'Search Constructor Studio',
+    icon: 'material-symbols:search',
+    route: '/search',
+  },
 };
 
 const { mockEventBus, mockDispatch, mockRegistry, overlayExtensions } = vi.hoisted(() => ({
@@ -73,7 +77,8 @@ describe('Header (global top bar)', () => {
   describe('search', () => {
     it('is inert while no overlay extension claims the route', () => {
       render(<Header />);
-      const button = screen.getByLabelText('Search Constructor Studio');
+      // 'Search' is the shell naming the empty place, not the MFE's own label.
+      const button = screen.getByLabelText('Search');
       // aria-disabled rather than the native attribute: the kit dims a natively
       // disabled button to 42% opacity, which turned the muted circle into a
       // different colour instead of the same control in another state.
@@ -81,6 +86,14 @@ describe('Header (global top bar)', () => {
       expect(button.hasAttribute('disabled')).toBe(false);
       fireEvent.click(button);
       expect(mockRegistry.executeActionsChain).not.toHaveBeenCalled();
+    });
+
+    it('takes its name from the extension that claims the route, not from the shell', () => {
+      overlayExtensions.value = [searchOverlay];
+      render(<Header />);
+      // Renaming search-mfe renames this control; nothing here restates its name.
+      expect(screen.getByLabelText('Search Constructor Studio')).toBeTruthy();
+      expect(screen.queryByLabelText('Search')).toBeNull();
     });
 
     it('mounts the extension that claims /search into the overlay domain', async () => {
@@ -112,7 +125,7 @@ describe('Header (global top bar)', () => {
     it('keeps the same circle as search, so an unavailable state is not a different colour', () => {
       render(<Header />);
       const inbox = screen.getByLabelText('Inbox');
-      const search = screen.getByLabelText('Search Constructor Studio');
+      const search = screen.getByLabelText('Search');
       // Both carry the surface knob; only the glyph colour differs by state.
       for (const button of [inbox, search]) {
         expect(button.className).toContain('[--button-bg:var(--muted)]');

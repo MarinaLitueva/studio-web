@@ -27,7 +27,7 @@ import {
   DropdownMenuSeparator,
 } from '@gears-frontx/ui-kit/dropdown-menu';
 import { Icon } from '@iconify/react';
-import { Skeleton } from '@/app/components/ui/skeleton';
+import { Skeleton } from '@gears-frontx/ui-kit/skeleton';
 import {
   APP_CONTEXT_SLICE_KEY,
   type AppContextState,
