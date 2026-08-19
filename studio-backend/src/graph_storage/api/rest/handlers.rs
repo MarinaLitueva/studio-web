@@ -9,7 +9,8 @@ use toolkit_canonical_errors::CanonicalError;
 use toolkit_security::SecurityContext;
 
 use crate::graph_storage::api::rest::dto::{
-    GraphStatsDto, IngestReq, IngestResultDto, NeighboursDto, RegisterTypeReq, RegisteredTypeDto,
+    GraphEdgeDto, GraphStatsDto, IngestReq, IngestResultDto, NeighboursDto, GraphNodeDto, RegisterTypeReq,
+    RegisteredTypeDto, SearchResultDto, SubgraphDto,
 };
 use crate::graph_storage::domain::service::GraphServices;
 use crate::graph_storage::sdk::{EdgeInput, NodeInput};
@@ -91,6 +92,7 @@ pub async fn ingest(
             node_key: n.node_key,
             type_id: n.type_id,
             name: n.name,
+            search_text: n.search_text,
         })
         .collect();
     let edges: Vec<EdgeInput> = body
@@ -107,5 +109,56 @@ pub async fn ingest(
     Ok(Json(IngestResultDto {
         nodes_upserted: result.nodes_upserted,
         edges_upserted: result.edges_upserted,
+    }))
+}
+
+/// Query parameters of the search endpoint.
+#[derive(Debug, Deserialize)]
+pub struct SearchParams {
+    /// Free text to match against the nodes' composed search text.
+    pub q: String,
+    /// Maximum number of matches; clamped to the configured node budget.
+    #[serde(default = "default_search_limit")]
+    pub limit: u32,
+}
+
+const fn default_search_limit() -> u32 {
+    20
+}
+
+/// Rank the caller's nodes against a free-text query.
+#[tracing::instrument(skip(services, ctx), fields(user.id = %ctx.subject_id()))]
+pub async fn search(
+    Extension(ctx): Extension<SecurityContext>,
+    Extension(services): Extension<Arc<GraphServices>>,
+    Query(params): Query<SearchParams>,
+) -> ApiResult<Json<SearchResultDto>> {
+    let nodes = services.search(&ctx, &params.q, params.limit).await?;
+    Ok(Json(SearchResultDto {
+        nodes: nodes.into_iter().map(GraphNodeDto::from).collect(),
+    }))
+}
+
+/// Return the drawable neighbourhood around the given seeds.
+#[tracing::instrument(skip(services, ctx), fields(user.id = %ctx.subject_id()))]
+pub async fn get_subgraph(
+    Extension(ctx): Extension<SecurityContext>,
+    Extension(services): Extension<Arc<GraphServices>>,
+    Query(params): Query<NeighboursParams>,
+) -> ApiResult<Json<SubgraphDto>> {
+    let seeds: Vec<i64> = params
+        .seeds
+        .split(',')
+        .filter_map(|s| s.trim().parse::<i64>().ok())
+        .collect();
+
+    let budget = services.config().traversal_max_nodes as usize;
+    let (nodes, edges) = services.subgraph(&ctx, &seeds, params.depth).await?;
+    let truncated = nodes.len() >= budget;
+
+    Ok(Json(SubgraphDto {
+        nodes: nodes.into_iter().map(GraphNodeDto::from).collect(),
+        edges: edges.into_iter().map(GraphEdgeDto::from).collect(),
+        truncated,
     }))
 }

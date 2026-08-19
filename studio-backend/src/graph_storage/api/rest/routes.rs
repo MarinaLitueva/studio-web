@@ -73,6 +73,54 @@ pub fn register_routes(
         .error_500(openapi)
         .register(router, openapi);
 
+    let router = OperationBuilder::get(format!("{BASE}/search"))
+        .operation_id("graph_storage.search")
+        .summary("Lexical search")
+        .description(
+            "Rank the caller's nodes against a free-text query, most relevant \
+             first, restricted to the caller-authorised subgraph",
+        )
+        .tag(API_TAG)
+        .authenticated()
+        .require_license_features::<License>([])
+        .query_param("q", true, "Free text to match")
+        .query_param_typed("limit", false, "Maximum matches", "integer")
+        .handler(handlers::search)
+        .json_response_with_schema::<dto::SearchResultDto>(
+            openapi,
+            http::StatusCode::OK,
+            "Ranked matches",
+        )
+        .error_400(openapi)
+        .error_401(openapi)
+        .error_403(openapi)
+        .error_500(openapi)
+        .register(router, openapi);
+
+    let router = OperationBuilder::get(format!("{BASE}/subgraph"))
+        .operation_id("graph_storage.get_subgraph")
+        .summary("Drawable neighbourhood")
+        .description(
+            "The same expansion as /neighbours, resolved into nodes with names \
+             and types plus the edges between them, so a client can render it",
+        )
+        .tag(API_TAG)
+        .authenticated()
+        .require_license_features::<License>([])
+        .query_param("seeds", true, "Comma-separated seed node ids")
+        .query_param_typed("depth", false, "Traversal depth", "integer")
+        .handler(handlers::get_subgraph)
+        .json_response_with_schema::<dto::SubgraphDto>(
+            openapi,
+            http::StatusCode::OK,
+            "Nodes and the edges between them",
+        )
+        .error_400(openapi)
+        .error_401(openapi)
+        .error_403(openapi)
+        .error_500(openapi)
+        .register(router, openapi);
+
     let router = OperationBuilder::post(format!("{BASE}/types"))
         .operation_id("graph_storage.register_type")
         .summary("Register a GTS type")

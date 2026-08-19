@@ -20,6 +20,10 @@ pub struct NodeInput {
     pub type_id: String,
     /// Display name.
     pub name: String,
+    /// Text fed to lexical search. `None` falls back to the display name, so a
+    /// producer that supplies nothing is still findable by name rather than
+    /// invisible — the column is `NOT NULL` and an empty one matches nothing.
+    pub search_text: Option<String>,
 }
 
 /// An edge submitted for ingest, addressed by the node keys of its endpoints.

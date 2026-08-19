@@ -12,7 +12,10 @@ use toolkit_security::{AccessScope, SecurityContext};
 
 use crate::graph_storage::config::{GraphStorageConfig, HopStrategy};
 use crate::graph_storage::domain::error::DomainError;
-use crate::graph_storage::infra::storage::{counts, ingest_repo, pgq, traversal, traversal_pgq};
+use crate::graph_storage::infra::storage::read_model::{EdgeView, NodeView};
+use crate::graph_storage::infra::storage::{
+    counts, ingest_repo, pgq, read_model, traversal, traversal_pgq,
+};
 
 /// Composition of all domain services used by the gear.
 pub struct GraphServices {
@@ -120,9 +123,16 @@ impl GraphServices {
             }
         }
 
-        let node_rows: Vec<(String, i32, String)> = nodes
+        let node_rows: Vec<(String, i32, String, String)> = nodes
             .iter()
-            .map(|n| (n.node_key.clone(), type_ids[&n.type_id], n.name.clone()))
+            .map(|n| {
+                (
+                    n.node_key.clone(),
+                    type_ids[&n.type_id],
+                    n.name.clone(),
+                    n.search_text.clone().unwrap_or_else(|| n.name.clone()),
+                )
+            })
             .collect();
         let nodes_upserted = ingest_repo::upsert_nodes(&conn, &scope, tenant, node_rows).await?;
 
@@ -152,6 +162,60 @@ impl GraphServices {
             nodes_upserted,
             edges_upserted,
         })
+    }
+
+    /// Rank the caller's nodes against a free-text query.
+    ///
+    /// Lexical only. The gear also carries a single-statement hybrid query that
+    /// combines vector similarity, graph expansion and this same full-text
+    /// predicate (`infra::storage::hybrid`), but its vector arm needs an
+    /// embedding for the query, and this assembly has no embedding model — so
+    /// what is wired here is the arm that works with the data producers
+    /// actually supply.
+    ///
+    /// # Errors
+    /// Returns [`DomainError::Storage`] when the query fails.
+    pub async fn search(
+        &self,
+        ctx: &SecurityContext,
+        text: &str,
+        limit: u32,
+    ) -> Result<Vec<NodeView>, DomainError> {
+        let limit = limit.min(self.config.traversal_max_nodes);
+        let scope = AccessScope::for_tenant(ctx.subject_tenant_id());
+        let conn = self
+            .db
+            .conn()
+            .map_err(|e| DomainError::Storage(e.to_string()))?;
+        read_model::search(&conn, &scope, text, limit).await
+    }
+
+    /// The drawable neighbourhood around `seeds`: nodes and the edges between
+    /// them.
+    ///
+    /// The node set is exactly what [`Self::neighbours`] returns, so the
+    /// picture and the identifiers agree by construction and the traversal
+    /// backend under test is the one being drawn.
+    ///
+    /// # Errors
+    /// Returns [`DomainError::Storage`] when a query fails.
+    pub async fn subgraph(
+        &self,
+        ctx: &SecurityContext,
+        seeds: &[i64],
+        depth: u8,
+    ) -> Result<(Vec<NodeView>, Vec<EdgeView>), DomainError> {
+        let ids = self.neighbours(ctx, seeds, depth).await?;
+
+        let scope = AccessScope::for_tenant(ctx.subject_tenant_id());
+        let conn = self
+            .db
+            .conn()
+            .map_err(|e| DomainError::Storage(e.to_string()))?;
+
+        let nodes = read_model::nodes(&conn, &scope, &ids).await?;
+        let edges = read_model::edges_within(&conn, &scope, &ids).await?;
+        Ok((nodes, edges))
     }
 
     /// Expand a breadth-first neighbourhood around `seeds`.

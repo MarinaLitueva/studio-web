@@ -8,6 +8,7 @@ pub mod hybrid;
 pub mod ingest_repo;
 pub mod migrations;
 pub mod pgq;
+pub mod read_model;
 pub mod traversal;
 pub mod traversal_experiment;
 pub mod traversal_pgq;

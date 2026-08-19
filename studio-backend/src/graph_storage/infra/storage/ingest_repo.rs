@@ -93,7 +93,7 @@ pub async fn upsert_nodes<C: DBRunner>(
     conn: &C,
     scope: &AccessScope,
     tenant: Uuid,
-    rows: Vec<(String, i32, String)>,
+    rows: Vec<(String, i32, String, String)>,
 ) -> Result<u64, DomainError> {
     if rows.is_empty() {
         return Ok(0);
@@ -103,13 +103,13 @@ pub async fn upsert_nodes<C: DBRunner>(
 
     let models: Vec<graph_node::ActiveModel> = rows
         .into_iter()
-        .map(|(node_key, type_id, name)| graph_node::ActiveModel {
+        .map(|(node_key, type_id, name, search_text)| graph_node::ActiveModel {
             tenant_id: Set(tenant),
             node_key: Set(node_key),
             type_id: Set(type_id),
             name: Set(name),
             payload: Set(serde_json::json!({})),
-            search_text: Set(String::new()),
+            search_text: Set(search_text),
             created_at: Set(now),
             updated_at: Set(now),
             ..Default::default()
@@ -125,6 +125,7 @@ pub async fn upsert_nodes<C: DBRunner>(
                 .update_columns([
                     graph_node::Column::Name,
                     graph_node::Column::TypeId,
+                    graph_node::Column::SearchText,
                     graph_node::Column::UpdatedAt,
                 ])
                 .to_owned(),
