@@ -13,11 +13,10 @@ import React, { useEffect } from 'react';
 import { fetchCurrentUser, fetchAppContext } from '@/app/actions/bootstrapActions';
 import { Header } from './Header';
 import { Menu } from './Menu';
-import { Sidebar } from './Sidebar';
 import { Screen } from './Screen';
 import { Popup } from './Popup';
 import { Overlay } from './Overlay';
-import { SearchDialog } from './SearchDialog';
+import { OverlayDialog } from './OverlayDialog';
 
 export interface LayoutProps {
   children?: React.ReactNode;
@@ -36,16 +35,12 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       {/* Global top bar: navigation control, product name, context, session */}
       <Header />
 
-      {/* Content row: the screen takes the width, the contextual panel (when an
-          MFE asks for it) sits at its right edge. */}
-      <div className="flex flex-1 overflow-hidden">
-        <Screen>{children}</Screen>
-        <Sidebar />
-      </div>
+      {/* The mounted MFE owns everything below the top bar, full width. */}
+      <Screen>{children}</Screen>
 
       {/* Out of the flow, over everything: drawer, dialogs, overlays. */}
       <Menu />
-      <SearchDialog />
+      <OverlayDialog />
       <Popup />
       <Overlay />
     </div>

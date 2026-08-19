@@ -10,19 +10,9 @@ vi.mock('@gears-frontx/react', async (importOriginal) => ({
   useTranslation: () => mockUseTranslation(),
 }));
 
-vi.mock('@/app/components/ui/skeleton', () => ({
-  Skeleton: ({
-    className,
-    inheritColor,
-  }: {
-    className?: string;
-    inheritColor?: boolean;
-  }) => (
-    <div
-      data-testid="text-loader-skeleton"
-      data-class-name={className}
-      data-inherit-color={inheritColor ? 'true' : 'false'}
-    />
+vi.mock('@gears-frontx/ui-kit/skeleton', () => ({
+  Skeleton: ({ className }: { className?: string }) => (
+    <div data-testid="text-loader-skeleton" data-class-name={className} />
   ),
 }));
 
@@ -48,14 +38,13 @@ describe('TextLoader', () => {
     mockUseTranslation.mockReturnValue({ language: undefined });
 
     renderWithProviders(
-      <TextLoader skeletonClassName="h-6 w-32" inheritColor>
+      <TextLoader skeletonClassName="h-6 w-32">
         <span>Ready</span>
       </TextLoader>,
     );
 
     const skeleton = screen.getByTestId('text-loader-skeleton');
     expect(skeleton.dataset.className).toBe('h-6 w-32');
-    expect(skeleton.dataset.inheritColor).toBe('true');
   });
 
   it('renders nothing when translations are loading and no fallback is configured', () => {

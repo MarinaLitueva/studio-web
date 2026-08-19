@@ -74,13 +74,21 @@ interface MfeManifestConfig {
 // inside its chosen `MountStrategy` and registers per-action-type handlers
 // that delegate to the strategy.
 
+/**
+ * `fill` is the difference between an area and a frame. Screen and sidebar hand
+ * the extension a region and expect it filled. Overlay and popup draw a frame
+ * around whatever the extension turns out to be, so forcing a height here would
+ * override the size the extension states for itself.
+ */
 class HostContainerHooks implements ContainerHooks {
   private readonly elements = new Map<string, HTMLElement>();
+
+  constructor(private readonly fill: boolean = true) {}
 
   create(extensionId: string): Element {
     const el = document.createElement('div');
     el.dataset.extensionId = extensionId;
-    el.style.height = '100%';
+    if (this.fill) el.style.height = '100%';
     this.elements.set(extensionId, el);
     return el;
   }
@@ -139,9 +147,15 @@ class OptionalDomainFactory extends ExtensionDomainImplementationFactory {
   constructor(
     private readonly registry: MfeRegistry,
     private readonly domainId: string,
+    private readonly fill: boolean = true,
   ) { super(); }
   build(ctx: DomainContext): OptionalDomainImpl {
-    return new OptionalDomainImpl(ctx, new HostContainerHooks(), this.registry, this.domainId);
+    return new OptionalDomainImpl(
+      ctx,
+      new HostContainerHooks(this.fill),
+      this.registry,
+      this.domainId,
+    );
   }
 }
 
@@ -309,8 +323,12 @@ export async function bootstrapMFE(app: FrontXApp): Promise<void> {
 
   registry.registerDomain(screenDomain, new ScreenDomainFactory(registry));
   registry.registerDomain(sidebarDomain, new OptionalDomainFactory(registry, sidebarDomain.id));
-  registry.registerDomain(popupDomain, new OptionalDomainFactory(registry, popupDomain.id));
-  registry.registerDomain(overlayDomain, new OptionalDomainFactory(registry, overlayDomain.id));
+  // Framed domains: the extension states its own footprint, the shell only clamps it.
+  registry.registerDomain(popupDomain, new OptionalDomainFactory(registry, popupDomain.id, false));
+  registry.registerDomain(
+    overlayDomain,
+    new OptionalDomainFactory(registry, overlayDomain.id, false),
+  );
 
   const currentThemeId = app.themeRegistry?.getCurrent()?.id ?? 'default';
   registry.updateSharedProperty(FRONTX_SHARED_PROPERTY_THEME, currentThemeId);

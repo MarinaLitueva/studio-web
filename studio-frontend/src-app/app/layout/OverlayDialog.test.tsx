@@ -5,7 +5,7 @@ const OVERLAY_DOMAIN = 'gts.frontx.mfes.ext.domain.v1~frontx.screensets.layout.o
 
 const { mockRegistry, mounted } = vi.hoisted(() => ({
   mockRegistry: { executeActionsChain: vi.fn() },
-  mounted: { value: [] as { id: string }[] },
+  mounted: { value: [] as { id: string; presentation?: { label?: string } }[] },
 }));
 
 vi.mock('@gears-frontx/react', async (importOriginal) => ({
@@ -17,9 +17,9 @@ vi.mock('@gears-frontx/react', async (importOriginal) => ({
   ExtensionDomainSlot: () => <div data-testid="overlay-slot" />,
 }));
 
-import { SearchDialog } from './SearchDialog';
+import { OverlayDialog } from './OverlayDialog';
 
-describe('SearchDialog', () => {
+describe('OverlayDialog', () => {
   beforeEach(() => {
     mounted.value = [];
     mockRegistry.executeActionsChain.mockResolvedValue(undefined);
@@ -37,22 +37,46 @@ describe('SearchDialog', () => {
    * all — no error, no dialog.
    */
   it('keeps the overlay slot in the tree while closed, so the mounter has a container', () => {
-    render(<SearchDialog />);
+    render(<OverlayDialog />);
     expect(screen.getByTestId('overlay-slot')).toBeTruthy();
   });
 
   it('hides the frame while nothing is mounted', () => {
-    const { container } = render(<SearchDialog />);
+    const { container } = render(<OverlayDialog />);
     expect((container.firstChild as HTMLElement).className).toContain('hidden');
     expect((container.firstChild as HTMLElement).getAttribute('aria-hidden')).toBe('true');
   });
 
-  it('shows the dialog once an extension is mounted in the overlay domain', () => {
-    mounted.value = [{ id: 'ext.search' }];
-    render(<SearchDialog />);
+  it('names the dialog after the mounted extension, not after search', () => {
+    mounted.value = [
+      { id: 'ext.search', presentation: { label: 'Search Constructor Studio' } },
+    ];
+    render(<OverlayDialog />);
     expect((screen.getByRole('dialog') as HTMLElement).getAttribute('aria-label')).toBe(
       'Search Constructor Studio'
     );
+  });
+
+  it('names the close control after the mounted extension too', () => {
+    mounted.value = [{ id: 'ext.search', presentation: { label: 'Search Constructor Studio' } }];
+    render(<OverlayDialog />);
+    expect(screen.getByLabelText('Close Search Constructor Studio')).toBeTruthy();
+  });
+
+  /**
+   * The frame shrink-wraps whatever mounted into it: an overlay MFE states its
+   * own footprint in its own stylesheet. If a size ever reappears here, a second
+   * overlay can no longer be a different size without editing the shell.
+   */
+  it('states no size of its own, only viewport clamps', () => {
+    mounted.value = [{ id: 'ext.search', presentation: { label: 'Search' } }];
+    render(<OverlayDialog />);
+    const card = screen.getByRole('dialog') as HTMLElement;
+    const sized = Array.from(card.classList).filter(
+      (c) => /^[wh]-/.test(c) && !c.startsWith('w-fit') && !c.startsWith('h-fit')
+    );
+    expect(sized).toEqual([]);
+    expect(card.getAttribute('style')).toBeNull();
   });
 
   describe('dismissal', () => {
@@ -61,8 +85,8 @@ describe('SearchDialog', () => {
     });
 
     it('unmounts the open extension, naming it as the subject', async () => {
-      render(<SearchDialog />);
-      fireEvent.click(screen.getByLabelText('Close search'));
+      render(<OverlayDialog />);
+      fireEvent.click(screen.getByLabelText('Close'));
       await vi.waitFor(() =>
         expect(mockRegistry.executeActionsChain).toHaveBeenCalledWith(
           expect.objectContaining({
@@ -76,14 +100,14 @@ describe('SearchDialog', () => {
     });
 
     it('closes on Escape', async () => {
-      render(<SearchDialog />);
+      render(<OverlayDialog />);
       fireEvent.keyDown(document, { key: 'Escape' });
       await vi.waitFor(() => expect(mockRegistry.executeActionsChain).toHaveBeenCalled());
     });
 
     it('does nothing on Escape while closed', () => {
       mounted.value = [];
-      render(<SearchDialog />);
+      render(<OverlayDialog />);
       fireEvent.keyDown(document, { key: 'Escape' });
       expect(mockRegistry.executeActionsChain).not.toHaveBeenCalled();
     });

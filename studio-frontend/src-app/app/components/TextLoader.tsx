@@ -7,7 +7,7 @@
 
 import React from 'react';
 import { useTranslation } from '@gears-frontx/react';
-import { Skeleton } from '@/app/components/ui/skeleton';
+import { Skeleton } from '@gears-frontx/ui-kit/skeleton';
 
 export interface TextLoaderProps {
   /** Child content to render when translations are loaded */
@@ -23,12 +23,6 @@ export interface TextLoaderProps {
   skeletonClassName?: string;
   /** Optional className for the wrapper div */
   className?: string;
-  /**
-   * If true, skeleton inherits the text color instead of using bg-muted
-   * Use this for buttons, menu items, and colored text
-   * @default false
-   */
-  inheritColor?: boolean;
 }
 
 /**
@@ -40,17 +34,10 @@ export interface TextLoaderProps {
  *
  * @example
  * ```tsx
- * // Heading - default bg-muted skeleton
+ * // Heading — skeleton painted from --muted
  * <TextLoader skeletonClassName="h-10 w-64">
  *   <h1 className="text-4xl font-bold">{t('screen.title')}</h1>
  * </TextLoader>
- *
- * // Button label - inherits button text color
- * <Button>
- *   <TextLoader skeletonClassName="h-4 w-24" inheritColor>
- *     {t('button.submit')}
- *   </TextLoader>
- * </Button>
  * ```
  */
 export const TextLoader: React.FC<TextLoaderProps> = ({
@@ -58,7 +45,6 @@ export const TextLoader: React.FC<TextLoaderProps> = ({
   fallback,
   skeletonClassName,
   className,
-  inheritColor = false,
 }) => {
   const { language } = useTranslation();
 
@@ -71,7 +57,7 @@ export const TextLoader: React.FC<TextLoaderProps> = ({
 
     // Otherwise, use skeleton
     if (skeletonClassName) {
-      return <Skeleton className={skeletonClassName} inheritColor={inheritColor} />;
+      return <Skeleton className={skeletonClassName} />;
     }
 
     // Default: return nothing

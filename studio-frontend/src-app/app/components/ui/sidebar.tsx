@@ -12,7 +12,7 @@ import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
 
 import { cn } from "@/app/lib/utils"
-import { Skeleton } from "./skeleton"
+import { Skeleton } from "@gears-frontx/ui-kit/skeleton"
 
 const Sidebar = (
   {
@@ -292,9 +292,9 @@ const SidebarMenuSkeleton = (
         {/* Inert: presentational only, and out of the tab order. */}
         <SidebarMenuButton aria-hidden tabIndex={-1} className="pointer-events-none">
           <SidebarMenuIcon>
-            <Skeleton inheritColor className="h-full w-full" />
+            <Skeleton className="h-full w-full" />
           </SidebarMenuIcon>
-          {!collapsed && <Skeleton inheritColor className="h-3 flex-1" />}
+          {!collapsed && <Skeleton className="h-3 flex-1" />}
         </SidebarMenuButton>
       </SidebarMenuItem>
     ))}
