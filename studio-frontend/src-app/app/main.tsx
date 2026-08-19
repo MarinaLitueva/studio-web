@@ -1,13 +1,17 @@
 /// <reference types="vite/client" />
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { FrontXProvider, apiRegistry, createFrontXApp, MfeHandlerMF, gtsPlugin, FRONTX_MFE_ENTRY_MF, themeSchema, languageSchema, extensionScreenSchema } from '@gears-frontx/react';
+import { FrontXProvider, apiRegistry, createFrontXApp, registerSlice, MfeHandlerMF, gtsPlugin, FRONTX_MFE_ENTRY_MF, themeSchema, languageSchema, extensionScreenSchema, setMenuCollapsed, type JSONSchema } from '@gears-frontx/react';
 import { Toaster } from '@/app/components/ui/sonner';
 import { AccountsApiService } from '@/app/api';
 import './globals.css'; // Global styles with CSS variables
 import '@/app/events/bootstrapEvents'; // Register app-level events (type augmentation)
 import { registerBootstrapEffects } from '@/app/effects/bootstrapEffects'; // Register app-level effects
+import { registerAppContextEffects } from '@/app/effects/appContextEffects'; // Top-bar context slot
+import { mfeBootstrapSlice } from '@/app/slices/mfeBootstrapSlice';
+import { appContextSlice } from '@/app/slices/appContextSlice';
 import { keycloakOidcProvider } from '@/app/auth/keycloakOidcProvider';
+import extensionOverlaySchemaJson from '@/app/mfe/schemas/extension_overlay.v1.json';
 import App from './App';
 
 // Import all themes
@@ -24,6 +28,13 @@ import { draculaLargeTheme } from '@/app/themes/dracula-large';
 gtsPlugin.registerSchema(themeSchema);
 gtsPlugin.registerSchema(languageSchema);
 gtsPlugin.registerSchema(extensionScreenSchema);
+// The overlay counterpart of extensionScreenSchema, owned here rather than in
+// the template's src/gts: GTS refuses to register an instance whose type has no
+// schema, and the overlay domain pins no derived type — so a contribution to it
+// needs one declared somewhere. Without this, registering the search extension
+// throws, bootstrapMFE rejects, and MfeScreenContainer never renders the screen
+// slot: the drawer still lists its items while every click mounts into nothing.
+gtsPlugin.registerSchema(extensionOverlaySchemaJson as JSONSchema);
 
 // Register accounts service (application-level service for user info)
 apiRegistry.register(AccountsApiService);
@@ -43,8 +54,11 @@ const app = createFrontXApp({
   auth: { provider: keycloakOidcProvider },
 });
 
-// Register app-level effects (identity flows through app.auth)
+// Register app-level slices and effects (identity flows through app.auth)
+registerSlice(mfeBootstrapSlice);
+registerSlice(appContextSlice);
 registerBootstrapEffects(app);
+registerAppContextEffects(app);
 
 // Register all themes (default theme has default:true, activates automatically)
 app.themeRegistry.register(defaultTheme);
@@ -55,6 +69,13 @@ app.themeRegistry.register(draculaLargeTheme);
 
 // Apply default theme explicitly
 app.themeRegistry.apply(DEFAULT_THEME_ID);
+
+// The navigation drawer starts closed. The framework's menu slice defaults to
+// the open state a permanent left column wanted, so the shell states its own
+// default here — dispatched rather than emitted so the first paint already has
+// it closed, with no flash of an open panel. See layout/Menu.tsx for why
+// `collapsed` is the drawer's closed flag.
+app.store.dispatch(setMenuCollapsed(true));
 
 /**
  * Render application

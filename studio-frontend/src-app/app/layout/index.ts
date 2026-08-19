@@ -27,3 +27,7 @@ export type { PopupProps } from './Popup';
 
 export { Overlay } from './Overlay';
 export type { OverlayProps } from './Overlay';
+
+export { SearchDialog } from './SearchDialog';
+export { ContextSwitcher } from './ContextSwitcher';
+export { UserMenu } from './UserMenu';

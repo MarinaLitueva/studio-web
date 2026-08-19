@@ -23,7 +23,7 @@
       "entry": "gts.frontx.mfes.mfe.entry.v1~frontx.mfes.mfe.entry_mf.v1~constructor_studio.connections.mfe.main.v1",
       "presentation": {
         "label": "Connections",
-        "icon": "lucide:plug",
+        "icon": "material-symbols:extension",
         "route": "/connections",
         "order": 40
       }

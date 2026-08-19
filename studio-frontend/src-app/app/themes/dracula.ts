@@ -6,7 +6,6 @@
 // @cpt-algo:cpt-frontx-algo-ui-libraries-choice-theme-propagation:p1
 
 import type { ThemeConfig } from '@gears-frontx/react';
-import { hslToVar } from './utils';
 
 /**
  * Dracula theme ID
@@ -36,31 +35,31 @@ export const draculaTheme: ThemeConfig = {
   name: 'Dracula',
   variables: {
     // Shadcn color variables
-    '--background': hslToVar(dracula.background),
-    '--foreground': hslToVar(dracula.foreground),
-    '--card': hslToVar(dracula.background),
-    '--card-foreground': hslToVar(dracula.foreground),
-    '--popover': hslToVar(dracula.background),
-    '--popover-foreground': hslToVar(dracula.foreground),
-    '--primary': hslToVar(dracula.purple),
-    '--primary-foreground': hslToVar(dracula.background),
-    '--secondary': hslToVar(dracula.comment),
-    '--secondary-foreground': hslToVar(dracula.foreground),
-    '--muted': hslToVar(dracula.currentLine),
-    '--muted-foreground': hslToVar(dracula.foreground),
-    '--accent': hslToVar(dracula.pink),
-    '--accent-foreground': hslToVar(dracula.background),
-    '--destructive': hslToVar(dracula.red),
-    '--destructive-foreground': hslToVar(dracula.foreground),
-    '--border': hslToVar(dracula.currentLine),
-    '--input': hslToVar(dracula.currentLine),
-    '--ring': hslToVar(dracula.purple),
+    '--background': dracula.background,
+    '--foreground': dracula.foreground,
+    '--card': dracula.background,
+    '--card-foreground': dracula.foreground,
+    '--popover': dracula.background,
+    '--popover-foreground': dracula.foreground,
+    '--primary': dracula.purple,
+    '--primary-foreground': dracula.background,
+    '--secondary': dracula.comment,
+    '--secondary-foreground': dracula.foreground,
+    '--muted': dracula.currentLine,
+    '--muted-foreground': dracula.foreground,
+    '--accent': dracula.pink,
+    '--accent-foreground': dracula.background,
+    '--destructive': dracula.red,
+    '--destructive-foreground': dracula.foreground,
+    '--border': dracula.currentLine,
+    '--input': dracula.currentLine,
+    '--ring': dracula.purple,
 
     // State colors
-    '--error': hslToVar(dracula.red),
-    '--warning': hslToVar(dracula.yellow),
-    '--success': hslToVar(dracula.green),
-    '--info': hslToVar(dracula.cyan),
+    '--error': dracula.red,
+    '--warning': dracula.yellow,
+    '--success': dracula.green,
+    '--info': dracula.cyan,
 
     // Chart colors (OKLCH format, Dracula-inspired palette)
     '--chart-1': 'oklch(0.714 0.203 313.26)',
@@ -70,11 +69,35 @@ export const draculaTheme: ThemeConfig = {
     '--chart-5': 'oklch(0.822 0.131 194.77)',
 
     // Left menu colors
-    '--left-menu': hslToVar(dracula.backgroundDark),
-    '--left-menu-foreground': hslToVar(dracula.comment),
-    '--left-menu-hover': hslToVar(dracula.currentLine),
-    '--left-menu-selected': hslToVar(dracula.purple),
-    '--left-menu-border': hslToVar(dracula.currentLine),
+    '--left-menu': dracula.backgroundDark,
+    '--left-menu-foreground': dracula.comment,
+    '--left-menu-hover': dracula.currentLine,
+    '--left-menu-active': dracula.currentLine,
+    '--left-menu-active-foreground': dracula.foreground,
+    '--left-menu-border': dracula.currentLine,
+
+    '--avatar-yellow': 'hsl(40 100% 42.4%)',
+    '--avatar-orange': 'hsl(24.6 99.1% 55.1%)',
+    '--avatar-blue': 'hsl(223.6 90.4% 71.4%)',
+    '--avatar-mint': 'hsl(160 85.3% 40%)',
+    '--avatar-brown': 'hsl(21.6 39.3% 62.5%)',
+    '--avatar-grey': 'hsl(0 0% 60.8%)',
+    '--avatar-pink': 'hsl(338.8 100% 71.2%)',
+    '--avatar-turquoise': 'hsl(186.1 85.4% 40.4%)',
+    '--avatar-purple': 'hsl(278.8 100% 73.9%)',
+    '--avatar-magenta': 'hsl(260.5 90.2% 72%)',
+    '--avatar-red': 'hsl(4.3 100% 69.8%)',
+    '--avatar-green': 'hsl(119 53.2% 46.1%)',
+    '--avatar-foreground': 'hsl(0 0% 6.7%)',
+
+    // Typography — see default.ts for why the token mirrors ui-kit's name.
+    '--font-sans': "'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif",
+    '--text-body-size': '0.9375rem',
+    '--text-body-line-height': '1.25rem',
+    '--text-heading-1-size': '1.25rem',
+    '--text-heading-1-line-height': '1.75rem',
+    '--text-label-size': '0.8125rem',
+    '--text-label-line-height': '1rem',
 
     // Spacing
     '--spacing-xs': '0.25rem',

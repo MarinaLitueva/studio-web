@@ -113,29 +113,37 @@ export const STUDIO_CSS = /* css */ `
    Some theme variables (--popover-foreground, --card-foreground) may have
    incorrect values in third-party themes. The Studio maps all component
    colors to --foreground / --background which are always correct (body uses them).
-   :where() ensures host-app Tailwind utilities take precedence when available. */
-.text-foreground { color: hsl(var(--foreground)); }
-.text-muted-foreground { color: hsl(var(--muted-foreground)); }
-.text-muted-foreground\\/70 { color: hsl(var(--muted-foreground) / 0.7); }
-:where(.bg-popover) { background-color: hsl(var(--background)); }
-:where(.text-popover-foreground) { color: hsl(var(--foreground)); }
-:where(.bg-accent) { background-color: hsl(var(--foreground) / 0.1); }
-:where(.text-accent-foreground) { color: hsl(var(--foreground)); }
-:where(.bg-background) { background-color: hsl(var(--background)); }
-:where(.bg-card) { background-color: hsl(var(--background)); }
-:where(.text-card-foreground) { color: hsl(var(--foreground)); }
-:where(.bg-primary) { background-color: hsl(var(--foreground)); }
-:where(.text-primary-foreground) { color: hsl(var(--background)); }
-:where(.bg-input) { background-color: hsl(var(--foreground) / 0.15); }
-:where(.border-input) { border-color: hsl(var(--foreground) / 0.2); }
-:where(.ring-ring) { --tw-ring-color: hsl(var(--foreground) / 0.5); }
+   :where() ensures host-app Tailwind utilities take precedence when available —
+   every rule in this block needs it, including the plain text-* ones, which had
+   lost it and were overriding the host's own utilities of the same name.
+
+   Values are whole colours, not the bare HSL triplets the older shadcn
+   convention used: wrapping a token that already holds a colour yields a
+   doubly-wrapped hsl(), which is invalid, so the declaration is dropped and the
+   element silently inherits its parent's colour. Alpha goes through color-mix
+   for the same reason — a whole colour has no channel slot. */
+:where(.text-foreground) { color: var(--foreground); }
+:where(.text-muted-foreground) { color: var(--muted-foreground); }
+:where(.text-muted-foreground\\/70) { color: color-mix(in oklab, var(--muted-foreground) 70%, transparent); }
+:where(.bg-popover) { background-color: var(--background); }
+:where(.text-popover-foreground) { color: var(--foreground); }
+:where(.bg-accent) { background-color: color-mix(in oklab, var(--foreground) 10%, transparent); }
+:where(.text-accent-foreground) { color: var(--foreground); }
+:where(.bg-background) { background-color: var(--background); }
+:where(.bg-card) { background-color: var(--background); }
+:where(.text-card-foreground) { color: var(--foreground); }
+:where(.bg-primary) { background-color: var(--foreground); }
+:where(.text-primary-foreground) { color: var(--background); }
+:where(.bg-input) { background-color: color-mix(in oklab, var(--foreground) 15%, transparent); }
+:where(.border-input) { border-color: color-mix(in oklab, var(--foreground) 20%, transparent); }
+:where(.ring-ring) { --tw-ring-color: color-mix(in oklab, var(--foreground) 50%, transparent); }
 .border-transparent { border-color: transparent; }
 
 /* --- Borders --- */
 .border { border-width: 1px; }
 .border-2 { border-width: 2px; }
 .border-b { border-bottom-width: 1px; }
-:where(.border-border\\/50) { border-color: hsl(var(--foreground) / 0.15); }
+:where(.border-border\\/50) { border-color: color-mix(in oklab, var(--foreground) 15%, transparent); }
 .rounded-full { border-radius: 9999px; }
 .rounded-xl { border-radius: 0.75rem; }
 .rounded-md { border-radius: calc(var(--radius, 0.5rem) - 2px); }
@@ -201,31 +209,31 @@ export const STUDIO_CSS = /* css */ `
 /* --- Hover states --- */
 .hover\\:bg-white\\/30:hover { background-color: rgb(255 255 255 / 0.3); }
 .dark .dark\\:hover\\:bg-black\\/60:hover { background-color: rgb(0 0 0 / 0.6); }
-.hover\\:text-muted-foreground:hover { color: hsl(var(--muted-foreground)); }
-:where(.hover\\:bg-accent:hover) { background-color: hsl(var(--foreground) / 0.1); }
-:where(.hover\\:bg-primary\\/90:hover) { background-color: hsl(var(--foreground) / 0.85); }
-:where(.hover\\:bg-secondary\\/80:hover) { background-color: hsl(var(--foreground) / 0.08); }
+:where(.hover\\:text-muted-foreground:hover) { color: var(--muted-foreground); }
+:where(.hover\\:bg-accent:hover) { background-color: color-mix(in oklab, var(--foreground) 10%, transparent); }
+:where(.hover\\:bg-primary\\/90:hover) { background-color: color-mix(in oklab, var(--foreground) 85%, transparent); }
+:where(.hover\\:bg-secondary\\/80:hover) { background-color: color-mix(in oklab, var(--foreground) 8%, transparent); }
 :where(.hover\\:bg-destructive\\/90:hover) { background-color: hsl(0 60% 50% / 0.9); }
 
 /* --- Focus states --- */
-:where(.focus\\:bg-accent:focus) { background-color: hsl(var(--foreground) / 0.1); }
-:where(.focus\\:text-foreground:focus) { color: hsl(var(--foreground)); }
-:where(.focus\\:text-accent-foreground:focus) { color: hsl(var(--foreground)); }
+:where(.focus\\:bg-accent:focus) { background-color: color-mix(in oklab, var(--foreground) 10%, transparent); }
+:where(.focus\\:text-foreground:focus) { color: var(--foreground); }
+:where(.focus\\:text-accent-foreground:focus) { color: var(--foreground); }
 .focus-visible\\:outline-none:focus-visible { outline: 2px solid transparent; outline-offset: 2px; }
 :where(.focus-visible\\:ring-1:focus-visible) {
-  box-shadow: var(--tw-ring-inset,) 0 0 0 calc(1px + var(--tw-ring-offset-width, 0px)) var(--tw-ring-color, hsl(var(--foreground) / 0.5));
+  box-shadow: var(--tw-ring-inset,) 0 0 0 calc(1px + var(--tw-ring-offset-width, 0px)) var(--tw-ring-color, color-mix(in oklab, var(--foreground) 50%, transparent));
 }
 :where(.focus-visible\\:ring-2:focus-visible) {
-  box-shadow: var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width, 0px)) var(--tw-ring-color, hsl(var(--foreground) / 0.5));
+  box-shadow: var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width, 0px)) var(--tw-ring-color, color-mix(in oklab, var(--foreground) 50%, transparent));
 }
-:where(.focus-visible\\:ring-ring:focus-visible) { --tw-ring-color: hsl(var(--foreground) / 0.5); }
+:where(.focus-visible\\:ring-ring:focus-visible) { --tw-ring-color: color-mix(in oklab, var(--foreground) 50%, transparent); }
 :where(.focus-visible\\:ring-offset-2:focus-visible) { --tw-ring-offset-width: 2px; }
-:where(.focus-visible\\:ring-offset-background:focus-visible) { --tw-ring-offset-color: hsl(var(--background)); }
+:where(.focus-visible\\:ring-offset-background:focus-visible) { --tw-ring-offset-color: var(--background); }
 
 /* --- Data-attribute & disabled states --- */
-:where(.data-\\[state\\=open\\]\\:bg-accent[data-state=open]) { background-color: hsl(var(--foreground) / 0.1); }
-:where(.data-\\[state\\=checked\\]\\:bg-primary[data-state=checked]) { background-color: hsl(var(--foreground)); }
-:where(.data-\\[state\\=unchecked\\]\\:bg-input[data-state=unchecked]) { background-color: hsl(var(--foreground) / 0.15); }
+:where(.data-\\[state\\=open\\]\\:bg-accent[data-state=open]) { background-color: color-mix(in oklab, var(--foreground) 10%, transparent); }
+:where(.data-\\[state\\=checked\\]\\:bg-primary[data-state=checked]) { background-color: var(--foreground); }
+:where(.data-\\[state\\=unchecked\\]\\:bg-input[data-state=unchecked]) { background-color: color-mix(in oklab, var(--foreground) 15%, transparent); }
 .data-\\[disabled\\]\\:pointer-events-none[data-disabled] { pointer-events: none; }
 .data-\\[disabled\\]\\:opacity-50[data-disabled] { opacity: 0.5; }
 .disabled\\:pointer-events-none:disabled { pointer-events: none; }
@@ -258,10 +266,10 @@ export const STUDIO_CSS = /* css */ `
    may reference broken theme variables (e.g. --popover-foreground identical
    to --popover in some third-party themes). Scoped rules (specificity 0-2-0)
    beat host-app Tailwind (0-1-0) and map everything to --foreground / --background. */
-.studio-portal-container .bg-popover { background-color: hsl(var(--background, 0 0% 100%)); }
-.studio-portal-container .text-popover-foreground { color: hsl(var(--foreground, 0 0% 0%)); }
-.studio-portal-container .focus\\:bg-accent:focus { background-color: hsl(var(--foreground) / 0.1); }
-.studio-portal-container .focus\\:text-foreground:focus { color: hsl(var(--foreground)); }
+.studio-portal-container .bg-popover { background-color: var(--background, #ffffff); }
+.studio-portal-container .text-popover-foreground { color: var(--foreground, #000000); }
+.studio-portal-container .focus\\:bg-accent:focus { background-color: color-mix(in oklab, var(--foreground) 10%, transparent); }
+.studio-portal-container .focus\\:text-foreground:focus { color: var(--foreground); }
 
 /* --- Z-index (dropdown content) --- */
 .z-50 { z-index: 50; }

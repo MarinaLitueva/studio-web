@@ -1,6 +1,22 @@
 import type { Config } from 'tailwindcss';
 import tailwindcssAnimate from 'tailwindcss-animate';
 
+/**
+ * Theme tokens hold WHOLE colours (`--border: hsl(214.3 31.8% 91.4%)`), not the
+ * bare HSL triplets shadcn's older convention used. That is what lets a
+ * @gears-frontx/ui-kit component — whose CSS writes `var(--popover)` directly —
+ * paint correctly inside the shell, instead of receiving three numbers CSS
+ * cannot resolve as a colour. Consequence for this file: colours are referenced
+ * as `var(--x)`, never `hsl(var(--x))`. See docs/adr/0007.
+ */
+
+/**
+ * A colour that still honours Tailwind's `/NN` opacity modifier. Whole colours
+ * have no channel slot, so alpha is applied by mixing towards transparent.
+ */
+const mixable = (token: string) =>
+  `color-mix(in oklab, var(${token}) calc(<alpha-value> * 100%), transparent)`;
+
 export default {
   darkMode: ['class'],
   content: [
@@ -34,50 +50,96 @@ export default {
   theme: {
     extend: {
       colors: {
-        border: 'hsl(var(--border))',
-        input: 'hsl(var(--input))',
-        ring: 'hsl(var(--ring))',
-        background: 'hsl(var(--background))',
-        foreground: 'hsl(var(--foreground))',
+        border: 'var(--border)',
+        input: 'var(--input)',
+        ring: 'var(--ring)',
+        background: 'var(--background)',
+        foreground: 'var(--foreground)',
         primary: {
-          DEFAULT: 'hsl(var(--primary))',
-          foreground: 'hsl(var(--primary-foreground))',
+          DEFAULT: 'var(--primary)',
+          foreground: 'var(--primary-foreground)',
         },
         secondary: {
-          DEFAULT: 'hsl(var(--secondary))',
-          foreground: 'hsl(var(--secondary-foreground))',
+          DEFAULT: 'var(--secondary)',
+          foreground: 'var(--secondary-foreground)',
         },
         destructive: {
-          DEFAULT: 'hsl(var(--destructive))',
-          foreground: 'hsl(var(--destructive-foreground))',
+          DEFAULT: 'var(--destructive)',
+          foreground: 'var(--destructive-foreground)',
         },
         muted: {
-          DEFAULT: 'hsl(var(--muted))',
-          foreground: 'hsl(var(--muted-foreground))',
+          DEFAULT: 'var(--muted)',
+          foreground: 'var(--muted-foreground)',
         },
         accent: {
-          DEFAULT: 'hsl(var(--accent))',
-          foreground: 'hsl(var(--accent-foreground))',
+          DEFAULT: 'var(--accent)',
+          foreground: 'var(--accent-foreground)',
         },
         popover: {
-          DEFAULT: 'hsl(var(--popover))',
-          foreground: 'hsl(var(--popover-foreground))',
+          DEFAULT: 'var(--popover)',
+          foreground: 'var(--popover-foreground)',
         },
         card: {
-          DEFAULT: 'hsl(var(--card))',
-          foreground: 'hsl(var(--card-foreground))',
+          DEFAULT: 'var(--card)',
+          foreground: 'var(--card-foreground)',
         },
-        error: 'hsl(var(--error))',
-        warning: 'hsl(var(--warning))',
-        success: 'hsl(var(--success))',
-        info: 'hsl(var(--info))',
+        error: 'var(--error)',
+        warning: 'var(--warning)',
+        success: 'var(--success)',
+        info: 'var(--info)',
+        // The only colours here that honour an opacity modifier: the menu's
+        // hover surface is the raised surface at partial opacity, which needs
+        // `bg-mainMenu-hover/65` to resolve. Tokens are whole colours now, and a
+        // whole colour has no channel slot to inject alpha into — so the
+        // modifier goes through color-mix instead of `hsl(... / <alpha-value>)`.
+        // Tailwind substitutes <alpha-value> literally (1 when no modifier is
+        // written), so the unmodified form stays fully opaque. The rest of the
+        // palette omits the slot; extend the same way if that is ever needed.
         mainMenu: {
-          DEFAULT: 'hsl(var(--left-menu))',
-          foreground: 'hsl(var(--left-menu-foreground))',
-          hover: 'hsl(var(--left-menu-hover))',
-          selected: 'hsl(var(--left-menu-selected))',
-          border: 'hsl(var(--left-menu-border))',
+          DEFAULT: mixable('--left-menu'),
+          foreground: mixable('--left-menu-foreground'),
+          hover: mixable('--left-menu-hover'),
+          active: {
+            DEFAULT: mixable('--left-menu-active'),
+            foreground: mixable('--left-menu-active-foreground'),
+          },
+          border: mixable('--left-menu-border'),
         },
+        // Categorical palette an avatar picks from deterministically by name.
+        // The hue names and their order are the contract — the index an avatar
+        // resolves to is a position in that order, so reordering repaints every
+        // avatar in the product. Keep in step with AVATAR_HUES in ui/avatar.tsx.
+        avatar: {
+          yellow: 'var(--avatar-yellow)',
+          orange: 'var(--avatar-orange)',
+          blue: 'var(--avatar-blue)',
+          mint: 'var(--avatar-mint)',
+          brown: 'var(--avatar-brown)',
+          grey: 'var(--avatar-grey)',
+          pink: 'var(--avatar-pink)',
+          turquoise: 'var(--avatar-turquoise)',
+          purple: 'var(--avatar-purple)',
+          magenta: 'var(--avatar-magenta)',
+          red: 'var(--avatar-red)',
+          green: 'var(--avatar-green)',
+          foreground: 'var(--avatar-foreground)',
+        },
+      },
+      fontFamily: {
+        // Resolved from the themed token, like every other value here — so a
+        // theme can rebrand the family and nothing else has to change.
+        sans: 'var(--font-sans)',
+      },
+      fontSize: {
+        // Named text roles, mirroring ui-kit's ramp. Each carries the role's
+        // line-height with it, so size and leading can never drift apart at a
+        // call site. Only the roles the shell renders live here.
+        body: ['var(--text-body-size)', { lineHeight: 'var(--text-body-line-height)' }],
+        'heading-1': [
+          'var(--text-heading-1-size)',
+          { lineHeight: 'var(--text-heading-1-line-height)' },
+        ],
+        label: ['var(--text-label-size)', { lineHeight: 'var(--text-label-line-height)' }],
       },
       spacing: {
         xs: 'var(--spacing-xs)',
