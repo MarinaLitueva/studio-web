@@ -24,6 +24,7 @@ mod ai_providers;
 mod bitbucket;
 mod driver;
 mod github;
+mod graph_sync;
 mod gitlab;
 mod gts;
 mod plugin;
@@ -113,14 +114,31 @@ impl Gear for StudioConnectorGear {
 impl toolkit::contracts::RestApiCapability for StudioConnectorGear {
     fn register_rest(
         &self,
-        _ctx: &GearCtx,
+        ctx: &GearCtx,
         router: Router,
         openapi: &dyn OpenApiRegistry,
     ) -> anyhow::Result<Router> {
+        // Resolved here rather than in `init`: the REST phase runs after every
+        // gear has initialized, so this does not depend on graph-storage
+        // happening to come first in the topological order. A deployment
+        // without it keeps the route mounted and answers 503.
+        let graph = rest::GraphSink(
+            ctx.client_hub()
+                .get::<dyn crate::graph_storage::sdk::GraphStorageClientV1>()
+                .inspect_err(|_| {
+                    warn!(
+                        "studio-connector: graph-storage client not registered — \
+                         repository import will answer 503"
+                    );
+                })
+                .ok(),
+        );
+
         Ok(rest::register_routes(
             router,
             openapi,
             self.service.get().cloned(),
+            graph,
         ))
     }
 }

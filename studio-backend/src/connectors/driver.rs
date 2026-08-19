@@ -76,6 +76,40 @@ pub struct RemoteRepo {
     pub visibility: Option<String>,
 }
 
+/// One entry of a repository's file tree.
+#[derive(Debug, Clone)]
+pub struct TreeEntry {
+    /// Path relative to the repository root, e.g. `src/main.rs`.
+    pub path: String,
+    /// Whether this entry is a directory. Blobs and directories are kept apart
+    /// because they become different node types, and a directory is what other
+    /// entries hang off.
+    pub is_dir: bool,
+}
+
+/// The result of walking a repository's tree.
+#[derive(Debug, Clone)]
+pub struct RepoTree {
+    /// Ref the tree was read at, as the provider resolved it.
+    pub git_ref: String,
+    /// Entries, in whatever order the provider returned them.
+    pub entries: Vec<TreeEntry>,
+    /// Whether the provider truncated its answer. Reported rather than hidden:
+    /// a silently partial tree would look like a small repository.
+    pub truncated: bool,
+}
+
+/// One person who has committed to a repository.
+#[derive(Debug, Clone)]
+pub struct Contributor {
+    /// Provider-native account name.
+    pub login: String,
+    /// Display name when the provider exposes one on the listing.
+    pub display_name: Option<String>,
+    /// Commit count the provider attributes to them.
+    pub contributions: u64,
+}
+
 #[async_trait]
 pub trait ConnectorDriver: Send + Sync + 'static {
     /// Stable provider key used in the API and the UI (`gitlab`, `github`).
@@ -122,6 +156,38 @@ pub trait ConnectorDriver: Send + Sync + 'static {
         let _ = (auth, search, limit);
         Err(anyhow::anyhow!(
             "{} is not a source host — it has no repositories to list",
+            self.display_name()
+        ))
+    }
+
+    /// The repository's file tree at `git_ref` (default branch when `None`).
+    ///
+    /// Defaulted for the same reason as [`Self::list_repositories`]: a model
+    /// provider has no notion of a tree, and answering with an error beats
+    /// pretending the repository is empty.
+    async fn repo_tree(
+        &self,
+        auth: &ConnectionAuth,
+        full_path: &str,
+        git_ref: Option<&str>,
+    ) -> anyhow::Result<RepoTree> {
+        let _ = (auth, full_path, git_ref);
+        Err(anyhow::anyhow!(
+            "{} is not a source host — it has no file tree to read",
+            self.display_name()
+        ))
+    }
+
+    /// People who have committed to the repository, most commits first.
+    async fn contributors(
+        &self,
+        auth: &ConnectionAuth,
+        full_path: &str,
+        limit: u32,
+    ) -> anyhow::Result<Vec<Contributor>> {
+        let _ = (auth, full_path, limit);
+        Err(anyhow::anyhow!(
+            "{} is not a source host — it has no contributors to list",
             self.display_name()
         ))
     }
