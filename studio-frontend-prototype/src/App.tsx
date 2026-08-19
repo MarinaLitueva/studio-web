@@ -3851,6 +3851,38 @@ function ProjectFiles({ token }: { token: string }) {
   );
 }
 
+/** Derive the artifact-ingest parameters (provider + owner/repo + API base)
+ *  from a git clone URL. Returns null for hosts we have no driver for. */
+function parseRepoSource(
+  url?: string,
+): { provider: string; full_path: string; base_url?: string } | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    const host = u.hostname.toLowerCase();
+    const provider = host.includes("github")
+      ? "github"
+      : host.includes("gitlab")
+        ? "gitlab"
+        : host.includes("bitbucket")
+          ? "bitbucket"
+          : "";
+    if (!provider) return null;
+    const full_path = u.pathname.replace(/^\/+/, "").replace(/\.git$/, "");
+    // github.com uses api.github.com (the driver default); GHE and self-hosted
+    // GitLab need their own API root.
+    const base_url =
+      host === "github.com"
+        ? undefined
+        : provider === "github"
+          ? `${u.protocol}//${host}/api/v3`
+          : `${u.protocol}//${host}`;
+    return { provider, full_path, base_url };
+  } catch {
+    return null;
+  }
+}
+
 function ProjectSources({
   token,
   workspace: ws,
@@ -3863,6 +3895,32 @@ function ProjectSources({
   const [repos, setRepos] = useState<RepoEntry[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // Per-repo artifact-sync status text, keyed by repo name.
+  const [sync, setSync] = useState<Record<string, string>>({});
+
+  const syncRepo = async (r: RepoEntry) => {
+    const parsed = parseRepoSource(r.url ?? undefined);
+    if (!parsed) {
+      setSync((s) => ({ ...s, [r.name]: "unsupported source URL" }));
+      return;
+    }
+    if (!r.token_ref) {
+      setSync((s) => ({ ...s, [r.name]: "no token — attach it from a connector" }));
+      return;
+    }
+    setSync((s) => ({ ...s, [r.name]: "…" }));
+    try {
+      const res = await api.syncArtifacts(token, {
+        provider: parsed.provider,
+        secret_ref: r.token_ref,
+        repo_full_path: parsed.full_path,
+        base_url: parsed.base_url,
+      });
+      setSync((s) => ({ ...s, [r.name]: `${res.issues} issues · ${res.pull_requests} PRs` }));
+    } catch (e) {
+      setSync((s) => ({ ...s, [r.name]: errText(e) }));
+    }
+  };
 
   const reload = useCallback(async () => {
     const s = await api.workspaceSettings(token, ws.id).catch(() => null);
@@ -3921,8 +3979,17 @@ function ProjectSources({
                   {r.source}
                   {r.url ? ` · ${r.url}` : ""}
                   {r.branch ? ` · ${r.branch}` : ""}
+                  {sync[r.name] ? ` — sync: ${sync[r.name]}` : ""}
                 </div>
               </div>
+              <button
+                className="ghost"
+                title="Pull issues and pull requests from this source into the graph"
+                disabled={sync[r.name] === "…"}
+                onClick={() => void syncRepo(r)}
+              >
+                {sync[r.name] === "…" ? "…" : "Sync"}
+              </button>
               <button className="ghost" disabled={busy === r.name} onClick={() => void detach(r.name)}>
                 {busy === r.name ? "…" : "Detach"}
               </button>

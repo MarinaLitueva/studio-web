@@ -4,6 +4,7 @@
 //! lives in the linked gear crates (see `registered_gears.rs`); this binary
 //! only loads layered config and hands control to `toolkit::bootstrap`.
 
+mod artifact_ingest; // pull issues/PRs from a connector source into the graph as GTS nodes
 mod connectors; // source connectors: driver plugins + tenant connection catalogue
 mod credstore_pg; // persistent credstore value store (issue #66)
 mod keycloak_idp_plugin; // real user provisioning via Keycloak Admin API (ADR-0004)

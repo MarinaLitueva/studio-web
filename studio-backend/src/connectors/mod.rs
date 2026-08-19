@@ -22,7 +22,7 @@
 
 mod ai_providers;
 mod bitbucket;
-mod driver;
+pub mod driver;
 mod github;
 mod gitlab;
 mod gts;
@@ -58,6 +58,18 @@ const KNOWN_DRIVERS: [&str; 5] = [
     gts::ANTHROPIC_INSTANCE_ID,
     gts::OPENAI_INSTANCE_ID,
 ];
+
+/// Source-host driver plugin ids (github/gitlab/bitbucket), for gears that
+/// resolve a driver from ClientHub without duplicating the id strings — e.g.
+/// `artifact_ingest`. AI providers are excluded: they have no repositories,
+/// issues or pull requests.
+pub fn source_driver_ids() -> [&'static str; 3] {
+    [
+        gts::GITHUB_INSTANCE_ID,
+        gts::GITLAB_INSTANCE_ID,
+        gts::BITBUCKET_INSTANCE_ID,
+    ]
+}
 
 #[toolkit::gear(
     name = "studio-connector",

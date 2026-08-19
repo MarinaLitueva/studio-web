@@ -663,6 +663,23 @@ export const api = {
   files: (token: string) => request<Page<StoredFile>>("/api/file-storage/v1/files", token),
   storages: (token: string) => request<unknown>("/api/file-storage/v1/storages", token),
 
+  /* ── studio-artifact-ingest gear: pull issues/PRs from a source into the graph ── */
+  syncArtifacts: (
+    token: string,
+    body: {
+      provider: string;
+      secret_ref: string;
+      repo_full_path: string;
+      base_url?: string;
+      since?: string;
+    },
+  ) =>
+    request<{ issues: number; pull_requests: number }>(
+      "/studio-artifact-ingest/v1/sync",
+      token,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
   /* ── studio-session gear: per-workspace Theia IDE containers ── */
   createStudioSession: (
     token: string,

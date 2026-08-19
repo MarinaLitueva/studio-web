@@ -132,6 +132,11 @@ services:
       #   the Claude Code agent in IDE sessions -> STUDIO_ANTHROPIC_API_KEY
       STUDIO_LLM_API_KEY: ${STUDIO_LLM_API_KEY:-}
       STUDIO_ANTHROPIC_API_KEY: ${STUDIO_ANTHROPIC_API_KEY:-}
+      # External spec-quality detector service (studio-spec-quality gear).
+      # Its own bearer secret; empty = the gear loads but analysis calls 500.
+      # base_url has a config default; override here only to point elsewhere.
+      STUDIO_SPEC_QUALITY_API_KEY: ${STUDIO_SPEC_QUALITY_API_KEY:-}
+      STUDIO_SPEC_QUALITY_BASE_URL: ${STUDIO_SPEC_QUALITY_BASE_URL:-}
       # Encryption key for credstore secret VALUES at rest (issue #66, base64,
       # 32 bytes). Without it the backend falls back to the in-memory value
       # store and every secret typed into the portal — source PATs, connector
