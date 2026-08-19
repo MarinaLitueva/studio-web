@@ -21,6 +21,22 @@ database:
         max_conns: 1          # SQLite is single-writer
         acquire_timeout: "30s"
 
+    # PostgreSQL 19 + pgvector, used by graph-storage and nothing else. That
+    # gear's migrations need `CREATE EXTENSION vector`, `CREATE PROPERTY GRAPH`
+    # (SQL/PGQ, PostgreSQL 19+) and an HNSW index, none of which the server
+    # above provides. Routing one gear here keeps every other gear on the
+    # stable engine — see the `graph-postgres` service in docker-compose.yml.
+    pg_graph:
+      engine: "postgres"
+      host: "127.0.0.1"
+      port: 5433
+      user: "graph"
+      password: "${STUDIO_GRAPH_PG_PASSWORD:-graph}"
+      dbname: "graph_storage"
+      pool:
+        max_conns: 10
+        acquire_timeout: "30s"
+
 logging:
   default:
     console_level: info
@@ -398,3 +414,18 @@ gears:
       s2s_oauth:
         discovery_url: "https://localhost:8443/realms/studio"
         default_subject_type: "gts.cf.core.security.subject_service.v1~"
+
+  # Knowledge graph: typed multi-tenant nodes and edges, bounded traversal and
+  # hybrid retrieval. Pinned to `pg_graph` (PostgreSQL 19) by the block above;
+  # it cannot run on the main server.
+  graph-storage:
+    database:
+      server: "pg_graph"
+      dbname: "graph_storage"
+    config:
+      # `pgq` runs each hop as a single SQL/PGQ `GRAPH_TABLE` statement. A
+      # request whose scope cannot be bounded to a set of tenants is served by
+      # `two_query` instead, so this is safe to leave on; `two_query` is the
+      # portable fallback and `cte` is deliberately absent while the pinned
+      # gears-rust revision predates the safe-CTE API it needs.
+      traversal_hop: pgq

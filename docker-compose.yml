@@ -115,6 +115,38 @@ services:
       retries: 30
       start_period: 30s
 
+  # PostgreSQL 19 + pgvector — the graph-storage gear's database, and ONLY that
+  # gear's. It is separate from `postgres` above because graph-storage needs
+  # three things 16-alpine does not have: the `vector` extension, SQL/PGQ
+  # (`CREATE PROPERTY GRAPH`, PostgreSQL 19+) and HNSW indexes. Isolating it
+  # this way keeps every other gear on the stable server: nothing else in the
+  # assembly is exposed to a beta PostgreSQL.
+  #
+  # The gear reaches it through the per-gear database override in
+  # studio-backend/config/*.yaml (`database.servers.pg_graph`), so no other
+  # gear can be routed here by accident.
+  graph-postgres:
+    build:
+      context: studio-backend/docker/graph-postgres
+    container_name: studio-graph-pg
+    environment:
+      POSTGRES_USER: graph
+      POSTGRES_PASSWORD: ${STUDIO_GRAPH_PG_PASSWORD:-graph}
+      POSTGRES_DB: graph_storage
+    ports:
+      # 5433 on the host: 5432 belongs to `postgres`, and the graph-storage
+      # prototype stacks already hold 55432/55433.
+      - "127.0.0.1:5433:5432"
+    volumes:
+      # postgres:18+ images keep data in a versioned subdirectory and expect
+      # the mount one level up, which also leaves room for pg_upgrade.
+      - studio_graph_pg_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U graph -d graph_storage"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   backend:
     build:
       context: .
@@ -165,6 +197,9 @@ services:
       # Postgres HAS to be healthy: the backend runs its migrations during boot
       # and exits non-zero if the databases are not reachable.
       postgres:
+        condition: service_healthy
+      # Same reason as `postgres`: the graph-storage migrations run during boot.
+      graph-postgres:
         condition: service_healthy
       # Keycloak only has to be STARTED, not healthy. Nothing in the backend's
       # init path talks to it: oidc-authn-plugin just builds an HTTP client and
@@ -223,7 +258,7 @@ services:
     # Healthy = the backend reached its serve phase, i.e. account-management's
     # bootstrap saga has seeded the root tenant. scripts/dev-up.sh waits on this.
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8090/healthz"]
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8090/cf/healthz"]
       interval: 5s
       timeout: 3s
       start_period: 180s
@@ -268,6 +303,7 @@ services:
         restart: true
 
 volumes:
+  studio_graph_pg_data:
   studio_pg_data:
     # Pinned to the volume created by the ORIGINAL studio-backend compose
     # project (before `name: studio` unified everything): regrouping the
