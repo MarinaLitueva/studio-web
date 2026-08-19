@@ -76,6 +76,45 @@ pub struct RemoteRepo {
     pub visibility: Option<String>,
 }
 
+/// One issue as the provider describes it. Provider-native ids are stringified
+/// so the ingest can key GTS instances on them stably across syncs.
+#[derive(Debug, Clone)]
+pub struct RemoteIssue {
+    /// Provider-native id, stringified.
+    pub id: String,
+    /// Human-facing number within the repository (`#42`).
+    pub number: i64,
+    pub title: String,
+    /// `open` | `closed` as the provider reports it.
+    pub state: String,
+    /// Login of the author, when the provider exposes it.
+    pub author: Option<String>,
+    pub body: Option<String>,
+    pub url: Option<String>,
+    /// RFC 3339 timestamps, passed through verbatim.
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub labels: Vec<String>,
+}
+
+/// One pull/merge request as the provider describes it.
+#[derive(Debug, Clone)]
+pub struct RemotePullRequest {
+    pub id: String,
+    pub number: i64,
+    pub title: String,
+    /// `open` | `closed` | `merged`, normalized by the driver.
+    pub state: String,
+    pub author: Option<String>,
+    pub body: Option<String>,
+    pub url: Option<String>,
+    pub source_branch: Option<String>,
+    pub target_branch: Option<String>,
+    pub merged: bool,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
 #[async_trait]
 pub trait ConnectorDriver: Send + Sync + 'static {
     /// Stable provider key used in the API and the UI (`gitlab`, `github`).
@@ -122,6 +161,42 @@ pub trait ConnectorDriver: Send + Sync + 'static {
         let _ = (auth, search, limit);
         Err(anyhow::anyhow!(
             "{} is not a source host — it has no repositories to list",
+            self.display_name()
+        ))
+    }
+
+    /// Issues in one repository. `since` (RFC 3339) narrows to items updated at
+    /// or after that instant for incremental sync; `page` is 1-based and
+    /// `per_page` caps one page — the caller pages until a short page comes
+    /// back. Defaulted so a non-source driver stays a small, local job.
+    async fn list_issues(
+        &self,
+        auth: &ConnectionAuth,
+        repo_full_path: &str,
+        since: Option<&str>,
+        page: u32,
+        per_page: u32,
+    ) -> anyhow::Result<Vec<RemoteIssue>> {
+        let _ = (auth, repo_full_path, since, page, per_page);
+        Err(anyhow::anyhow!(
+            "{} does not expose issues",
+            self.display_name()
+        ))
+    }
+
+    /// Pull/merge requests in one repository. Same paging and `since` contract
+    /// as [`Self::list_issues`].
+    async fn list_pull_requests(
+        &self,
+        auth: &ConnectionAuth,
+        repo_full_path: &str,
+        since: Option<&str>,
+        page: u32,
+        per_page: u32,
+    ) -> anyhow::Result<Vec<RemotePullRequest>> {
+        let _ = (auth, repo_full_path, since, page, per_page);
+        Err(anyhow::anyhow!(
+            "{} does not expose pull requests",
             self.display_name()
         ))
     }
