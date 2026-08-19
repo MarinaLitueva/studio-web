@@ -222,6 +222,11 @@ export function SpecQuality({ token }: { token: string }) {
   const [batchMode, setBatchMode] = useState(true);
   const [traceMode, setTraceMode] = useState<"extract" | "classify">("extract");
   const [traceVerify, setTraceVerify] = useState(true);
+  // Traceability matches docs by a canonical layout (PRD.md/DESIGN.md/
+  // features/*.md/ADR/*.md …). A flat issue export matches nothing, so this
+  // remaps each doc key to features/<name>.md so the service accepts them and
+  // builds the ID graph over their cross-references.
+  const [traceRemap, setTraceRemap] = useState(true);
   const [bloatK, setBloatK] = useState<number | "">("");
   // Filter the set-wise / batch input down to spec docs (drops output JSON etc.).
   const [specOnly, setSpecOnly] = useState(true);
@@ -314,7 +319,20 @@ export function SpecQuality({ token }: { token: string }) {
         setResults((r) => ({ ...r, bloat: view }));
       } else if (runDet === "traceability") {
         setProgress("Running traceability over the doc-set…");
-        const payload: any = { docs: docsMap, mode: traceMode, verify: traceVerify };
+        // Optionally remap keys into the canonical features/ layout so the
+        // service recognises a flat issue export instead of ignoring it.
+        let traceDocs = docsMap;
+        if (traceRemap) {
+          const m: Record<string, string> = {};
+          for (const d of includedDocs) {
+            let key = `features/${basename(d.path)}`;
+            let i = 2;
+            while (m[key] !== undefined) key = `features/${basename(d.path).replace(/\.md$/i, "")}-${i++}.md`;
+            m[key] = d.text;
+          }
+          traceDocs = m;
+        }
+        const payload: any = { docs: traceDocs, mode: traceMode, verify: traceVerify };
         const view = await runDetector("traceability", payload, token, {
           signal,
           onTick: (t) => setProgress(`traceability: ${t.status}…`),
@@ -536,6 +554,17 @@ export function SpecQuality({ token }: { token: string }) {
                     onChange={(e) => setTraceVerify(e.target.checked)}
                   />
                   verify pass
+                </label>
+                <label
+                  className="sq-opt sq-check"
+                  title="Traceability only sees a canonical layout (PRD.md, DESIGN.md, features/*.md, ADR/*.md). This remaps each file to features/<name>.md so a flat issue export is accepted."
+                >
+                  <input
+                    type="checkbox"
+                    checked={traceRemap}
+                    onChange={(e) => setTraceRemap(e.target.checked)}
+                  />
+                  map files → features/ layout
                 </label>
               </>
             )}
