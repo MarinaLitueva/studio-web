@@ -3,11 +3,14 @@
 # Context = CFS root (matches the backend's Dockerfile.src).
 # CI uses ./Dockerfile with a prebuilt dist/ instead.
 
-FROM node:22-alpine AS build
+# node 24 to match .nvmrc and the CI jobs.
+FROM node:24-alpine AS build
 WORKDIR /src
-COPY studio-frontend/package.json studio-frontend/package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
+# The manifests-first layer-cache trick the prototype used does not survive
+# npm workspaces: `npm ci` walks every workspace's package.json (packages/*,
+# src-app/mfe_packages/*), so the full tree has to be present before install.
 COPY studio-frontend/ ./
+RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
 RUN npm run build
 
 FROM nginxinc/nginx-unprivileged:1.27-alpine

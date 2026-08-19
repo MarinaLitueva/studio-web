@@ -5,8 +5,8 @@ Constructor Studio web server — backend, frontend, installer.
 | Project | What | Stack |
 |---|---|---|
 | [`studio-backend/`](studio-backend/) | Studio API service assembled from [CF/Gears](https://github.com/constructorfabric/gears-rust): multi-tenancy, users, groups. REST + OpenAPI at `/cf/docs`. | Rust (axum/tokio/sea-orm via gears) |
-| [`studio-frontend/`](studio-frontend/) | Portal UI — being rebuilt on FrontX (shell + microfrontends, ADR-0006). | React 19 + TS via FrontX templates |
-| [`studio-frontend-prototype/`](studio-frontend-prototype/) | The current portal SPA, moved aside for the FrontX rebuild; still what compose serves. | Vite + React 19 + TS, vitest |
+| [`studio-frontend/`](studio-frontend/) | Portal UI on FrontX (shell + microfrontends, ADR-0006) — what CI/release build, compose serves and k8s deploys. | React 19 + TS via FrontX templates |
+| [`studio-frontend-prototype/`](studio-frontend-prototype/) | The pre-FrontX portal SPA, kept as a playground; ships as its own image (`studio-frontend-prototype`) and runs with the compose stack on port 8081. Tested/built at release time, not in CI. | Vite + React 19 + TS, vitest |
 
 ## Quick start
 
@@ -32,6 +32,9 @@ the root with a no-LLM backend first, then starts the full stack:
 ```
 
 It's idempotent — safe to use on a warm volume too (the seed step is then a no-op).
+
+**Prototype playground:** the pre-FrontX SPA comes up with the stack automatically —
+http://localhost:8081 (own image, same backend, same `/cf/` proxy).
 
 **Daily dev (fast iteration):** infra in Docker, backend on the host (WSL), frontend via Vite:
 
@@ -165,8 +168,8 @@ stays untouched.
 
 ## CI/CD (GitHub Actions)
 
-- **`ci.yml`** — on push/PR, path-filtered: backend (fmt, clippy `-D warnings`, build, test, `--list-gears` smoke) and frontend (test, build). The backend job checks out `constructorfabric/gears-rust` next to the repo — path dependencies expect `../../gears-rust`; add a `GEARS_RUST_TOKEN` secret if that repo is private. DCO is enforced — commit with `-s`.
-- **`release.yml`** — on tag `v*`: release binary + frontend dist → GitHub Release; Docker images → `ghcr.io/constructorfabric/studio-web/studio-{backend,frontend}`; then a `deploy` job gated by the `production` environment.
+- **`ci.yml`** — on push/PR, path-filtered: backend (fmt, clippy `-D warnings`, build, test, `--list-gears` smoke) and frontend (`studio-frontend/`: build, test). The backend job checks out `constructorfabric/gears-rust` next to the repo — path dependencies expect `../../gears-rust`; add a `GEARS_RUST_TOKEN` secret if that repo is private. DCO is enforced — commit with `-s`.
+- **`release.yml`** — on tag `v*`: release binary + frontend dist → GitHub Release; Docker images → `ghcr.io/constructorfabric/studio-web/studio-{backend,frontend,frontend-prototype}`; then a `deploy` job gated by the `production` environment.
 - **Theia IDE image** — built in `fabric-poc` (`theia-image.yml`): `edge` on main pushes touching `poc/theia/**`, `vX.Y.Z` on `theia-v*` tags.
 
 Release: `git tag v0.1.0 && git push origin v0.1.0`.

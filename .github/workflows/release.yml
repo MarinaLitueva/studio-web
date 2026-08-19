@@ -62,7 +62,34 @@ jobs:
           name: studio-backend-linux-x86_64
           path: studio-backend/target/release/studio-backend
 
+  # Builds the FrontX-based studio-frontend/ — the deployed portal since it
+  # replaced studio-frontend-prototype/ (now a playground with its own image).
   frontend-dist:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: studio-frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: studio-frontend/package-lock.json
+      - run: npm ci
+      # Build before test: the suites resolve workspace packages through
+      # their dist/ entries, which only the build produces (same as ci.yml).
+      - run: npm run build
+      - run: npm test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: studio-frontend-dist
+          path: studio-frontend/dist
+
+  # The pre-FrontX prototype ships as its OWN image and rides along in
+  # compose on :8081. It is tested and built only here, at release time —
+  # ci.yml deliberately does not gate on it.
+  prototype-dist:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -79,11 +106,11 @@ jobs:
       - run: npm run build
       - uses: actions/upload-artifact@v4
         with:
-          name: studio-frontend-dist
+          name: studio-frontend-prototype-dist
           path: studio-frontend-prototype/dist
 
   images:
-    needs: [backend-binary, frontend-dist]
+    needs: [backend-binary, frontend-dist, prototype-dist]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -94,6 +121,10 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: studio-frontend-dist
+          path: studio-frontend/dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: studio-frontend-prototype-dist
           path: studio-frontend-prototype/dist
 
       - uses: docker/login-action@v3
@@ -151,9 +182,22 @@ jobs:
           for t in ${{ steps.tags.outputs.list }}; do
             args+=(-t "$IMAGE_PREFIX/studio-frontend:$t")
           done
-          docker build -f studio-frontend-prototype/Dockerfile "${args[@]}" studio-frontend-prototype
+          docker build -f studio-frontend/Dockerfile "${args[@]}" studio-frontend
           for t in ${{ steps.tags.outputs.list }}; do
             docker push "$IMAGE_PREFIX/studio-frontend:$t"
+          done
+
+      # Same nginx runtime recipe as the main frontend, its own dist and name.
+      - name: Build & push frontend prototype image
+        run: |
+          set -euo pipefail
+          args=()
+          for t in ${{ steps.tags.outputs.list }}; do
+            args+=(-t "$IMAGE_PREFIX/studio-frontend-prototype:$t")
+          done
+          docker build -f studio-frontend-prototype/Dockerfile "${args[@]}" studio-frontend-prototype
+          for t in ${{ steps.tags.outputs.list }}; do
+            docker push "$IMAGE_PREFIX/studio-frontend-prototype:$t"
           done
 
       # The per-workspace Theia IDE session image (moved in from fabric-poc).
@@ -198,6 +242,7 @@ jobs:
             for t in ${{ steps.tags.outputs.list }}; do
               echo "- \`$IMAGE_PREFIX/studio-backend:$t\`"
               echo "- \`$IMAGE_PREFIX/studio-frontend:$t\`"
+              echo "- \`$IMAGE_PREFIX/studio-frontend-prototype:$t\`"
               echo "- \`$IMAGE_PREFIX/cf-studio-theia:$t\`"
               echo "- \`$IMAGE_PREFIX/cf-studio-keycloak:$t\`"
             done
@@ -235,6 +280,7 @@ jobs:
           echo "Images published:"
           echo "  $IMAGE_PREFIX/studio-backend:${{ github.ref_name }}"
           echo "  $IMAGE_PREFIX/studio-frontend:${{ github.ref_name }}"
+          echo "  $IMAGE_PREFIX/studio-frontend-prototype:${{ github.ref_name }}"
           echo "TODO: wire the real target, e.g.:"
           echo "  - kubectl set image / helm upgrade (k8s)"
           echo "  - ssh + docker compose pull && up -d (single host)"

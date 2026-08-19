@@ -15,6 +15,9 @@
 #   Database only (daily dev: backend in WSL, frontend via npm run dev):
 #     docker compose up -d postgres
 #
+#   The pre-FrontX prototype SPA (a playground) comes up with the stack too:
+#     → http://localhost:8081 — own image, same backend
+#
 # NB: the backend image builds the 90-crate gears workspace — the first
 # `--build` takes a while; BuildKit caches make rebuilds fast. No sibling
 # checkout is needed — gears-rust is a git dependency pinned in Cargo.toml.
@@ -45,7 +48,8 @@ services:
   # http_client.custom_ca_certificate_paths), realm imported on start.
   # Admin console: https://localhost:8443 (admin/admin). Realm users:
   # admin/studio, demo/studio. The studio-portal client whitelists both
-  # localhost and 127.0.0.1 on :8080 (nginx) and :5173 (vite) — the portal
+  # localhost and 127.0.0.1 on :8080 (nginx), :8081 (prototype) and :5173
+  # (vite) — the portal
   # derives redirect_uri from window.location.origin, so opening the same
   # page under a hostname that is not in realm-studio.json fails the login
   # with "Invalid parameter: redirect_uri". NOT started by default `up` of backend+frontend
@@ -228,7 +232,7 @@ services:
   frontend:
     build:
       context: .
-      dockerfile: studio-frontend-prototype/Dockerfile.src
+      dockerfile: studio-frontend/Dockerfile.src
     container_name: studio-frontend
     # Wait for the backend to be healthy and restart together with it, so the
     # portal comes up on its own once the backend is ready — no manual start.
@@ -243,6 +247,25 @@ services:
         restart: true
     # nginx.conf proxies /cf/ to http://studio-backend:8090 — the service's
     # container_name above must stay in sync with it.
+
+  # The pre-FrontX portal SPA, kept as a playground (полигон) and deployed
+  # alongside the main portal in its OWN image: `docker compose pull` takes
+  # the published ghcr image, `up --build` still builds from source (image:
+  # then only names the local build). http://localhost:8081, same backend,
+  # same /cf/ proxy.
+  frontend-prototype:
+    image: ghcr.io/constructorfabric/studio-web/studio-frontend-prototype:latest
+    build:
+      context: .
+      dockerfile: studio-frontend-prototype/Dockerfile.src
+    container_name: studio-frontend-prototype
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8081:8080"   # 8080 is taken by the main frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+        restart: true
 
 volumes:
   studio_pg_data:
