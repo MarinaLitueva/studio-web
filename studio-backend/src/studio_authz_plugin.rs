@@ -1,11 +1,20 @@
 //! Studio AuthZ plugin — the Studio PDP (ADR-0006).
 //!
-//! Step 2: reads the org access config from AM tenant metadata
+//! Reads the org access config from AM tenant metadata
 //! (`cf.studio.access.config.v1`) and switches on `model`:
 //!   - `tenant` (or no config / unreadable) → tenant clamp (behaviour == static);
 //!   - `roles` → for a Studio resource it maps (resource_type, action) to a
 //!     privilege, matches the subject's MEMBER grants, expands roles → privileges,
 //!     and allows iff an in-scope grant carries the privilege; else denies.
+//!
+//! Roles sit ON TOP OF the tenant model, they do not replace it (ADR-0009). The
+//! tenant clamp is the invariant outer boundary: every allow the role path emits
+//! is AND-ed with tenant isolation, so a grant can only ever NARROW access within
+//! the caller's tenant subtree — never widen it or reach across tenants. An
+//! org-scoped grant resolves to the full tenant clamp; a project-scoped grant
+//! intersects the clamp with the granted scope ids (owner-tenant), which the
+//! subtree bound keeps inside the tenant. A mapped Studio resource with no
+//! matching grant is denied — membership alone does not confer Work access.
 //!
 //! Safety: only Studio resources we explicitly map are role-gated. Every other
 //! resource (AM tenants/metadata, RG, …) takes the tenant clamp, so selecting
@@ -239,7 +248,11 @@ impl AuthZResolverPluginClient for Service {
         // TODO(step 4): resolve the subject's Teams (RG groups) for team grants.
         let subject_teams: Vec<String> = Vec::new();
 
-        let mut scopes: Vec<Uuid> = Vec::new();
+        // Walk the subject's grants that carry this privilege. An org-scoped
+        // grant means "the whole tenant" (== the tenant clamp); project-scoped
+        // grants collect the specific scope ids to narrow to.
+        let mut org_grant = false;
+        let mut project_scopes: Vec<Uuid> = Vec::new();
         for g in &cfg.grants {
             let subject_matches = match g.subject_type.as_str() {
                 "member" => g.subject_id == subject_id,
@@ -258,28 +271,45 @@ impl AuthZResolverPluginClient for Service {
                 continue;
             }
             match g.scope_type.as_str() {
-                "org" => scopes.push(tid),
+                "org" => org_grant = true,
                 "project" => {
                     if let Ok(pid) = Uuid::parse_str(&g.scope_id) {
-                        scopes.push(pid);
+                        project_scopes.push(pid);
                     }
                 }
                 _ => {}
             }
         }
 
-        if scopes.is_empty() {
+        // An org-scoped grant carries the privilege across the whole tenant:
+        // that is exactly the tenant clamp (incl. the hierarchy subtree).
+        if org_grant {
+            return Ok(tenant_clamp(&request, tid));
+        }
+
+        // No grant at all → deny. Roles NARROW: tenant membership by itself does
+        // not confer access to a mapped Work resource.
+        if project_scopes.is_empty() {
             return Ok(deny());
+        }
+
+        // Project-scoped grants: start from the tenant clamp (the invariant
+        // outer boundary) and AND the granted scope ids into every branch of it.
+        // Because the clamp already bounds owner-tenant to `tid` + its subtree,
+        // intersecting with the scope ids can only keep those that live inside
+        // the tenant — a scope id outside the subtree drops out at evaluation,
+        // so a grant can never reach across tenants.
+        let mut constraints = tenant_constraints(&request, tid);
+        for c in &mut constraints {
+            c.predicates.push(Predicate::In(InPredicate::new(
+                pep_properties::OWNER_TENANT_ID,
+                project_scopes.clone(),
+            )));
         }
         Ok(EvaluationResponse {
             decision: true,
             context: EvaluationResponseContext {
-                constraints: vec![Constraint {
-                    predicates: vec![Predicate::In(InPredicate::new(
-                        pep_properties::OWNER_TENANT_ID,
-                        scopes,
-                    ))],
-                }],
+                constraints,
                 ..Default::default()
             },
         })
@@ -288,8 +318,11 @@ impl AuthZResolverPluginClient for Service {
 
 /* ── Helpers ── */
 
-/// static-authz behaviour: allow, clamped to the context tenant (+ subtree).
-fn tenant_clamp(request: &EvaluationRequest, tid: Uuid) -> EvaluationResponse {
+/// The tenant-isolation constraint set: owner-tenant is `tid`, plus the
+/// hierarchy subtree branches when the caller supports them. Returned as a bare
+/// `Vec<Constraint>` so the role path can AND further narrowing into each branch
+/// (constraints are OR-combined; predicates within one are AND-combined).
+fn tenant_constraints(request: &EvaluationRequest, tid: Uuid) -> Vec<Constraint> {
     let mut constraints = vec![Constraint {
         predicates: vec![Predicate::In(InPredicate::new(
             pep_properties::OWNER_TENANT_ID,
@@ -317,10 +350,15 @@ fn tenant_clamp(request: &EvaluationRequest, tid: Uuid) -> EvaluationResponse {
             }
         }
     }
+    constraints
+}
+
+/// static-authz behaviour: allow, clamped to the context tenant (+ subtree).
+fn tenant_clamp(request: &EvaluationRequest, tid: Uuid) -> EvaluationResponse {
     EvaluationResponse {
         decision: true,
         context: EvaluationResponseContext {
-            constraints,
+            constraints: tenant_constraints(request, tid),
             ..Default::default()
         },
     }
