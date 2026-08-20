@@ -3,7 +3,9 @@
 # value comes from the environment (wired by the Helm chart from Secrets):
 #   STUDIO_PG_HOST / STUDIO_PG_USER / STUDIO_PG_PASSWORD / STUDIO_PG_DBNAME
 #   STUDIO_OIDC_ISSUER                 (IdP realm URL, real TLS)
-#   STUDIO_IDP_ADMIN_BASE_URL / STUDIO_IDP_ADMIN_SECRET   (optional: invites)
+#   STUDIO_IDP_ADMIN_BASE_URL / STUDIO_IDP_ADMIN_SECRET   (REQUIRED for user
+#     provisioning: the official keycloak-idp-plugin is active — see its block
+#     below; add `enabled: false` there + idp.vendor "cf" to run without invites)
 #   STUDIO_LLM_API_KEY / STUDIO_LLM_HOST / STUDIO_LLM_BASE_URL / STUDIO_LLM_MODEL
 #   STUDIO_FS_SIGNING_SEED             (URL-signing key, per environment)
 # IDE sessions are DISABLED here (studio-session.enabled=false): the Docker
@@ -205,30 +207,48 @@ gears:
         root_name: "Constructor Platform"
         root_tenant_type: "gts.cf.core.am.tenant_type.v1~cf.core.am.platform.v1~"
         strict: true
+        # Bind the platform root to the shared `studio` realm; descendants inherit
+        # it via parent_context (full rationale in docker.yaml). The realm must
+        # exist in the target Keycloak. Only takes effect on a fresh AM database.
+        root_tenant_metadata:
+          realm_name: "studio"
+      # Select the official Keycloak IdP plugin.
+      idp:
+        vendor: "keycloak"
       tr_plugin:
         enabled: true
 
-  static-idp-plugin:
-    config:
-      vendor: "cf"
-      priority: 100
-
-  # Real user provisioning (ADR-0004, invite-first): the portal's "Invite"
-  # creates an actual Keycloak user with the tenant_id attribute + temporary
-  # password (rotation forced at first sign-in). Wins selection over the
-  # static echo plugin (priority 50 < 100). Without a client_secret the
-  # plugin self-deprioritizes to 10000 and the echo plugin stays in charge —
-  # that is how the static-token profiles keep working unchanged.
+  # Official cf-gears-keycloak-idp-plugin — real user provisioning for the k8s
+  # deploy. ACTIVE (AM idp.vendor: "keycloak"). REQUIRES a reachable Keycloak with
+  # a `studio` realm and a `studio-admin` service-account client carrying the
+  # realm-management roles. Set in the deploy:
+  #   STUDIO_IDP_ADMIN_BASE_URL   admin API base, e.g. https://idp.example.com
+  #                               (must be TLS-trusted by the pod's system roots)
+  #   STUDIO_IDP_ADMIN_SECRET     the studio-admin client secret
+  #
+  # BEHAVIOUR CHANGE vs the former in-crate plugin: this one does NOT self-disable
+  # on a missing secret — if STUDIO_IDP_ADMIN_BASE_URL is unset the config load
+  # fails loudly (empty URL), and if Keycloak is unreachable the admin pre-warm
+  # fails and boot aborts. To run this deploy WITHOUT invites, add `enabled: false`
+  # under config below and set account-management.idp.vendor back to "cf" (the
+  # linked static echo IdP). See docs/keycloak-idp-migration.md.
   keycloak-idp-plugin:
     config:
-      vendor: "cf"
+      vendor: "keycloak"
       priority: 50
-      base_url: "${STUDIO_IDP_ADMIN_BASE_URL:-https://localhost:8443}"
-      realm: "studio"
-      client_id: "studio-admin"
-      client_secret: "${STUDIO_IDP_ADMIN_SECRET:-}"  # empty = plugin self-deprioritizes (invites off)
-      custom_ca_certificate_paths: []
-      default_temp_password: "${STUDIO_IDP_TEMP_PASSWORD:-studio}"
+      security_context:
+        platform_tenant_id: "00000000-0000-0000-0000-000000000001"
+      keycloak:
+        base_url: "${STUDIO_IDP_ADMIN_BASE_URL}"
+        bootstrap_admin:
+          realm: "studio"
+          client_id: "studio-admin"
+          client_secret: "${STUDIO_IDP_ADMIN_SECRET}"
+        realm_admin:
+          client_id_default: "studio-admin"
+          default_shared_realm_secret: "${STUDIO_IDP_ADMIN_SECRET}"
+      tenant_facade: {}
+      user_facade: {}
 
   # ── Feature gears: per-user settings, files, AI chat ──
 

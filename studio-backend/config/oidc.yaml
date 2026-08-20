@@ -221,31 +221,40 @@ gears:
         root_name: "Constructor Platform"
         root_tenant_type: "gts.cf.core.am.tenant_type.v1~cf.core.am.platform.v1~"
         strict: true
+        # Bind the platform root to the shared `studio` realm; descendants inherit
+        # it via parent_context (full rationale in docker.yaml). Needs a fresh DB.
+        root_tenant_metadata:
+          realm_name: "studio"
+      # Select the official Keycloak IdP plugin.
+      idp:
+        vendor: "keycloak"
       tr_plugin:
         enabled: true
 
-  static-idp-plugin:
-    config:
-      vendor: "cf"
-      priority: 100
-
-  # Real user provisioning (ADR-0004, invite-first): the portal's "Invite"
-  # creates an actual Keycloak user with the tenant_id attribute + temporary
-  # password (rotation forced at first sign-in). Wins selection over the
-  # static echo plugin (priority 50 < 100). Without a client_secret the
-  # plugin self-deprioritizes to 10000 and the echo plugin stays in charge —
-  # that is how the static-token profiles keep working unchanged.
+  # Official cf-gears-keycloak-idp-plugin — real user provisioning (invites) for
+  # the OIDC dev profile. The backend here runs on the HOST (WSL), so it reaches
+  # Keycloak's ADMIN API over plain HTTP on the spare published port 8088
+  # (compose maps 127.0.0.1:8088 -> keycloak:8080). That sidesteps the self-signed
+  # TLS on :8443 — which the official plugin can only trust via a CredStore CA
+  # ref, not a file path. Browser OIDC login is unaffected (still https://...:8443).
+  # static-idp stays linked but unconfigured here (idle); this is the active IdP.
   keycloak-idp-plugin:
     config:
-      vendor: "cf"
+      vendor: "keycloak"
       priority: 50
-      base_url: "https://localhost:8443"
-      realm: "studio"
-      client_id: "studio-admin"
-      client_secret: "studio-admin-dev-secret"
-      custom_ca_certificate_paths:
-        - "../docker/keycloak/certs/dev-ca.pem"
-      default_temp_password: "studio"
+      security_context:
+        platform_tenant_id: "00000000-0000-0000-0000-000000000001"
+      keycloak:
+        base_url: "http://localhost:8088"
+        bootstrap_admin:
+          realm: "studio"
+          client_id: "studio-admin"
+          client_secret: "studio-admin-dev-secret"
+        realm_admin:
+          client_id_default: "studio-admin"
+          default_shared_realm_secret: "studio-admin-dev-secret"
+      tenant_facade: {}
+      user_facade: {}
 
   # ── Feature gears: per-user settings, files, AI chat ──
 

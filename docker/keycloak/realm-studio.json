@@ -51,9 +51,14 @@
       "serviceAccountClientId": "studio-admin",
       "clientRoles": {
         "realm-management": [
+          "view-realm",
+          "view-clients",
+          "query-groups",
+          "manage-realm",
           "manage-users",
           "view-users",
-          "query-users"
+          "query-users",
+          "manage-clients"
         ]
       }
     }
@@ -96,6 +101,20 @@
           "config": {
             "user.attribute": "tenant_id",
             "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "user-type",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "user_type",
+            "claim.name": "user_type",
             "jsonType.label": "String",
             "id.token.claim": "true",
             "access.token.claim": "true",
