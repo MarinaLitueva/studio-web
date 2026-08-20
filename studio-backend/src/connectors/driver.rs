@@ -76,6 +76,12 @@ pub struct RemoteRepo {
     pub visibility: Option<String>,
 }
 
+// Reading a repository's tree and its contributors is a driver capability in
+// its own right, but the only consumer today is the knowledge-graph importer.
+// Without the `graph` feature nothing calls it, which is what the allow says —
+// the contract stays the same shape in both builds rather than changing with a
+// feature flag.
+#[cfg_attr(not(feature = "graph"), allow(dead_code))]
 /// One entry of a repository's file tree.
 #[derive(Debug, Clone)]
 pub struct TreeEntry {
@@ -88,6 +94,7 @@ pub struct TreeEntry {
 }
 
 /// The result of walking a repository's tree.
+#[cfg_attr(not(feature = "graph"), allow(dead_code))]
 #[derive(Debug, Clone)]
 pub struct RepoTree {
     /// Ref the tree was read at, as the provider resolved it.
@@ -100,6 +107,7 @@ pub struct RepoTree {
 }
 
 /// One person who has committed to a repository.
+#[cfg_attr(not(feature = "graph"), allow(dead_code))]
 #[derive(Debug, Clone)]
 pub struct Contributor {
     /// Provider-native account name.
@@ -111,6 +119,7 @@ pub struct Contributor {
 }
 
 #[async_trait]
+#[cfg_attr(not(feature = "graph"), allow(dead_code))]
 pub trait ConnectorDriver: Send + Sync + 'static {
     /// Stable provider key used in the API and the UI (`gitlab`, `github`).
     fn provider(&self) -> &'static str;

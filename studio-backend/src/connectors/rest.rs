@@ -18,8 +18,10 @@ use toolkit_security::SecurityContext;
 use uuid::Uuid;
 
 use super::driver::{DriverIdentity, RemoteRepo};
-use super::graph_sync::{SyncRequest, sync_repository};
 use super::service::{Connection, ConnectorService, NewConnection};
+#[cfg(feature = "graph")]
+use super::graph_sync::{SyncRequest, sync_repository};
+#[cfg(feature = "graph")]
 use crate::graph_storage::sdk::GraphStorageClientV1;
 
 /// Errors attributable to a connection as a resource.
@@ -48,9 +50,18 @@ impl Connectors {
 /// Knowledge-graph sink. `None` = the graph-storage gear did not publish its
 /// client, so the sync route answers 503 instead of 500 on a missing
 /// dependency.
+///
+/// The type exists in both builds so `register_routes` keeps one signature;
+/// without the `graph` feature it carries nothing and no route reads it.
+#[cfg(feature = "graph")]
 #[derive(Clone)]
 pub struct GraphSink(pub Option<Arc<dyn GraphStorageClientV1>>);
 
+#[cfg(not(feature = "graph"))]
+#[derive(Clone)]
+pub struct GraphSink;
+
+#[cfg(feature = "graph")]
 impl GraphSink {
     fn get(&self) -> ApiResult<&Arc<dyn GraphStorageClientV1>> {
         self.0.as_ref().ok_or_else(|| {
@@ -620,7 +631,8 @@ pub fn register_routes(
         .error_500(openapi)
         .register(router, openapi);
 
-    router = OperationBuilder::post("/studio-connector/v1/connections/{id}/graph-sync")
+    #[cfg(feature = "graph")]
+    let router = OperationBuilder::post("/studio-connector/v1/connections/{id}/graph-sync")
         .operation_id("studio_connector.graph_sync")
         .summary("Import a repository into the knowledge graph")
         .description(
@@ -650,6 +662,8 @@ pub fn register_routes(
         .layer(Extension(graph))
 }
 
+// ── repository import into the knowledge graph (`graph` feature) ──
+#[cfg(feature = "graph")]
 #[derive(Debug)]
 #[toolkit_macros::api_dto(request)]
 pub struct GraphSyncRequest {
@@ -678,14 +692,17 @@ pub struct GraphSyncRequest {
     pub tenant: Option<Uuid>,
 }
 
+#[cfg(feature = "graph")]
 const fn default_max_entries() -> usize {
     2_000
 }
 
+#[cfg(feature = "graph")]
 const fn default_max_contributors() -> u32 {
     50
 }
 
+#[cfg(feature = "graph")]
 #[derive(Debug)]
 #[toolkit_macros::api_dto(response)]
 pub struct GraphSyncResultDto {
@@ -703,6 +720,7 @@ pub struct GraphSyncResultDto {
 }
 
 /// Walk a repository and write it into the caller's knowledge graph.
+#[cfg(feature = "graph")]
 async fn graph_sync(
     Extension(ctx): Extension<SecurityContext>,
     Extension(connectors): Extension<Connectors>,

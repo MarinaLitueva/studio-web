@@ -6,6 +6,7 @@
 
 mod connectors; // source connectors: driver plugins + tenant connection catalogue
 mod credstore_pg; // persistent credstore value store (issue #66)
+#[cfg(feature = "graph")]
 mod graph_storage; // knowledge graph: typed nodes/edges, traversal, hybrid search
 mod keycloak_idp_plugin; // real user provisioning via Keycloak Admin API (ADR-0004)
 #[cfg(feature = "llm")]
@@ -209,16 +210,11 @@ mod config_expansion_tests {
 
     /// The union of no-default placeholders across the profiles — what the
     /// Helm chart (k8s) and docker-compose (docker/oidc/postgres) provide.
-    const REQUIRED: [&str; 13] = [
+    const REQUIRED: [&str; 10] = [
         "STUDIO_PG_HOST",
         "STUDIO_PG_USER",
         "STUDIO_PG_PASSWORD",
         "STUDIO_PG_DBNAME",
-        // graph-storage runs on its own PostgreSQL 19 server (pgvector +
-        // SQL/PGQ), so k8s.yaml names its coordinates separately.
-        "STUDIO_GRAPH_PG_HOST",
-        "STUDIO_GRAPH_PG_USER",
-        "STUDIO_GRAPH_PG_PASSWORD",
         "STUDIO_OIDC_ISSUER",
         "STUDIO_FS_SIGNING_SEED",
         "STUDIO_ADMIN_TOKEN",

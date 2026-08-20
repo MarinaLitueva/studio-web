@@ -24,6 +24,7 @@ mod ai_providers;
 mod bitbucket;
 mod driver;
 mod github;
+#[cfg(feature = "graph")]
 mod graph_sync;
 mod gitlab;
 mod gts;
@@ -112,6 +113,8 @@ impl Gear for StudioConnectorGear {
 
 #[async_trait]
 impl toolkit::contracts::RestApiCapability for StudioConnectorGear {
+    // `ctx` is read only to resolve the knowledge-graph client.
+    #[cfg_attr(not(feature = "graph"), allow(unused_variables))]
     fn register_rest(
         &self,
         ctx: &GearCtx,
@@ -122,6 +125,7 @@ impl toolkit::contracts::RestApiCapability for StudioConnectorGear {
         // gear has initialized, so this does not depend on graph-storage
         // happening to come first in the topological order. A deployment
         // without it keeps the route mounted and answers 503.
+        #[cfg(feature = "graph")]
         let graph = rest::GraphSink(
             ctx.client_hub()
                 .get::<dyn crate::graph_storage::sdk::GraphStorageClientV1>()
@@ -133,6 +137,10 @@ impl toolkit::contracts::RestApiCapability for StudioConnectorGear {
                 })
                 .ok(),
         );
+        // Built without the `graph` feature there is no knowledge graph to
+        // import into, and the route is not registered at all.
+        #[cfg(not(feature = "graph"))]
+        let graph = rest::GraphSink;
 
         Ok(rest::register_routes(
             router,

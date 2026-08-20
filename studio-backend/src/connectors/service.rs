@@ -566,6 +566,7 @@ impl ConnectorService {
     /// needs the same two things every other provider call needs, and the
     /// pieces that assemble them — the catalogue lookup and the credstore
     /// read — are private to this module for good reason.
+    #[cfg_attr(not(feature = "graph"), allow(dead_code))]
     pub async fn driver_and_auth(
         &self,
         ctx: &SecurityContext,

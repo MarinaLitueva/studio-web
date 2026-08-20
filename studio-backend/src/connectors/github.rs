@@ -46,6 +46,7 @@ struct GitHubRepo {
     private: bool,
 }
 
+#[cfg_attr(not(feature = "graph"), allow(dead_code))]
 #[derive(Deserialize)]
 struct GitHubTree {
     tree: Vec<GitHubTreeEntry>,
@@ -54,6 +55,7 @@ struct GitHubTree {
     truncated: bool,
 }
 
+#[cfg_attr(not(feature = "graph"), allow(dead_code))]
 #[derive(Deserialize)]
 struct GitHubTreeEntry {
     path: String,
@@ -62,6 +64,7 @@ struct GitHubTreeEntry {
     kind: String,
 }
 
+#[cfg_attr(not(feature = "graph"), allow(dead_code))]
 #[derive(Deserialize)]
 struct GitHubContributor {
     login: String,
@@ -71,6 +74,7 @@ struct GitHubContributor {
     contributions: u64,
 }
 
+#[cfg_attr(not(feature = "graph"), allow(dead_code))]
 #[derive(Deserialize)]
 struct GitHubRepoHead {
     default_branch: Option<String>,
@@ -81,6 +85,7 @@ struct GitHubRepoHead {
 /// GitHub explains refusals in the body — a missing scope on the token, a
 /// repository that exists but is invisible to it — and a bare status code
 /// sends people looking in the wrong place.
+#[cfg_attr(not(feature = "graph"), allow(dead_code))]
 async fn ensure_ok(res: reqwest::Response) -> anyhow::Result<reqwest::Response> {
     let status = res.status();
     if status.is_success() {
