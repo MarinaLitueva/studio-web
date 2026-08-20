@@ -42,6 +42,12 @@ import type {
   MountStrategy,
 } from '@gears-frontx/react';
 
+import {
+  STUDIO_ACTION_CONTEXT_PUBLISH,
+  STUDIO_SHARED_PROPERTY_CONTEXT_PROJECT,
+  createContextPublishHandler,
+} from '@/app/mfe/contextActions';
+
 const MFE_MANIFESTS_URL = '/generated-mfe-manifests.json';
 
 /**
@@ -108,6 +114,10 @@ class ScreenDomainImpl extends ExtensionDomainImplementation {
       FRONTX_ACTION_MOUNT_EXT,
       ActionHandler.fromFunction((_t, p) => this.strategy.mount(p as ActionPayload)),
     );
+    // The screen domain is where the mounted MFE lives, so it is also where an
+    // MFE's context publication arrives. See contextActions.ts for why this is
+    // an action chain and not an event.
+    ctx.registerHandler(STUDIO_ACTION_CONTEXT_PUBLISH, createContextPublishHandler());
   }
 
   protected getMountStrategies(): MountStrategy[] {
@@ -321,7 +331,15 @@ export async function bootstrapMFE(app: FrontXApp): Promise<void> {
     throw new Error('[MFE Bootstrap] mfeRegistry is not available on app instance');
   }
 
-  registry.registerDomain(screenDomain, new ScreenDomainFactory(registry));
+  const studioScreenDomain: ExtensionDomain = {
+    ...screenDomain,
+    actions: [...screenDomain.actions, STUDIO_ACTION_CONTEXT_PUBLISH],
+    sharedProperties: [
+      ...screenDomain.sharedProperties,
+      STUDIO_SHARED_PROPERTY_CONTEXT_PROJECT,
+    ],
+  };
+  registry.registerDomain(studioScreenDomain, new ScreenDomainFactory(registry));
   registry.registerDomain(sidebarDomain, new OptionalDomainFactory(registry, sidebarDomain.id));
   // Framed domains: the extension states its own footprint, the shell only clamps it.
   registry.registerDomain(popupDomain, new OptionalDomainFactory(registry, popupDomain.id, false));
@@ -334,6 +352,11 @@ export async function bootstrapMFE(app: FrontXApp): Promise<void> {
   registry.updateSharedProperty(FRONTX_SHARED_PROPERTY_THEME, currentThemeId);
   const derivedLanguage = app.i18nRegistry.getLanguage();
   registry.updateSharedProperty(FRONTX_SHARED_PROPERTY_LANGUAGE, derivedLanguage ?? 'en');
+  // Seeded rather than left absent: a declared-but-never-published property
+  // reads back as `undefined`, which an MFE cannot tell apart from a shell that
+  // does not speak this protocol. Must follow registerDomain — a publish that
+  // matches no domain is silently dropped.
+  registry.updateSharedProperty(STUDIO_SHARED_PROPERTY_CONTEXT_PROJECT, null);
 
   console.info(`[MFE Bootstrap] Fetching MFE manifests from ${MFE_MANIFESTS_URL}`);
   const response = await fetch(MFE_MANIFESTS_URL);

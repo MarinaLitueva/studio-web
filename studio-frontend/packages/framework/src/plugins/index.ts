@@ -15,6 +15,13 @@ export {
   type AuthTransportBinder,
   type Hai3ApiAuthTransportConfig,
 } from './auth';
+export {
+  authShared,
+  publishSharedAuthSession,
+  clearSharedAuthSession,
+  readSharedAuthSession,
+  type SharedAuthSessionAccessor,
+} from './authShared';
 export { mock, type MockPluginConfig } from './mock';
 export {
   queryCache,

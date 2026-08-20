@@ -4,7 +4,7 @@ import { ThemeAwareReactLifecycle } from '@gears-frontx/react';
 import kitTheme from '@gears-frontx/ui-kit/theme.css?inline';
 import { mfeApp } from './init';
 import { anchorKitThemeOnShadowHost } from './shared/anchorKitThemeOnShadowHost';
-import { HomeScreen } from './screens/home/HomeScreen';
+import { ProjectsRoot } from './ProjectsRoot';
 
 class ScreensetLifecycle extends ThemeAwareReactLifecycle {
   constructor() {
@@ -35,7 +35,7 @@ class ScreensetLifecycle extends ThemeAwareReactLifecycle {
   }
 
   protected renderContent(bridge: ChildMfeBridge): React.ReactNode {
-    return <HomeScreen bridge={bridge} />;
+    return <ProjectsRoot bridge={bridge} />;
   }
 }
 

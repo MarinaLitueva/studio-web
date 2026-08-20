@@ -28,7 +28,9 @@ vi.mock('@gears-frontx/react', async (importOriginal) => {
   const real = await importOriginal<Record<string, never>>();
   return {
     ...real,
-    screenDomain: { id: 'screen-domain' },
+    // bootstrapMFE spreads both of these onto its own declaration, so the stub
+    // has to carry them or the spread throws.
+    screenDomain: { id: 'screen-domain', actions: [], sharedProperties: [] },
     sidebarDomain: { id: 'sidebar-domain' },
     popupDomain: { id: 'popup-domain' },
     overlayDomain: { id: 'overlay-domain' },
