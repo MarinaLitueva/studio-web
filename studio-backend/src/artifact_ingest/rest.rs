@@ -127,6 +127,24 @@ pub struct ArtifactNodeListResponse {
     pub nodes: Vec<ArtifactNodeDto>,
 }
 
+/// One relation between two artifact nodes, endpoints addressed by instance id.
+#[derive(Debug)]
+#[toolkit_macros::api_dto(response)]
+pub struct ArtifactEdgeDto {
+    /// GTS relation type id, e.g. `gts.cf.studio.rel.modifies.v1~`.
+    pub type_id: String,
+    /// Instance id of the source node.
+    pub from: String,
+    /// Instance id of the target node.
+    pub to: String,
+}
+
+#[derive(Debug)]
+#[toolkit_macros::api_dto(response)]
+pub struct ArtifactEdgeListResponse {
+    pub edges: Vec<ArtifactEdgeDto>,
+}
+
 #[derive(Debug, serde::Deserialize)]
 pub struct RepoFilesQuery {
     /// Workspace the repo belongs to.
@@ -249,6 +267,27 @@ async fn list_nodes(
     }))
 }
 
+async fn list_edges(
+    Extension(ctx): Extension<SecurityContext>,
+    Extension(ingest): Extension<Ingest>,
+) -> ApiResult<JsonBody<ArtifactEdgeListResponse>> {
+    let svc = ingest.get()?;
+    let edges = svc
+        .list_relations(&ctx)
+        .await
+        .map_err(|e| CanonicalError::internal(format!("{e:#}")).create())?;
+    Ok(Json(ArtifactEdgeListResponse {
+        edges: edges
+            .into_iter()
+            .map(|e| ArtifactEdgeDto {
+                type_id: e.type_id,
+                from: e.from,
+                to: e.to,
+            })
+            .collect(),
+    }))
+}
+
 async fn repo_files(
     Extension(_ctx): Extension<SecurityContext>,
     Extension(ingest): Extension<Ingest>,
@@ -322,6 +361,27 @@ pub fn register_routes(
             openapi,
             StatusCode::OK,
             "Ingested nodes",
+        )
+        .error_401(openapi)
+        .error_500(openapi)
+        .register(router, openapi);
+
+    let router = OperationBuilder::get("/studio-artifact-ingest/v1/edges")
+        .operation_id("studio_artifact_ingest.list_edges")
+        .summary("List relations between ingested artifact nodes")
+        .description(
+            "Reads back the relations upserted by /sync — authored_by, modifies, \
+             artifact_of, contains — as endpoint instance-id pairs, so the portal \
+             can draw links between the nodes it already holds.",
+        )
+        .tag("StudioArtifactIngest")
+        .authenticated()
+        .require_license_features::<License>([])
+        .handler(list_edges)
+        .json_response_with_schema::<ArtifactEdgeListResponse>(
+            openapi,
+            StatusCode::OK,
+            "Ingested relations",
         )
         .error_401(openapi)
         .error_500(openapi)

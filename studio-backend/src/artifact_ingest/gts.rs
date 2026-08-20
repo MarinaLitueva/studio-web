@@ -8,7 +8,7 @@
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use super::graph::GtsNode;
+use super::graph::{GtsEdge, GtsNode};
 use crate::connectors::driver::{RemoteFile, RemoteIssue, RemotePullRequest};
 
 /// Fixed namespace for uuid5 instance ids (studio artifact graph).
@@ -18,9 +18,23 @@ pub const REPO_TYPE: &str = "gts.cf.studio.artifact.repo.v1~";
 pub const ISSUE_TYPE: &str = "gts.cf.studio.artifact.issue.v1~";
 pub const PULL_REQUEST_TYPE: &str = "gts.cf.studio.artifact.pull_request.v1~";
 pub const FILE_TYPE: &str = "gts.cf.studio.artifact.file.v1~";
+pub const USER_TYPE: &str = "gts.cf.studio.artifact.user.v1~";
 
 /// Every artifact node type, for registering and enumerating.
-pub const ALL_NODE_TYPES: [&str; 4] = [REPO_TYPE, ISSUE_TYPE, PULL_REQUEST_TYPE, FILE_TYPE];
+pub const ALL_NODE_TYPES: [&str; 5] = [REPO_TYPE, ISSUE_TYPE, PULL_REQUEST_TYPE, FILE_TYPE, USER_TYPE];
+
+// ── Relation (edge) types ── namespace `rel`. Endpoints are node instance ids.
+/// issue / pull_request → repo.
+pub const REL_ARTIFACT_OF: &str = "gts.cf.studio.rel.artifact_of.v1~";
+/// repo → file.
+pub const REL_CONTAINS: &str = "gts.cf.studio.rel.contains.v1~";
+/// issue / pull_request → user (the author).
+pub const REL_AUTHORED_BY: &str = "gts.cf.studio.rel.authored_by.v1~";
+/// pull_request → file (a file the PR changed).
+pub const REL_MODIFIES: &str = "gts.cf.studio.rel.modifies.v1~";
+
+/// Every relation type, for registering in the graph.
+pub const ALL_EDGE_TYPES: [&str; 4] = [REL_ARTIFACT_OF, REL_CONTAINS, REL_AUTHORED_BY, REL_MODIFIES];
 
 /// The type id the graph-storage gear stores this artifact type under. The gear
 /// keeps its own type table and its ids omit the `gts.` scheme token (its own
@@ -194,5 +208,62 @@ pub fn pull_request_node(
             "created_at": p.created_at,
             "updated_at": p.updated_at,
         }),
+    }
+}
+
+/// A user node (issue/PR author). Keyed per connection so the same login on two
+/// hosts stays distinct. `title` mirrors the login so the graph's node name is
+/// the handle.
+pub fn user_node(connector_id: &str, provider: &str, login: &str) -> GtsNode {
+    GtsNode {
+        type_id: USER_TYPE,
+        instance_id: anon_id(&[connector_id, "user", login]),
+        value: json!({
+            "provider": provider,
+            "login": login,
+            "title": login,
+        }),
+    }
+}
+
+/// The instance id a File node has for `path` — so an edge can reference a file
+/// without rebuilding its node (identity is keyed on path, same as `file_node`).
+pub fn file_instance_id(connector_id: &str, repo_full_path: &str, path: &str) -> String {
+    anon_id(&[connector_id, repo_full_path, "file", path])
+}
+
+/// issue / pull_request → repo.
+pub fn artifact_of_edge(artifact_id: &str, repo_id: &str) -> GtsEdge {
+    GtsEdge {
+        type_id: REL_ARTIFACT_OF,
+        from: artifact_id.to_string(),
+        to: repo_id.to_string(),
+    }
+}
+
+/// repo → file.
+pub fn contains_edge(repo_id: &str, file_id: &str) -> GtsEdge {
+    GtsEdge {
+        type_id: REL_CONTAINS,
+        from: repo_id.to_string(),
+        to: file_id.to_string(),
+    }
+}
+
+/// issue / pull_request → user (author).
+pub fn authored_by_edge(artifact_id: &str, user_id: &str) -> GtsEdge {
+    GtsEdge {
+        type_id: REL_AUTHORED_BY,
+        from: artifact_id.to_string(),
+        to: user_id.to_string(),
+    }
+}
+
+/// pull_request → file (a file it changed).
+pub fn modifies_edge(pr_id: &str, file_id: &str) -> GtsEdge {
+    GtsEdge {
+        type_id: REL_MODIFIES,
+        from: pr_id.to_string(),
+        to: file_id.to_string(),
     }
 }

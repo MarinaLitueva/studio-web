@@ -321,6 +321,38 @@ impl ConnectorDriver for GitHubDriver {
             .collect())
     }
 
+    async fn pull_request_files(
+        &self,
+        auth: &ConnectionAuth,
+        repo_full_path: &str,
+        number: i64,
+    ) -> anyhow::Result<Vec<String>> {
+        #[derive(serde::Deserialize)]
+        struct PrFile {
+            filename: String,
+        }
+        // Best-effort and paged: a non-2xx (e.g. a huge diff GitHub declines to
+        // list) just stops the walk, so the sync keeps whatever links it got.
+        let mut out: Vec<String> = Vec::new();
+        for page in 1..=10u32 {
+            let url = format!(
+                "{}/repos/{repo_full_path}/pulls/{number}/files?per_page=100&page={page}",
+                auth.root()
+            );
+            let res = self.request(&url, auth).send().await?;
+            if !res.status().is_success() {
+                break;
+            }
+            let files: Vec<PrFile> = res.json().await?;
+            let n = files.len();
+            out.extend(files.into_iter().map(|f| f.filename));
+            if n < 100 {
+                break;
+            }
+        }
+        Ok(out)
+    }
+
     async fn list_files(
         &self,
         auth: &ConnectionAuth,

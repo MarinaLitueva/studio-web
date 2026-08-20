@@ -381,6 +381,18 @@ export function SpecQuality({
     }
   }, [token, workspaceId]);
 
+  // In a project, pre-load the ingested artifacts (issues/PRs from the last
+  // Sync) as soon as the tab opens — the corpus you almost always want to
+  // analyse, so you don't have to click "+ From artifacts" every time. Runs
+  // once per project; the buttons still let you add/replace by hand.
+  const autoLoadedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!workspaceId) return;
+    if (autoLoadedRef.current === workspaceId) return;
+    autoLoadedRef.current = workspaceId;
+    void loadArtifacts();
+  }, [workspaceId, loadArtifacts]);
+
   // Input actually sent to set-wise detectors / used for batch — after the
   // spec-doc filter (when enabled).
   const includedDocs = useMemo(

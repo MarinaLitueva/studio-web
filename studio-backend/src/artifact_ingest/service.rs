@@ -11,7 +11,7 @@
 //! explicitly (`provider`, `base_url`, `connector_id`) so the pipeline is
 //! testable on its own.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -21,7 +21,7 @@ use toolkit_security::SecurityContext;
 use uuid::Uuid;
 
 use super::clone;
-use super::graph::{GraphStore, GtsNode};
+use super::graph::{GraphStore, GtsEdge, GtsNode};
 use super::gts;
 use super::tasks::{TaskRecord, TaskRegistry};
 use crate::connectors::driver::{ConnectionAuth, ConnectorDriver};
@@ -180,6 +180,25 @@ impl IngestService {
         };
 
         let mut nodes: Vec<GtsNode> = Vec::new();
+        // Relations between the nodes, and the author nodes they reference.
+        // `pr_refs` and `file_paths` are collected so PR→file (`modifies`) edges
+        // can be built once both PRs and the file set are known.
+        let mut edges: Vec<GtsEdge> = Vec::new();
+        let mut users: HashMap<String, GtsNode> = HashMap::new();
+        let mut pr_refs: Vec<(i64, String)> = Vec::new();
+        let mut file_paths: HashSet<String> = HashSet::new();
+
+        // Link an issue/PR to its author: intern a user node and add an
+        // authored_by edge. No-op when the author is unknown.
+        let author_edge =
+            |edges: &mut Vec<GtsEdge>, users: &mut HashMap<String, GtsNode>, artifact_id: &str, author: Option<&str>| {
+                if let Some(login) = author.map(str::trim).filter(|s| !s.is_empty()) {
+                    let u = gts::user_node(connector_id, provider, login);
+                    edges.push(gts::authored_by_edge(artifact_id, &u.instance_id));
+                    users.entry(u.instance_id.clone()).or_insert(u);
+                }
+            };
+
         let repo = gts::repo_node(connector_id, provider, repo_full_path);
         let repo_id = repo.instance_id.clone();
         nodes.push(repo);
@@ -195,7 +214,11 @@ impl IngestService {
             }
             issues += batch.len();
             for i in batch {
-                nodes.push(gts::issue_node(&repo_id, connector_id, repo_full_path, i));
+                let author = i.author.clone();
+                let node = gts::issue_node(&repo_id, connector_id, repo_full_path, i);
+                edges.push(gts::artifact_of_edge(&node.instance_id, &repo_id));
+                author_edge(&mut edges, &mut users, &node.instance_id, author.as_deref());
+                nodes.push(node);
             }
         }
 
@@ -210,12 +233,14 @@ impl IngestService {
             }
             pull_requests += batch.len();
             for p in batch {
-                nodes.push(gts::pull_request_node(
-                    &repo_id,
-                    connector_id,
-                    repo_full_path,
-                    p,
-                ));
+                let author = p.author.clone();
+                let number = p.number;
+                let node = gts::pull_request_node(&repo_id, connector_id, repo_full_path, p);
+                let pr_id = node.instance_id.clone();
+                edges.push(gts::artifact_of_edge(&pr_id, &repo_id));
+                author_edge(&mut edges, &mut users, &pr_id, author.as_deref());
+                pr_refs.push((number, pr_id));
+                nodes.push(node);
             }
         }
 
@@ -272,6 +297,9 @@ impl IngestService {
             Some((list, commit)) => {
                 for wf in list.into_iter().take(MAX_FILES) {
                     files += 1;
+                    let file_id = gts::file_instance_id(connector_id, repo_full_path, &wf.path);
+                    edges.push(gts::contains_edge(&repo_id, &file_id));
+                    file_paths.insert(wf.path.clone());
                     nodes.push(gts::file_node_cloned(
                         &repo_id,
                         connector_id,
@@ -290,6 +318,10 @@ impl IngestService {
                     Ok(list) => {
                         for f in list.into_iter().filter(|f| !f.is_dir).take(MAX_FILES) {
                             files += 1;
+                            let path = f.path.clone();
+                            let file_id = gts::file_instance_id(connector_id, repo_full_path, &path);
+                            edges.push(gts::contains_edge(&repo_id, &file_id));
+                            file_paths.insert(path);
                             nodes.push(gts::file_node(&repo_id, connector_id, repo_full_path, f));
                         }
                     }
@@ -304,8 +336,51 @@ impl IngestService {
             }
         }
 
+        // PR → file (`modifies`): one API call per PR, best-effort, and only for
+        // files we actually ingested so every edge endpoint exists in the graph.
+        if !pr_refs.is_empty() && !file_paths.is_empty() {
+            self.progress(task_id, "linking pull requests to files…");
+            for (number, pr_id) in &pr_refs {
+                match driver
+                    .pull_request_files(&auth, repo_full_path, *number)
+                    .await
+                {
+                    Ok(paths) => {
+                        for path in paths {
+                            if file_paths.contains(&path) {
+                                let file_id =
+                                    gts::file_instance_id(connector_id, repo_full_path, &path);
+                                edges.push(gts::modifies_edge(pr_id, &file_id));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            error = %e,
+                            repo = repo_full_path,
+                            pr = number,
+                            "studio-artifact-ingest: PR file listing failed — skipping its links"
+                        );
+                    }
+                }
+            }
+        }
+
+        // Author nodes discovered along the way join the batch.
+        nodes.extend(users.into_values());
+
         self.progress(task_id, "storing…");
         self.graph.upsert_nodes(ctx, &nodes).await?;
+        // Relations are additive: if the store rejects an edge batch, keep the
+        // nodes (the sync still succeeded) and log rather than failing the job.
+        if let Err(e) = self.graph.upsert_edges(ctx, &edges).await {
+            tracing::warn!(
+                error = %e,
+                repo = repo_full_path,
+                edges = edges.len(),
+                "studio-artifact-ingest: edge upsert failed — nodes stored without relations"
+            );
+        }
         Ok(SyncSummary {
             issues,
             pull_requests,
@@ -423,5 +498,14 @@ impl IngestService {
         type_filter: Option<&str>,
     ) -> anyhow::Result<Vec<GtsNode>> {
         self.graph.list(ctx, type_filter).await
+    }
+
+    /// Read the relations between ingested nodes back for the portal
+    /// (authored_by / modifies / artifact_of / contains) as endpoint id pairs.
+    pub async fn list_relations(
+        &self,
+        ctx: &SecurityContext,
+    ) -> anyhow::Result<Vec<super::graph::GtsEdgeView>> {
+        self.graph.list_relations(ctx).await
     }
 }

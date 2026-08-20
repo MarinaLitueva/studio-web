@@ -160,6 +160,11 @@ services:
       #   the Claude Code agent in IDE sessions -> STUDIO_ANTHROPIC_API_KEY
       STUDIO_LLM_API_KEY: ${STUDIO_LLM_API_KEY:-}
       STUDIO_ANTHROPIC_API_KEY: ${STUDIO_ANTHROPIC_API_KEY:-}
+      # Bearer secret for the external spec-quality detector service. The gear
+      # has base_url in config/docker.yaml but reads the KEY from this env var
+      # (studio-spec-quality.config.api_key_env); without it the wrapper reports
+      # "not configured" and every Spec Quality run fails. Value lives in .env.
+      STUDIO_SPEC_QUALITY_API_KEY: ${STUDIO_SPEC_QUALITY_API_KEY:-}
       # Encryption key for credstore secret VALUES at rest (issue #66, base64,
       # 32 bytes). Without it the backend falls back to the in-memory value
       # store and every secret typed into the portal — source PATs, connector

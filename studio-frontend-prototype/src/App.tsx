@@ -22,9 +22,17 @@ import {
   UNAUTHENTICATED_EVENT,
   shortTypeName,
   TENANT_TYPES,
+  JOURNEY_STAGES,
+  STATUS_LADDER,
+  normalizeStages,
+  type ArtifactEdge,
+  type ArtifactNode,
   type Connection,
   type ConnectorProvider,
   type Me,
+  type ProjectConfig,
+  type ProjectMode,
+  type ProjectStatus,
   type RemoteRepo,
   type RepoEntry,
   type Tenant,
@@ -474,6 +482,13 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
   /** Name of the opened nested project, kept for the crumb: the record is not
    *  in any list the shell holds, and refetching it for a label would be silly. */
   const [projectLabel, setProjectLabel] = useState<string | undefined>();
+  // The open project's active tab. Lifted here so the sidebar is the project's
+  // nav (see the PROJECT section below); opening a different project resets it.
+  const [projectTab, setProjectTab] = useState<ProjTab>("overview");
+  // Opening a different project starts on its Overview.
+  useEffect(() => {
+    setProjectTab("overview");
+  }, [crumb.nestedId]);
   const [accountMenu, setAccountMenu] = useState(false);
   const [productMenu, setProductMenu] = useState(false);
   // Active organization — the top context, now that the level above projects is
@@ -481,6 +496,7 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
   // and the portfolio share one selection. null = "resolve a sensible default".
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
   const [orgNavMenu, setOrgNavMenu] = useState(false);
+  const [wsNavMenu, setWsNavMenu] = useState(false);
   // Admin area (console pattern): a separate mode with its own sidebar for
   // organizations / members / workspaces administration.
   const [adminOpen, setAdminOpen] = useState(false);
@@ -804,9 +820,14 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
     implicitOrgId ??
     null;
   const activeOrg = orgOptions.find((o) => o.id === activeOrgResolvedId) ?? null;
+  // Workspaces of the active org — the second sidebar switcher's options — and
+  // the one currently in the crumb (null = the whole-org "All workspaces" view).
+  const orgWorkspaces = workspaces.filter((w) => w.orgId === activeOrgResolvedId);
+  const currentWorkspace = workspaces.find((w) => w.id === crumb.projectId) ?? null;
 
-  // Org → Workspace → Project lives entirely in the content area (breadcrumbs +
-  // a self-contained project screen), so the sidebar stays organization-level.
+  // When a project is open, the sidebar gains its tab nav (Overview / Artifacts
+  // / Spec Quality / Team) so the tabs live on the panel rather than the page.
+  const projectOpen = !adminOpen && !activeSpace && view === "projects" && !!crumb.nestedId;
 
   const panelView: PanelView = dash ? "dashboard" : view;
 
@@ -1046,6 +1067,97 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
                 )}
               </div>
             </div>
+            {/* Workspace switcher — one level below the organization one. Picking
+                a workspace opens its projects (+ its properties panel); "All
+                workspaces" drops back to the whole-org portfolio. */}
+            {activeOrg && (
+              <div className="nav-section org-nav ws-nav">
+                <div className="org-select-wrap">
+                  <button
+                    type="button"
+                    className="org-select"
+                    title={currentWorkspace?.name ?? "All workspaces"}
+                    onClick={() => setWsNavMenu((v) => !v)}
+                  >
+                    <span className="account-avatar small">
+                      {(currentWorkspace?.name ?? "▤").slice(0, 1).toUpperCase()}
+                    </span>
+                    <span className="org-select-name">
+                      {currentWorkspace?.name ?? "All workspaces"}
+                    </span>
+                    <span className="chev">▾</span>
+                  </button>
+                  {wsNavMenu && (
+                    <div className="org-menu">
+                      <button
+                        type="button"
+                        className={!crumb.projectId ? "on" : ""}
+                        onClick={() => {
+                          setCrumb({});
+                          setView("projects");
+                          setActiveSpace(null);
+                          setWsNavMenu(false);
+                        }}
+                      >
+                        <span className="account-avatar small">▤</span>
+                        All workspaces
+                      </button>
+                      {orgWorkspaces.map((w) => (
+                        <button
+                          key={w.id}
+                          type="button"
+                          className={crumb.projectId === w.id ? "on" : ""}
+                          onClick={() => {
+                            setCrumb({ projectId: w.id });
+                            setView("projects");
+                            setActiveSpace(null);
+                            setWsNavMenu(false);
+                          }}
+                        >
+                          <span className="account-avatar small">
+                            {w.name.slice(0, 1).toUpperCase()}
+                          </span>
+                          {w.name}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        className="org-new"
+                        title="Create a workspace in the account menu"
+                        onClick={() => {
+                          setWsNavMenu(false);
+                          setAccountMenu(true);
+                        }}
+                      >
+                        ＋ New workspace
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            {projectOpen && (
+              // ── Project context: the open project's tabs live in the sidebar ──
+              <div className="nav-section nav-section-project">
+                <div className="nav-section-title">{projectLabel ?? "Project"}</div>
+                {PROJECT_TABS.map((t) => (
+                  <button
+                    key={t.id}
+                    className={projectTab === t.id ? "active" : ""}
+                    title={t.label}
+                    onClick={() => {
+                      setProjectTab(t.id);
+                      setActiveSpace(null);
+                    }}
+                  >
+                    <span className="ico">
+                      <NavIcon name={t.icon} />
+                    </span>{" "}
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            )}
             {
               // ── Organization context: work surfaces of the whole org ──
               NAV_SECTIONS.map((sec) => {
@@ -1380,6 +1492,8 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
             setCrumb={setCrumb}
             projectLabel={projectLabel}
             setProjectLabel={setProjectLabel}
+            projectTab={projectTab}
+            setProjectTab={setProjectTab}
             onChanged={refresh}
             onOpenStudio={setStudio}
           />
@@ -1813,6 +1927,8 @@ function ProjectsView({
   setCrumb,
   projectLabel,
   setProjectLabel,
+  projectTab,
+  setProjectTab,
   onChanged,
   onOpenStudio,
 }: {
@@ -1827,6 +1943,9 @@ function ProjectsView({
   setCrumb: (c: Crumb) => void;
   projectLabel?: string;
   setProjectLabel: (n: string | undefined) => void;
+  /** Open project's active tab — the sidebar owns this (see the shell). */
+  projectTab: ProjTab;
+  setProjectTab: (t: ProjTab) => void;
   onChanged: () => void;
   onOpenStudio: (target: StudioTarget) => void;
 }) {
@@ -1875,6 +1994,8 @@ function ProjectsView({
           projectTenantId={crumb.nestedId}
           workspace={root}
           filters={filters}
+          tab={projectTab}
+          setTab={setProjectTab}
           onBack={() => setCrumb({ projectId: root.id })}
           onOpenStudio={onOpenStudio}
         />
@@ -1882,7 +2003,8 @@ function ProjectsView({
     );
   }
 
-  // Level 2 — the workspace's projects.
+  // Level 2 — the workspace: its projects, then its own properties panel
+  // (workspace settings), reusing the same dashboard the project Overview uses.
   return (
     <>
       <Breadcrumbs items={trail} />
@@ -1894,6 +2016,13 @@ function ProjectsView({
           setCrumb({ projectId: root.id, nestedId: p.id });
         }}
         onChanged={onChanged}
+      />
+      <WorkspaceDashboard
+        token={token}
+        ws={root}
+        embedded
+        onBack={() => setCrumb({})}
+        onOpenStudio={onOpenStudio}
       />
     </>
   );
@@ -2036,14 +2165,174 @@ function WorkspaceProjects({
   );
 }
 
-/** Level 3: one project (its own AM tenant). Self-contained tabbed screen —
- *  the code context (sources, IDE, artifacts, spec-quality) is scoped to this
- *  tenant, so every tab operates on the project tenant id. */
+/** Project attributes (mode / status / stages / brief) — the fields the retired
+ *  studio-project gear used to own, now stored as `project.config` tenant
+ *  metadata on the project tenant and edited here. Status is forward-only and
+ *  the stage list is validated against the catalogue, both client-side now. */
+function ProjectProperties({ token, projectId }: { token: string; projectId: string }) {
+  const fallback: ProjectConfig = { mode: "greenfield", status: "draft", stages: ["intent"] };
+  const [saved, setSaved] = useState<ProjectConfig | null>(null);
+  const [draft, setDraft] = useState<ProjectConfig | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.projectConfig(token, projectId).then(
+      (c) => {
+        if (cancelled) return;
+        const v: ProjectConfig = { ...fallback, ...(c ?? {}), stages: normalizeStages(c?.stages ?? ["intent"]) };
+        setSaved(v);
+        setDraft(v);
+      },
+      (e) => {
+        if (!cancelled) setErr(errText(e));
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, projectId]);
+
+  if (err) return <div className="error">{err}</div>;
+  if (!draft || !saved) return <p className="empty">Loading project properties…</p>;
+
+  const stages = draft.stages ?? [];
+  const statusIdx = STATUS_LADDER.indexOf(draft.status ?? "draft");
+  const dirty = JSON.stringify(saved) !== JSON.stringify(draft);
+
+  const patch = (p: Partial<ProjectConfig>) => {
+    setJustSaved(false);
+    setDraft((d) => (d ? { ...d, ...p } : d));
+  };
+  const toggleStage = (key: string) => patch({ stages: normalizeStages(stages.includes(key) ? stages.filter((s) => s !== key) : [...stages, key]) });
+
+  async function save() {
+    if (!draft) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const clean: ProjectConfig = { ...draft, stages: normalizeStages(draft.stages ?? []) };
+      await api.putProjectConfig(token, projectId, clean);
+      setSaved(clean);
+      setDraft(clean);
+      setJustSaved(true);
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="card">
+      <div className="topbar" style={{ marginBottom: 8 }}>
+        <h2 style={{ margin: 0 }}>Project properties</h2>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {justSaved && !dirty && <span className="sub">Saved</span>}
+          <button className="primary" disabled={busy || !dirty} onClick={() => void save()}>
+            {busy ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </div>
+
+      <div className="field">
+        <span className="lbl">Mode</span>
+        <select
+          value={draft.mode ?? "greenfield"}
+          onChange={(e) => patch({ mode: e.target.value as ProjectMode })}
+        >
+          <option value="greenfield">Greenfield — build from an idea</option>
+          <option value="modernize">Modernize — start from a source repository</option>
+        </select>
+      </div>
+
+      <div className="field">
+        <span className="lbl">Status</span>
+        <div style={{ display: "flex", gap: 6 }}>
+          {STATUS_LADDER.map((s, i) => (
+            <button
+              key={s}
+              className={draft.status === s ? "primary" : "ghost"}
+              // Forward-only: you can hold or advance, never regress.
+              disabled={i < statusIdx}
+              title={i < statusIdx ? "Status is forward-only — it cannot move back" : undefined}
+              onClick={() => patch({ status: s as ProjectStatus })}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="field">
+        <span className="lbl">Journey stages</span>
+        <div className="chips">
+          {JOURNEY_STAGES.map((s) => {
+            const on = stages.includes(s.key) || s.required;
+            return (
+              <button
+                key={s.key}
+                type="button"
+                className={`chip${on ? " on" : ""}`}
+                disabled={s.required}
+                title={s.required ? "Intent is always applied" : undefined}
+                onClick={() => toggleStage(s.key)}
+              >
+                {s.label}
+                {s.required ? " ·" : ""}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="field">
+        <span className="lbl">{draft.mode === "modernize" ? "Notes" : "Brief"}</span>
+        <textarea
+          rows={4}
+          placeholder={
+            draft.mode === "modernize"
+              ? "Optional notes about the modernization."
+              : "The idea, pasted PRD or notes that seed this project."
+          }
+          value={draft.brief ?? ""}
+          onChange={(e) => patch({ brief: e.target.value })}
+        />
+      </div>
+
+      {draft.source_git_url && (
+        <p className="hint" style={{ marginTop: 4 }}>
+          Seed source: <code>{draft.source_git_url}</code>. The working repositories are managed on
+          the Artifacts tab (workspace settings).
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** The sections of an open project. Lifted so the shell sidebar can BE the
+ *  project's nav (the tab is stored on the shell, not inside ProjectScreen). */
+type ProjTab = "overview" | "artifacts" | "analyze" | "people";
+const PROJECT_TABS: { id: ProjTab; icon: string; label: string }[] = [
+  { id: "overview", icon: "home", label: "Overview" },
+  { id: "artifacts", icon: "file", label: "Artifacts" },
+  { id: "analyze", icon: "scan", label: "Spec Quality" },
+  { id: "people", icon: "users", label: "Team" },
+];
+
+/** Level 3: one project (its own AM tenant). The tabs live in the sidebar; this
+ *  renders the active one for the code context (sources, IDE, artifacts,
+ *  spec-quality) scoped to the project tenant id. */
 function ProjectScreen({
   token,
   projectTenantId,
   workspace,
   filters,
+  tab,
+  setTab,
   onBack,
   onOpenStudio,
 }: {
@@ -2051,12 +2340,14 @@ function ProjectScreen({
   projectTenantId: string;
   workspace: Workspace;
   filters: Filters;
+  /** Active tab — lifted to the shell so the sidebar is the project's nav. */
+  tab: ProjTab;
+  setTab: (t: ProjTab) => void;
   onBack: () => void;
   onOpenStudio: (target: StudioTarget) => void;
 }) {
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [tab, setTab] = useState<"overview" | "artifacts" | "analyze" | "people">("overview");
 
   useEffect(() => {
     let cancelled = false;
@@ -2079,12 +2370,6 @@ function ProjectScreen({
   // A project tenant, presented as a Workspace so the existing tab components
   // (which take a Workspace) operate on it unchanged.
   const proj = { ...tenant, orgId: workspace.orgId, orgName: workspace.orgName } as Workspace;
-  const tabs: { id: typeof tab; label: string }[] = [
-    { id: "overview", label: "Overview" },
-    { id: "artifacts", label: "Artifacts" },
-    { id: "analyze", label: "Spec Quality" },
-    { id: "people", label: "Team" },
-  ];
 
   return (
     <>
@@ -2102,20 +2387,12 @@ function ProjectScreen({
           </button>
         </div>
       </div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            className={tab === t.id ? "primary" : "ghost"}
-            onClick={() => setTab(t.id)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
       <div className="proj-content">
         {tab === "overview" && (
-          <WorkspaceDashboard token={token} ws={proj} embedded onBack={onBack} onOpenStudio={onOpenStudio} />
+          <>
+            <ProjectProperties token={token} projectId={proj.id} />
+            <WorkspaceDashboard token={token} ws={proj} embedded onBack={onBack} onOpenStudio={onOpenStudio} />
+          </>
         )}
         {tab === "artifacts" && (
           <ArtifactsView token={token} workspace={proj} onOpenStudio={onOpenStudio} />
@@ -2417,8 +2694,9 @@ function WorkspaceDashboard({
         </div>
         <p className="hint">
           How this project's artifacts relate — the repository, its issues, pull requests and files,
-          read back from the knowledge graph. Run Sync on the Artifacts tab to populate it. (Live
-          work statuses are still planned.)
+          each a node read back from the knowledge graph. Click any node to inspect the metadata the
+          graph stored for it; use “show more” to expand a category. Run Sync on the Artifacts tab to
+          populate it. (Live work statuses are still planned.)
         </p>
         <ArtifactGraph token={token} />
       </div>
@@ -3347,7 +3625,8 @@ function IngestedArtifacts({ token, refreshKey }: { token: string; refreshKey: n
  *  and files as a radial hub-and-spoke. Edges are derived from each node's
  *  `repo` reference — no extra endpoint needed. */
 function ArtifactGraph({ token }: { token: string }) {
-  const [nodes, setNodes] = useState<import("./api").ArtifactNode[] | null>(null);
+  const [nodes, setNodes] = useState<ArtifactNode[] | null>(null);
+  const [edges, setEdges] = useState<ArtifactEdge[]>([]);
   const [err, setErr] = useState<string | null>(null);
 
   const reload = useCallback(() => {
@@ -3356,6 +3635,12 @@ function ArtifactGraph({ token }: { token: string }) {
       .listArtifactNodes(token)
       .then((r) => setNodes(r.nodes ?? []))
       .catch((e) => setErr(errText(e)));
+    // Relations are best-effort: an older backend without the endpoint just
+    // leaves the graph without cross-links rather than erroring the whole card.
+    api
+      .artifactEdges(token)
+      .then((r) => setEdges(r.edges ?? []))
+      .catch(() => setEdges([]));
   }, [token]);
 
   useEffect(() => {
@@ -3381,7 +3666,7 @@ function ArtifactGraph({ token }: { token: string }) {
       ) : (
         <>
           {repos.map((repo) => (
-            <RepoGraph key={repo.instance_id} repo={repo} nodes={nodes!} />
+            <RepoGraph key={repo.instance_id} repo={repo} nodes={nodes!} edges={edges} />
           ))}
           <div
             style={{
@@ -3416,138 +3701,336 @@ function ArtifactGraph({ token }: { token: string }) {
 /** One repository's radial graph: repo in the centre, three category hubs
  *  (Issues / Pull requests / Files) with counts, and a capped sample of items
  *  under each. */
+const GRAPH_COLORS = { repo: "#3b82f6", issue: "#10b981", pr: "#8b5cf6", file: "#f59e0b" } as const;
+type GraphKind = keyof typeof GRAPH_COLORS;
+
+function nodeKind(n: ArtifactNode): GraphKind {
+  if (n.type_id.includes("pull_request")) return "pr";
+  if (n.type_id.includes("issue")) return "issue";
+  if (n.type_id.includes("file")) return "file";
+  return "repo";
+}
+
+function nodeLabel(n: ArtifactNode): string {
+  const v = n.value;
+  if (nodeKind(n) === "file") return String(v.path ?? "(file)");
+  return `${v.number != null ? `#${v.number} ` : ""}${v.title ?? "(untitled)"}`;
+}
+
+const gtrunc = (s: string, n = 40) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+
+/** One repository's graph. The repo is the centre; three category hubs (Issues /
+ *  Pull requests / Files) fan out; and every artifact is its OWN clickable node.
+ *  Selecting a node opens an inspector with the full metadata the graph store
+ *  holds for it. Each column is capped and grows with "show more" so a large
+ *  repo stays legible. */
 function RepoGraph({
   repo,
   nodes,
+  edges,
 }: {
-  repo: import("./api").ArtifactNode;
-  nodes: import("./api").ArtifactNode[];
+  repo: ArtifactNode;
+  nodes: ArtifactNode[];
+  edges: ArtifactEdge[];
 }) {
   const rid = repo.instance_id;
-  const mine = (n: import("./api").ArtifactNode) => n.value.repo === rid;
+  const mine = (n: ArtifactNode) => n.value.repo === rid;
+  const nodeById = new Map(nodes.map((n) => [n.instance_id, n]));
   const issues = nodes.filter((n) => n.type_id.includes("issue") && mine(n));
   const prs = nodes.filter((n) => n.type_id.includes("pull_request") && mine(n));
   const files = nodes.filter((n) => n.type_id.includes("file") && mine(n));
 
-  const CAP = 8;
+  const [selected, setSelected] = useState<ArtifactNode | null>(null);
+  const [caps, setCaps] = useState<Record<GraphKind, number>>({ repo: 0, issue: 16, pr: 16, file: 16 });
+  const bump = (k: GraphKind) => setCaps((c) => ({ ...c, [k]: c[k] + 24 }));
+
   const hubs = [
-    { label: "Issues", kind: "issue" as const, all: issues, color: "#10b981" },
-    { label: "Pull requests", kind: "pr" as const, all: prs, color: "#8b5cf6" },
-    { label: "Files", kind: "file" as const, all: files, color: "#f59e0b" },
-  ].map((h) => ({ ...h, items: h.all.slice(0, CAP), count: h.all.length }));
+    { key: "issue" as GraphKind, label: "Issues", all: issues },
+    { key: "pr" as GraphKind, label: "Pull requests", all: prs },
+    { key: "file" as GraphKind, label: "Files", all: files },
+  ].map((h) => ({ ...h, items: h.all.slice(0, caps[h.key]), color: GRAPH_COLORS[h.key] }));
 
-  const W = 1100;
-  const rowH = 24;
-  const leavesTop = 210;
-  const maxLeaves = Math.max(1, ...hubs.map((h) => h.items.length));
-  const H = leavesTop + maxLeaves * rowH + 34;
-
+  const W = 1180;
+  const colCX = [110, 520, 900];
   const repoX = W / 2;
-  const repoY = 44;
-  const hubY = 132;
-  const hubX = [W * 0.2, W * 0.5, W * 0.8];
+  const repoY = 40;
+  const hubY = 116;
+  const nodesTop = 178;
+  const rowH = 22;
+  const maxRows = Math.max(1, ...hubs.map((h) => h.items.length));
+  const footerY = nodesTop + maxRows * rowH + 4;
+  const H = footerY + 30;
 
-  const leafLabel = (n: import("./api").ArtifactNode, kind: "issue" | "pr" | "file") => {
-    const v = n.value;
-    if (kind === "file") return String(v.path ?? "(file)");
-    return `${v.number != null ? `#${v.number} ` : ""}${v.title ?? "(untitled)"}`;
-  };
-  const truncate = (s: string, n = 44) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+  const isSel = (n: ArtifactNode) => selected?.instance_id === n.instance_id;
 
   return (
-    <svg
-      viewBox={`0 0 ${W} ${H}`}
-      width="100%"
-      role="img"
-      style={{ maxWidth: "100%", background: "var(--bg, #0e1116)", borderRadius: 10 }}
-    >
-      {/* repo → hub edges */}
-      {hubs.map((_, i) => (
-        <line
-          key={`e${i}`}
-          x1={repoX}
-          y1={repoY + 14}
-          x2={hubX[i]}
-          y2={hubY - 12}
-          stroke="var(--border, #333)"
-          strokeWidth={1.5}
-        />
-      ))}
-      {/* hub → leaf edges */}
-      {hubs.map((h, i) =>
-        h.items.map((_, j) => (
-          <line
-            key={`el${i}-${j}`}
-            x1={hubX[i]}
-            y1={hubY + 12}
-            x2={hubX[i]}
-            y2={leavesTop + j * rowH - 5}
-            stroke="var(--border, #333)"
-            strokeWidth={1}
-            opacity={0.45}
-          />
-        )),
-      )}
-      {/* repo node */}
-      <circle cx={repoX} cy={repoY} r={13} fill="#3b82f6" />
-      <text
-        x={repoX}
-        y={repoY - 20}
-        textAnchor="middle"
-        fontSize={13}
-        fontWeight={600}
-        fill="var(--text, #e6e6e6)"
+    <>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        width="100%"
+        role="img"
+        style={{ maxWidth: "100%", background: "var(--bg, #0e1116)", borderRadius: 10 }}
       >
-        {truncate(String(repo.value.full_path ?? "repository"), 60)}
-      </text>
-      {/* hubs */}
-      {hubs.map((h, i) => (
-        <g key={`h${i}`}>
-          <circle cx={hubX[i]} cy={hubY} r={10} fill={h.color} />
-          <text
-            x={hubX[i]}
-            y={hubY - 16}
-            textAnchor="middle"
-            fontSize={12.5}
-            fontWeight={600}
-            fill="var(--text, #e6e6e6)"
-          >
-            {h.label} · {h.count}
-          </text>
-        </g>
-      ))}
-      {/* leaves */}
-      {hubs.map((h, i) =>
-        h.items.map((n, j) => (
-          <text
-            key={`l${i}-${j}`}
-            x={hubX[i]}
-            y={leavesTop + j * rowH}
-            textAnchor="middle"
-            fontSize={11.5}
-            fill="var(--muted, #9aa0a6)"
-          >
-            {truncate(leafLabel(n, h.kind))}
-            <title>{leafLabel(n, h.kind)}</title>
-          </text>
-        )),
+        {/* repo → hub edges */}
+        {hubs.map((_, i) => (
+          <line
+            key={`e${i}`}
+            x1={repoX}
+            y1={repoY + 14}
+            x2={colCX[i]}
+            y2={hubY - 12}
+            stroke="var(--border, #333)"
+            strokeWidth={1.5}
+          />
+        ))}
+        {/* hub spines */}
+        {hubs.map((h, i) =>
+          h.items.length > 0 ? (
+            <line
+              key={`sp${i}`}
+              x1={colCX[i]}
+              y1={hubY + 12}
+              x2={colCX[i]}
+              y2={nodesTop + (h.items.length - 1) * rowH}
+              stroke="var(--border, #333)"
+              strokeWidth={1}
+              opacity={0.4}
+            />
+          ) : null,
+        )}
+        {/* repo node */}
+        <circle
+          cx={repoX}
+          cy={repoY}
+          r={13}
+          fill={GRAPH_COLORS.repo}
+          style={{ cursor: "pointer" }}
+          onClick={() => setSelected(repo)}
+        />
+        {isSel(repo) && (
+          <circle cx={repoX} cy={repoY} r={17} fill="none" stroke={GRAPH_COLORS.repo} strokeWidth={2} />
+        )}
+        <text x={repoX} y={repoY - 20} textAnchor="middle" fontSize={13} fontWeight={600} fill="var(--text, #e6e6e6)">
+          {gtrunc(String(repo.value.full_path ?? "repository"), 60)}
+        </text>
+        {/* hubs + artifact nodes */}
+        {hubs.map((h, i) => (
+          <g key={`h${i}`}>
+            <circle cx={colCX[i]} cy={hubY} r={10} fill={h.color} />
+            <text x={colCX[i]} y={hubY - 16} textAnchor="middle" fontSize={12.5} fontWeight={600} fill="var(--text, #e6e6e6)">
+              {h.label} · {h.all.length}
+            </text>
+            {h.items.map((n, j) => {
+              const y = nodesTop + j * rowH;
+              return (
+                <g key={n.instance_id} style={{ cursor: "pointer" }} onClick={() => setSelected(n)}>
+                  <circle cx={colCX[i]} cy={y} r={6} fill={h.color} opacity={isSel(n) ? 1 : 0.85} />
+                  {isSel(n) && <circle cx={colCX[i]} cy={y} r={9} fill="none" stroke={h.color} strokeWidth={2} />}
+                  <text
+                    x={colCX[i] + 14}
+                    y={y + 4}
+                    textAnchor="start"
+                    fontSize={11.5}
+                    fill={isSel(n) ? "var(--text, #e6e6e6)" : "var(--muted, #9aa0a6)"}
+                  >
+                    {gtrunc(nodeLabel(n))}
+                    <title>{nodeLabel(n)}</title>
+                  </text>
+                </g>
+              );
+            })}
+            {h.all.length > h.items.length && (
+              <text
+                x={colCX[i]}
+                y={nodesTop + h.items.length * rowH + 8}
+                textAnchor="middle"
+                fontSize={11}
+                fill="var(--accent, #4c8bf5)"
+                style={{ cursor: "pointer" }}
+                onClick={() => bump(h.key)}
+              >
+                + show more ({h.all.length - h.items.length} left)
+              </text>
+            )}
+          </g>
+        ))}
+      </svg>
+      {selected && (
+        <NodeInspector
+          node={selected}
+          edges={edges}
+          nodeById={nodeById}
+          onSelect={setSelected}
+          onClose={() => setSelected(null)}
+        />
       )}
-      {/* +N more */}
-      {hubs.map((h, i) =>
-        h.count > h.items.length ? (
-          <text
-            key={`m${i}`}
-            x={hubX[i]}
-            y={leavesTop + h.items.length * rowH + 6}
-            textAnchor="middle"
-            fontSize={11}
-            fill="var(--muted, #9aa0a6)"
-          >
-            +{h.count - h.items.length} more
-          </text>
-        ) : null,
+    </>
+  );
+}
+
+/** Full metadata for one graph node, straight from the payload the graph store
+ *  returned — a labelled row per field, the body behind a disclosure, and a link
+ *  out to the source when there is a url. */
+/** A human label for a relation type, phrased from the selected node's side. */
+function relText(typeId: string, outgoing: boolean): string {
+  if (typeId.includes("authored_by")) return outgoing ? "Author" : "Authored";
+  if (typeId.includes("modifies")) return outgoing ? "Modifies" : "Modified by";
+  if (typeId.includes("artifact_of")) return outgoing ? "Belongs to" : "Artifacts";
+  if (typeId.includes("contains")) return outgoing ? "Contains" : "In repository";
+  return typeId;
+}
+
+function NodeInspector({
+  node,
+  edges,
+  nodeById,
+  onSelect,
+  onClose,
+}: {
+  node: ArtifactNode;
+  edges: ArtifactEdge[];
+  nodeById: Map<string, ArtifactNode>;
+  onSelect: (n: ArtifactNode) => void;
+  onClose: () => void;
+}) {
+  const v = node.value;
+  const kind = nodeKind(node);
+
+  // Relations of this node, grouped by a human label. Endpoints resolve to the
+  // nodes we hold; a capped node set means some targets may be unresolved (we
+  // still show their id, just not clickable).
+  const REL_CAP = 40;
+  const relGroups = new Map<string, { id: string; node?: ArtifactNode }[]>();
+  for (const e of edges) {
+    const outgoing = e.from === node.instance_id;
+    const incoming = e.to === node.instance_id;
+    if (!outgoing && !incoming) continue;
+    const otherId = outgoing ? e.to : e.from;
+    const label = relText(e.type_id, outgoing);
+    const arr = relGroups.get(label) ?? [];
+    arr.push({ id: otherId, node: nodeById.get(otherId) });
+    relGroups.set(label, arr);
+  }
+  const rows: [string, string][] = [];
+  const add = (label: string, val: unknown) => {
+    if (val == null || val === "") return;
+    if (Array.isArray(val)) {
+      if (val.length === 0) return;
+      rows.push([label, val.join(", ")]);
+    } else if (typeof val === "boolean") {
+      rows.push([label, val ? "yes" : "no"]);
+    } else {
+      rows.push([label, String(val)]);
+    }
+  };
+  add("Full path", v.full_path);
+  add("Number", v.number);
+  add("State", v.state);
+  add("Author", v.author);
+  add("Labels", v.labels);
+  add("Source branch", v.source_branch);
+  add("Target branch", v.target_branch);
+  add("Merged", v.merged);
+  add("Provider", v.provider);
+  add("External id", v.external_id);
+  add("Path", v.path);
+  add("SHA", v.sha);
+  add("Directory", v.is_dir);
+  add("Size", v.size != null ? `${v.size} bytes` : undefined);
+  add("Created", v.created_at);
+  add("Updated", v.updated_at);
+  const handled = new Set([
+    "repo", "body", "text", "title", "number", "state", "author", "labels",
+    "source_branch", "target_branch", "merged", "provider", "external_id",
+    "path", "sha", "is_dir", "size", "created_at", "updated_at", "full_path", "url",
+  ]);
+  for (const [k, val] of Object.entries(v)) if (!handled.has(k)) add(k, val);
+
+  const title =
+    kind === "file"
+      ? String(v.path ?? "(file)")
+      : kind === "repo"
+        ? String(v.full_path ?? "repository")
+        : `${v.number != null ? `#${v.number} ` : ""}${v.title ?? "(untitled)"}`;
+  const body = typeof v.body === "string" ? v.body : "";
+
+  return (
+    <div className="card" style={{ marginTop: 12 }}>
+      <div className="card-head">
+        <h3 style={{ margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ width: 11, height: 11, borderRadius: 11, background: GRAPH_COLORS[kind], display: "inline-block" }} />
+          {gtrunc(title, 80)}
+        </h3>
+        <button className="ghost" onClick={onClose}>
+          Close
+        </button>
+      </div>
+      <div className="sub" style={{ marginBottom: 10 }}>
+        <code>{shortTypeName(node.type_id)}</code> · <code>{node.instance_id.slice(0, 12)}…</code>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "max-content 1fr", gap: "4px 16px" }}>
+        {rows.map(([k, val]) => (
+          <div key={k} style={{ display: "contents" }}>
+            <span className="sub">{k}</span>
+            <span style={{ wordBreak: "break-word" }}>{val}</span>
+          </div>
+        ))}
+      </div>
+
+      {relGroups.size > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <div className="sub" style={{ marginBottom: 6 }}>
+            Relations
+          </div>
+          {[...relGroups.entries()].map(([label, items]) => (
+            <div key={label} style={{ marginBottom: 6 }}>
+              <span className="sub" style={{ marginRight: 6 }}>
+                {label} · {items.length}
+              </span>
+              <span className="chips">
+                {items.slice(0, REL_CAP).map((it, idx) => {
+                  const name = it.node ? gtrunc(nodeLabel(it.node), 36) : `${it.id.slice(0, 8)}…`;
+                  return it.node ? (
+                    <button
+                      key={`${it.id}-${idx}`}
+                      type="button"
+                      className="chip"
+                      title={it.node ? nodeLabel(it.node) : it.id}
+                      onClick={() => it.node && onSelect(it.node)}
+                    >
+                      {name}
+                    </button>
+                  ) : (
+                    <span key={`${it.id}-${idx}`} className="chip" title={it.id}>
+                      {name}
+                    </span>
+                  );
+                })}
+                {items.length > REL_CAP && (
+                  <span className="sub">+{items.length - REL_CAP} more</span>
+                )}
+              </span>
+            </div>
+          ))}
+        </div>
       )}
-    </svg>
+      {v.url && (
+        <p style={{ marginTop: 10 }}>
+          <a href={String(v.url)} target="_blank" rel="noreferrer">
+            Open on {String(v.provider ?? "source")} ↗
+          </a>
+        </p>
+      )}
+      {body && (
+        <details style={{ marginTop: 10 }}>
+          <summary className="sub">Body</summary>
+          <pre style={{ whiteSpace: "pre-wrap", fontSize: 12, marginTop: 8, maxHeight: 320, overflow: "auto" }}>
+            {body.slice(0, 4000)}
+            {body.length > 4000 ? "…" : ""}
+          </pre>
+        </details>
+      )}
+    </div>
   );
 }
 

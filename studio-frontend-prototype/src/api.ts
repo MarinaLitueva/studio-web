@@ -62,6 +62,31 @@ export type ProjectMode = "greenfield" | "modernize";
 /** Forward-only: draft -> active -> archived, and archived is terminal. */
 export type ProjectStatus = "draft" | "active" | "archived";
 
+/** The status ladder in order — used to enforce forward-only transitions in
+ *  the UI now that the studio-project gear no longer guards them server-side. */
+export const STATUS_LADDER: ProjectStatus[] = ["draft", "active", "archived"];
+
+/** The canonical journey-stage catalogue (was `GET /studio-project/v1/stages`).
+ *  Intent is always applied; the rest are opt-in. A project's `stages` should be
+ *  a subset of these keys, kept in this order. */
+export const JOURNEY_STAGES: { key: string; label: string; required: boolean }[] = [
+  { key: "intent", label: "Intent", required: true },
+  { key: "brd", label: "BRD", required: false },
+  { key: "prd", label: "PRD", required: false },
+  { key: "prd_spec", label: "PRD-Spec", required: false },
+  { key: "architecture", label: "Architecture", required: false },
+  { key: "ui_design", label: "UI Design", required: false },
+  { key: "user_stories", label: "User Stories", required: false },
+  { key: "testing", label: "Testing", required: false },
+];
+
+/** Normalise a stage selection to the required set + chosen keys, in catalogue
+ *  order — the same idempotent normalisation the old gear did server-side. */
+export function normalizeStages(selected: readonly string[]): string[] {
+  const chosen = new Set(selected);
+  return JOURNEY_STAGES.filter((s) => s.required || chosen.has(s.key)).map((s) => s.key);
+}
+
 export type RepoSource = "local" | "git" | "github" | "gitlab";
 
 /** One workspace source — mirrored into .cf-workspace.toml by the backend. */
@@ -158,8 +183,18 @@ export interface ArtifactNode {
     size?: number | null;
     created_at?: string | null;
     updated_at?: string | null;
+    // User nodes:
+    login?: string;
     [key: string]: unknown;
   };
+}
+
+/** A relation between two artifact nodes (endpoints by instance id). Types:
+ *  `…rel.authored_by…`, `…rel.modifies…`, `…rel.artifact_of…`, `…rel.contains…`. */
+export interface ArtifactEdge {
+  type_id: string;
+  from: string;
+  to: string;
 }
 
 export interface WorkspaceSettings {
@@ -680,6 +715,10 @@ export const api = {
       `/studio-artifact-ingest/v1/nodes${type ? `?type=${encodeURIComponent(type)}` : ""}`,
       token,
     ),
+
+  /** Relations between ingested nodes (authored_by / modifies / …). */
+  artifactEdges: (token: string) =>
+    request<{ edges: ArtifactEdge[] }>("/studio-artifact-ingest/v1/edges", token),
 
   /* ── studio-session gear: per-workspace Theia IDE containers ── */
   createStudioSession: (

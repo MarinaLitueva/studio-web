@@ -248,6 +248,20 @@ pub trait ConnectorDriver: Send + Sync + 'static {
         ))
     }
 
+    /// The file paths one pull/merge request changed. Used to link PR nodes to
+    /// File nodes in the artifact graph. Defaulted to empty (not an error): a
+    /// driver that cannot answer simply leaves those PR↔file links unbuilt
+    /// rather than failing the whole sync.
+    async fn pull_request_files(
+        &self,
+        auth: &ConnectionAuth,
+        repo_full_path: &str,
+        number: i64,
+    ) -> anyhow::Result<Vec<String>> {
+        let _ = (auth, repo_full_path, number);
+        Ok(Vec::new())
+    }
+
     /// Files in one repository as a flat, recursive tree of the given ref (or
     /// the repo's default branch when `git_ref` is `None`). There is no paging
     /// contract — providers return the whole tree in one response, which they
