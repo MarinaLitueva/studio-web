@@ -101,6 +101,7 @@ impl IngestService {
     #[allow(clippy::too_many_arguments)]
     pub fn enqueue_sync(
         self: &Arc<Self>,
+        ctx: SecurityContext,
         provider: String,
         base_url: Option<String>,
         connector_id: String,
@@ -118,6 +119,7 @@ impl IngestService {
             svc.tasks.set_running(&task_id, "syncing…");
             match svc
                 .run_sync(
+                    &ctx,
                     &provider,
                     base_url.as_deref(),
                     &connector_id,
@@ -152,6 +154,7 @@ impl IngestService {
     #[allow(clippy::too_many_arguments)]
     pub async fn run_sync(
         &self,
+        ctx: &SecurityContext,
         provider: &str,
         base_url: Option<&str>,
         connector_id: &str,
@@ -302,7 +305,7 @@ impl IngestService {
         }
 
         self.progress(task_id, "storing…");
-        self.graph.upsert_nodes(&nodes).await?;
+        self.graph.upsert_nodes(ctx, &nodes).await?;
         Ok(SyncSummary {
             issues,
             pull_requests,
@@ -393,9 +396,32 @@ impl IngestService {
         }
     }
 
+    /// Text files (path + content) from the studio-session checkout of one repo,
+    /// so the portal can run analysis (spec-quality) over the actual repository
+    /// rather than a hand-picked file. Empty when the checkout has not been
+    /// materialized yet (the IDE has not cloned it).
+    pub async fn read_repo_files(
+        &self,
+        workspace_id: &str,
+        repo_dir: &str,
+    ) -> anyhow::Result<Vec<(String, String)>> {
+        let Some(dir) = self.shared_checkout_dir(Some(workspace_id), Some(repo_dir)) else {
+            return Ok(Vec::new());
+        };
+        let (walked, _commit) = self.walk_checkout(dir).await?;
+        Ok(walked
+            .into_iter()
+            .filter_map(|f| f.text.map(|t| (f.path, t)))
+            .collect())
+    }
+
     /// Read ingested nodes back for the portal, optionally filtered by type
     /// substring (`issue`, `pull_request`, `file`, `repo`).
-    pub async fn list_nodes(&self, type_filter: Option<&str>) -> anyhow::Result<Vec<GtsNode>> {
-        self.graph.list(type_filter).await
+    pub async fn list_nodes(
+        &self,
+        ctx: &SecurityContext,
+        type_filter: Option<&str>,
+    ) -> anyhow::Result<Vec<GtsNode>> {
+        self.graph.list(ctx, type_filter).await
     }
 }

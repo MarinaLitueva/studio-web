@@ -131,8 +131,38 @@ pub struct RemotePullRequest {
     pub updated_at: Option<String>,
 }
 
+/// A repository tree read at a ref, for the knowledge-graph sync.
+#[derive(Debug, Clone)]
+pub struct RepoTree {
+    /// The ref the tree was actually read at (default branch when none asked).
+    pub git_ref: String,
+    /// Every entry (files and directories) in the tree.
+    pub entries: Vec<RepoTreeEntry>,
+    /// Whether the provider truncated the tree for a very large repository.
+    pub truncated: bool,
+}
+
+/// One entry of a [`RepoTree`].
+#[derive(Debug, Clone)]
+pub struct RepoTreeEntry {
+    /// Repo-relative path.
+    pub path: String,
+    /// `true` for a directory (tree), `false` for a file (blob).
+    pub is_dir: bool,
+}
+
+/// A contributor to a repository, for the knowledge-graph sync.
+#[derive(Debug, Clone)]
+pub struct Contributor {
+    /// Provider login.
+    pub login: String,
+    /// Display name, when the provider exposes it.
+    pub display_name: Option<String>,
+    /// Commit count attributed to this contributor.
+    pub contributions: u64,
+}
+
 #[async_trait]
-#[cfg_attr(not(feature = "graph"), allow(dead_code))]
 pub trait ConnectorDriver: Send + Sync + 'static {
     /// Stable provider key used in the API and the UI (`gitlab`, `github`).
     fn provider(&self) -> &'static str;
@@ -254,5 +284,36 @@ pub trait ConnectorDriver: Send + Sync + 'static {
     /// "token as password" shape; providers override the username.
     fn clone_credentials<'a>(&self, token: &'a str) -> (&'static str, &'a str) {
         ("x-access-token", token)
+    }
+
+    /// The full recursive tree of a repository at `git_ref` (the default branch
+    /// when `None`), for the knowledge-graph sync. Defaulted to an error for a
+    /// non-source driver.
+    async fn repo_tree(
+        &self,
+        auth: &ConnectionAuth,
+        repo_full_path: &str,
+        git_ref: Option<&str>,
+    ) -> anyhow::Result<RepoTree> {
+        let _ = (auth, repo_full_path, git_ref);
+        Err(anyhow::anyhow!(
+            "{} does not expose a repository tree",
+            self.display_name()
+        ))
+    }
+
+    /// The top contributors to a repository (up to `max`), for the
+    /// knowledge-graph sync. Defaulted to an error for a non-source driver.
+    async fn contributors(
+        &self,
+        auth: &ConnectionAuth,
+        repo_full_path: &str,
+        max: u32,
+    ) -> anyhow::Result<Vec<Contributor>> {
+        let _ = (auth, repo_full_path, max);
+        Err(anyhow::anyhow!(
+            "{} does not expose contributors",
+            self.display_name()
+        ))
     }
 }

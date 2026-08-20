@@ -727,6 +727,16 @@ export const api = {
       files: number;
     }>(`/studio-artifact-ingest/v1/tasks/${encodeURIComponent(taskId)}`, token),
 
+  /** Text files (path + content) from a repository's IDE checkout, for running
+   * analysis over the actual repo. Empty until the IDE has cloned it. */
+  repoFiles: (token: string, workspaceId: string, repoDir: string) =>
+    request<{ files: { path: string; text: string }[] }>(
+      `/studio-artifact-ingest/v1/repo-files?workspace_id=${encodeURIComponent(
+        workspaceId,
+      )}&repo_dir=${encodeURIComponent(repoDir)}`,
+      token,
+    ),
+
   /** Read back the ingested artifact nodes, optionally filtered by type
    * substring (`issue`, `pull_request`, `file`, `repo`). */
   listArtifactNodes: (token: string, type?: string) =>

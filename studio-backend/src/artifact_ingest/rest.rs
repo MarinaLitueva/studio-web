@@ -127,6 +127,28 @@ pub struct ArtifactNodeListResponse {
     pub nodes: Vec<ArtifactNodeDto>,
 }
 
+#[derive(Debug, serde::Deserialize)]
+pub struct RepoFilesQuery {
+    /// Workspace the repo belongs to.
+    pub workspace_id: String,
+    /// The repo's directory under the workspace root (its `target`/`name`).
+    pub repo_dir: String,
+}
+
+/// One text file from the repository checkout.
+#[derive(Debug)]
+#[toolkit_macros::api_dto(response)]
+pub struct RepoFileDto {
+    pub path: String,
+    pub text: String,
+}
+
+#[derive(Debug)]
+#[toolkit_macros::api_dto(response)]
+pub struct RepoFilesResponse {
+    pub files: Vec<RepoFileDto>,
+}
+
 async fn sync(
     Extension(ctx): Extension<SecurityContext>,
     Extension(ingest): Extension<Ingest>,
@@ -141,6 +163,7 @@ async fn sync(
         .await
         .map_err(|e| CanonicalError::internal(format!("{e:#}")).create())?;
     let task_id = svc.enqueue_sync(
+        ctx,
         req.provider.trim().to_string(),
         req.base_url
             .as_deref()
@@ -195,14 +218,14 @@ async fn task_status(
 }
 
 async fn list_nodes(
-    Extension(_ctx): Extension<SecurityContext>,
+    Extension(ctx): Extension<SecurityContext>,
     Extension(ingest): Extension<Ingest>,
     Query(q): Query<NodesQuery>,
 ) -> ApiResult<JsonBody<ArtifactNodeListResponse>> {
     let svc = ingest.get()?;
     let filter = q.r#type.as_deref().map(str::trim).filter(|s| !s.is_empty());
     let nodes = svc
-        .list_nodes(filter)
+        .list_nodes(&ctx, filter)
         .await
         .map_err(|e| CanonicalError::internal(format!("{e:#}")).create())?;
     Ok(Json(ArtifactNodeListResponse {
@@ -222,6 +245,24 @@ async fn list_nodes(
                     value,
                 }
             })
+            .collect(),
+    }))
+}
+
+async fn repo_files(
+    Extension(_ctx): Extension<SecurityContext>,
+    Extension(ingest): Extension<Ingest>,
+    Query(q): Query<RepoFilesQuery>,
+) -> ApiResult<JsonBody<RepoFilesResponse>> {
+    let svc = ingest.get()?;
+    let files = svc
+        .read_repo_files(q.workspace_id.trim(), q.repo_dir.trim())
+        .await
+        .map_err(|e| CanonicalError::internal(format!("{e:#}")).create())?;
+    Ok(Json(RepoFilesResponse {
+        files: files
+            .into_iter()
+            .map(|(path, text)| RepoFileDto { path, text })
             .collect(),
     }))
 }
@@ -282,6 +323,23 @@ pub fn register_routes(
             StatusCode::OK,
             "Ingested nodes",
         )
+        .error_401(openapi)
+        .error_500(openapi)
+        .register(router, openapi);
+
+    let router = OperationBuilder::get("/studio-artifact-ingest/v1/repo-files")
+        .operation_id("studio_artifact_ingest.repo_files")
+        .summary("Text files from a repository checkout")
+        .description(
+            "Returns the text files (path and content) of the studio-session \
+             checkout for one repository, so analysis can run over the actual \
+             repo. Empty until the IDE has cloned it.",
+        )
+        .tag("StudioArtifactIngest")
+        .authenticated()
+        .require_license_features::<License>([])
+        .handler(repo_files)
+        .json_response_with_schema::<RepoFilesResponse>(openapi, StatusCode::OK, "Repository files")
         .error_401(openapi)
         .error_500(openapi)
         .register(router, openapi);

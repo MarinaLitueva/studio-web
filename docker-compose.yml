@@ -216,7 +216,10 @@ services:
       keycloak:
         condition: service_started
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8090/healthz"]
+      # /cf/health is the endpoint the gateway actually serves (proven 200);
+      # the bare /healthz was never mounted, so the probe stayed red forever and
+      # the frontend — gated on `backend healthy` — never started.
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8090/cf/health"]
       interval: 10s
       timeout: 3s
       # Long grace before any failure counts against the backend: a healthy first
@@ -281,6 +284,24 @@ services:
         restart: true
     # nginx.conf proxies /cf/ to http://studio-backend:8090 — the service's
     # container_name above must stay in sync with it.
+
+  # Prototype portal — the fast-moving UI (Artifacts, Spec Quality, Overview).
+  # Same build pattern as `frontend` (context = repo root); BACKEND_HOST is
+  # baked into its image, and nginx proxies /cf/ to the backend. Published on
+  # 8081 so it can run alongside the main portal on 8080. Part of the compose
+  # project now, so `--remove-orphans` no longer deletes it.
+  frontend-prototype:
+    build:
+      context: .
+      dockerfile: studio-frontend-prototype/Dockerfile.src
+    container_name: studio-frontend-prototype
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8081:8080"   # nginx-unprivileged listens on 8080 inside
+    depends_on:
+      backend:
+        condition: service_healthy
+        restart: true
 
 volumes:
   studio_graph_pg_data:
