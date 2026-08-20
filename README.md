@@ -18,20 +18,20 @@ docker compose up --build -d
 # API/docs: http://localhost:8090/cf/docs
 ```
 
-Requires Docker (Desktop with WSL integration is fine) and a `gears-rust` checkout as a
-sibling of this repo. The first build compiles the whole gears workspace — grab a
-coffee; rebuilds are cached. Stop with `docker compose down` (add `-v` to wipe data).
+Requires Docker (Desktop with WSL integration is fine). `gears-rust` is a git dependency
+pinned in `Cargo.toml`, so cargo fetches it during the image build — no sibling checkout
+is needed. The first build compiles the whole gears workspace — grab a coffee; rebuilds
+are cached. Stop with `docker compose down` (add `-v` to wipe data).
 
-**Fresh / empty database:** on a brand-new Postgres volume a plain `up` deadlocks — the
-LLM chain's `oagw` gear needs the root tenant in its `post_init`, but account-management
-only seeds the root later (serve phase). Use the two-step bring-up instead, which seeds
-the root with a no-LLM backend first, then starts the full stack:
-
-```bash
-./scripts/dev-up.sh
-```
-
-It's idempotent — safe to use on a warm volume too (the seed step is then a no-op).
+**Fresh / empty database — handled automatically.** On a brand-new Postgres volume the
+LLM chain's `oagw` gear would otherwise abort boot: it resolves the platform root tenant
+in its `post_init`, but account-management only seeds that root later, in its serve
+phase. A plain `docker compose up` now closes this chicken-and-egg by itself — a one-shot
+`backend-bootstrap` service (built `--no-default-features`, so no `oagw`) starts first,
+reaches serve, seeds and realm-binds the root, then exits. The main backend is gated on
+that seeder finishing (`service_completed_successfully`), so it only starts against an
+already-seeded database. On a warm volume the seeder is a fast no-op and leaves nothing
+running — the same `docker compose up` works cold or warm.
 
 **Prototype playground:** the pre-FrontX SPA comes up with the stack automatically —
 http://localhost:8081 (own image, same backend, same `/cf/` proxy).
@@ -124,6 +124,26 @@ user UUID and whose `tenant_id` claim (from a user attribute, see
 through `http_client.custom_ca_certificate_paths`) and maps claims into the
 platform SecurityContext. mini-chat's background S2S goes through the same
 realm (`s2s_oauth`, confidential client `mini-chat`).
+
+### User provisioning (official Keycloak IdP plugin)
+
+Inviting a user in the portal creates a real Keycloak user, not a local stub. Account-
+management drives this through the official `cf-gears-keycloak-idp-plugin` (it replaced
+the in-crate plugin): every tenant is bound to a Keycloak realm, and user operations
+(invite, list) run against that realm.
+
+All Studio tenants share one realm, `studio`. The binding is seeded once, at bootstrap —
+`account-management.bootstrap.root_tenant_metadata: { realm_name: "studio" }` binds the
+platform root, and every descendant (organization → workspace → project) inherits
+`studio` through its parent context. There is nothing per-tenant to configure, and no
+`idp_provisioning` flag is needed: account-management provisions every tenant with its
+IdP plugin regardless.
+
+Because the binding is written at bootstrap, it exists only on tenants created after it
+was configured — turning it on requires a fresh database (`docker compose down -v`). The
+`studio-admin` confidential client in `docker/keycloak/realm-studio.json` already carries
+the `realm-management` roles the plugin needs, so `docker compose up` wires everything
+with no manual Keycloak steps. Full swap notes: `studio-backend/docs/keycloak-idp-migration.md`.
 
 ### Cloning from a self-hosted GitLab (or GitHub Enterprise)
 

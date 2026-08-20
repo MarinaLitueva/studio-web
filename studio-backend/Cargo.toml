@@ -167,6 +167,10 @@ static_authz_plugin = { package = "cf-gears-static-authz-plugin", git = "https:/
 # account-management ships its own Tenant Resolver plugin (src/tr_plugin) in-crate.
 account_management = { package = "cf-gears-account-management", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
 static_idp_plugin = { package = "cf-gears-static-idp-plugin", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
+# Official Keycloak IdP plugin — full tenant/user/service-account lifecycle over
+# the Keycloak Admin API. Replaces the in-crate src/keycloak_idp_plugin.rs (which
+# is no longer `mod`-ed in main.rs). See docs/keycloak-idp-migration.md.
+keycloak_idp_plugin = { package = "cf-gears-keycloak-idp-plugin", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
 
 # ── Feature gears: AI chat, per-user settings, file storage ──
 # mini-chat hard-depends on oagw (LLM egress); oagw depends on credstore.

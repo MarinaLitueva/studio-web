@@ -213,6 +213,14 @@ gears:
       vendor: "cf"
       priority: 100
 
+  # The official keycloak-idp-plugin is linked in the binary but has no Keycloak
+  # to reach in this profile — keep it dormant so its init doesn't try (and fail)
+  # to pre-warm an admin token. static-idp (echo, vendor "cf") above stays the
+  # active IdP here.
+  keycloak-idp-plugin:
+    config:
+      enabled: false
+
   # ── Feature gears: per-user settings, files, AI chat ──
 
   simple-user-settings:
