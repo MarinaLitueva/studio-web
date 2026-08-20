@@ -20,20 +20,14 @@ import {
   api,
   ApiError,
   UNAUTHENTICATED_EVENT,
-  PROJECT_RG_TYPE,
   shortTypeName,
   TENANT_TYPES,
-  USER_MEMBER_HANDLE,
   type Connection,
   type ConnectorProvider,
-  type Group,
   type Me,
-  type Project,
   type RemoteRepo,
   type RepoEntry,
-  type Stage,
   type Tenant,
-  type User,
   type WorkspaceSettings,
 } from "./api";
 
@@ -434,7 +428,7 @@ const NAV_SECTIONS: {
   {
     title: "Work",
     items: [
-      { id: "projects", icon: "grid", label: "Projects" },
+      { id: "projects", icon: "grid", label: "Workspaces" },
       { id: "people", icon: "users", label: "People" },
       // Shared connector catalogue. It is owned by the hidden organization —
       // which is exactly why it sits here and not inside one project: every
@@ -487,14 +481,6 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
   // and the portfolio share one selection. null = "resolve a sensible default".
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
   const [orgNavMenu, setOrgNavMenu] = useState(false);
-  const [projNavMenu, setProjNavMenu] = useState(false);
-  // The open project's active tab. Lifted here so the sidebar can BE the project
-  // nav when a project is open (the experiment) instead of a nav inside the page.
-  const [projectTab, setProjectTab] = useState<ProjectTab>("overview");
-  // Opening a different project starts on its Overview.
-  useEffect(() => {
-    setProjectTab("overview");
-  }, [crumb.projectId]);
   // Admin area (console pattern): a separate mode with its own sidebar for
   // organizations / members / workspaces administration.
   const [adminOpen, setAdminOpen] = useState(false);
@@ -819,13 +805,8 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
     null;
   const activeOrg = orgOptions.find((o) => o.id === activeOrgResolvedId) ?? null;
 
-  // The experiment: when a project is open the sidebar shows that project's nav
-  // instead of the organization's. A project is "open" when we're on the
-  // projects view with a project in the crumb and no admin/space overlay.
-  const activeProject = workspaces.find((w) => w.id === crumb.projectId) ?? null;
-  const inProject = !adminOpen && view === "projects" && !!activeProject;
-  // Projects of the org in context — the project switcher's list.
-  const orgProjects = workspaces.filter((w) => w.orgId === activeOrgResolvedId);
+  // Org → Workspace → Project lives entirely in the content area (breadcrumbs +
+  // a self-contained project screen), so the sidebar stays organization-level.
 
   const panelView: PanelView = dash ? "dashboard" : view;
 
@@ -1065,86 +1046,7 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
                 )}
               </div>
             </div>
-            {inProject && activeProject ? (
-              // ── Project context: the sidebar IS the project's nav ──
-              <>
-                {/* Project switcher — same shape as the org one above it: pick
-                    another project of this organization, or jump back to the
-                    whole list via the extra "All projects" entry. */}
-                <div className="nav-section org-nav proj-nav">
-                  <div className="org-select-wrap">
-                    <button
-                      type="button"
-                      className="org-select"
-                      title={activeProject.name}
-                      onClick={() => setProjNavMenu((v) => !v)}
-                    >
-                      <span className="account-avatar small">
-                        {activeProject.name.slice(0, 1).toUpperCase()}
-                      </span>
-                      <span className="org-select-name">{activeProject.name}</span>
-                      <span className="chev">▾</span>
-                    </button>
-                    {projNavMenu && (
-                      <div className="org-menu">
-                        {orgProjects.map((p) => (
-                          <button
-                            key={p.id}
-                            type="button"
-                            className={p.id === activeProject.id ? "on" : ""}
-                            onClick={() => {
-                              setCrumb({ projectId: p.id });
-                              setProjectTab("overview");
-                              setActiveSpace(null);
-                              setProjNavMenu(false);
-                            }}
-                          >
-                            <span className="account-avatar small">
-                              {p.name.slice(0, 1).toUpperCase()}
-                            </span>
-                            {p.name}
-                          </button>
-                        ))}
-                        <button
-                          type="button"
-                          className="org-new"
-                          title="Back to the organization's projects"
-                          onClick={() => {
-                            setCrumb({});
-                            setActiveSpace(null);
-                            setProjNavMenu(false);
-                          }}
-                        >
-                          ▤ All projects
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                {PROJECT_NAV.map((g) => (
-                  <div
-                    key={g.group}
-                    className={`nav-section nav-section-${g.group.toLowerCase().replace(/\s+/g, "-")}`}
-                  >
-                    <div className="nav-section-title">{g.group}</div>
-                    {g.items.map((t) => (
-                      <button
-                        key={t.id}
-                        className={projectTab === t.id && !crumb.nestedId && !activeSpace ? "active" : ""}
-                        title={t.label}
-                        onClick={() => {
-                          setCrumb({ projectId: activeProject.id }); // leave any open Work
-                          setProjectTab(t.id);
-                          setActiveSpace(null);
-                        }}
-                      >
-                        <span className="ico"><NavIcon name={t.icon} /></span> {t.label}
-                      </button>
-                    ))}
-                  </div>
-                ))}
-              </>
-            ) : (
+            {
               // ── Organization context: work surfaces of the whole org ──
               NAV_SECTIONS.map((sec) => {
                 const items = sec.items;
@@ -1170,7 +1072,7 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
                   </div>
                 );
               })
-            )}
+            }
             </>
           )}
           {spaces.length > 0 && (
@@ -1478,8 +1380,6 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
             setCrumb={setCrumb}
             projectLabel={projectLabel}
             setProjectLabel={setProjectLabel}
-            projectTab={projectTab}
-            setProjectTab={setProjectTab}
             onChanged={refresh}
             onOpenStudio={setStudio}
           />
@@ -1822,10 +1722,10 @@ function ContextPane({
       ))}
 
       <div className="ctx-head">
-        <span>Projects</span>
+        <span>Workspaces</span>
         <button
           type="button"
-          title="New project"
+          title="New workspace"
           disabled={!activeOrgId && !createOrgId}
           onClick={() => setAdding((v) => (v === "ws" ? null : "ws"))}
         >
@@ -1836,7 +1736,7 @@ function ContextPane({
         <div className="ctx-add">
           <input
             autoFocus
-            placeholder="Project name"
+            placeholder="Workspace name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => {
@@ -1849,7 +1749,7 @@ function ContextPane({
         </div>
       )}
       {list.length === 0 ? (
-        <p className="empty">No projects yet.</p>
+        <p className="empty">No workspaces yet.</p>
       ) : (
         list.map((w) => (
           <div key={w.id} className={`ctx-row${crumb.projectId === w.id ? " on" : ""}`}>
@@ -1873,9 +1773,10 @@ function ContextPane({
  */
 
 interface Crumb {
-  /** Root project: the AM tenant of type `workspace`. */
+  /** Open workspace: the AM tenant of type `workspace` (child of an org).
+   *  (Field name kept as `projectId` so the surrounding Shell keeps working.) */
   projectId?: string;
-  /** Nested project: the `studio-project` gear record inside it. */
+  /** Open project: the AM tenant of type `project` (child of the workspace). */
   nestedId?: string;
 }
 
@@ -1912,8 +1813,6 @@ function ProjectsView({
   setCrumb,
   projectLabel,
   setProjectLabel,
-  projectTab,
-  setProjectTab,
   onChanged,
   onOpenStudio,
 }: {
@@ -1928,18 +1827,13 @@ function ProjectsView({
   setCrumb: (c: Crumb) => void;
   projectLabel?: string;
   setProjectLabel: (n: string | undefined) => void;
-  /** Open project's active tab — the sidebar owns this now (see the shell). */
-  projectTab: ProjectTab;
-  setProjectTab: (t: ProjectTab) => void;
   onChanged: () => void;
   onOpenStudio: (target: StudioTarget) => void;
 }) {
-  // The organization is now chosen in the sidebar, so the portfolio just shows
-  // the projects of the one in context.
   const orgRoots = workspaces.filter((w) => w.orgId === orgId);
-
   const root = workspaces.find((w) => w.id === crumb.projectId);
 
+  // Level 1 — the portfolio of workspaces (org children of type workspace).
   if (!root) {
     return (
       <ProjectsPortfolio
@@ -1951,22 +1845,10 @@ function ProjectsView({
         sort={filters.sort}
         homeOrgId={orgId}
         onOpen={(r) => setCrumb({ projectId: r.id })}
-        onOpenNested={(r, p) => {
-          setProjectLabel(p.name);
-          setCrumb({ projectId: r.id, nestedId: p.id });
-        }}
         onOpenStudio={(r) => {
           const ws = workspaces.find((w) => w.id === r.id);
           if (ws) onOpenStudio(ws);
         }}
-        onOpenStudioNested={(_root, p) =>
-          onOpenStudio({
-            id: p.id,
-            name: p.name,
-            standalone: true,
-            root: p.git_url ? { repoUrl: p.git_url } : undefined,
-          })
-        }
         onChanged={onChanged}
       />
     );
@@ -1974,274 +1856,282 @@ function ProjectsView({
 
   const trail: { label: string; onClick?: () => void }[] = [
     ...(activeOrg ? [{ label: activeOrg.name, onClick: () => setCrumb({}) }] : []),
-    { label: "Projects", onClick: () => setCrumb({}) },
+    { label: "Workspaces", onClick: () => setCrumb({}) },
     {
       label: root.name,
       onClick: crumb.nestedId ? () => setCrumb({ projectId: root.id }) : undefined,
     },
   ];
-  if (crumb.nestedId) trail.push({ label: projectLabel ?? "work" });
+  if (crumb.nestedId) trail.push({ label: projectLabel ?? "project" });
 
+  // Level 3 — an open project (its own AM tenant): a self-contained screen.
+  if (crumb.nestedId) {
+    return (
+      <>
+        <Breadcrumbs items={trail} />
+        <ProjectScreen
+          key={crumb.nestedId}
+          token={token}
+          projectTenantId={crumb.nestedId}
+          workspace={root}
+          filters={filters}
+          onBack={() => setCrumb({ projectId: root.id })}
+          onOpenStudio={onOpenStudio}
+        />
+      </>
+    );
+  }
+
+  // Level 2 — the workspace's projects.
   return (
     <>
       <Breadcrumbs items={trail} />
-      {crumb.nestedId ? (
-        <NestedProjectLevel
-          key={crumb.nestedId}
-          token={token}
-          root={root}
-          nestedId={crumb.nestedId}
-          fallbackName={projectLabel}
-          onBack={() => setCrumb({ projectId: root.id })}
-        />
-      ) : (
-        <ProjectDetail
-          key={root.id}
-          token={token}
-          root={root}
-          filters={filters}
-          tab={projectTab}
-          setTab={setProjectTab}
-          onBack={() => setCrumb({})}
-          onOpenStudio={onOpenStudio}
-          onOpenNested={(p) => {
-            setProjectLabel(p.name);
-            setCrumb({ projectId: root.id, nestedId: p.id });
-          }}
-          onChanged={onChanged}
-        />
-      )}
+      <WorkspaceProjects
+        token={token}
+        workspace={root}
+        onOpenProject={(p) => {
+          setProjectLabel(p.name);
+          setCrumb({ projectId: root.id, nestedId: p.id });
+        }}
+        onChanged={onChanged}
+      />
     </>
   );
 }
 
-/** Tabs of one project. Everything a project owns is here — that is what makes
- *  it the unit of work rather than a container you have to select first. */
-type ProjectTab =
-  | "overview"
-  | "nested"
-  | "artifacts"
-  | "analyze"
-  | "people"
-  | "integrations"
-  | "secrets";
-
-/** Project-scoped nav. When a project is open this replaces the organization
- *  nav in the sidebar (the experiment: the sidebar follows what you're in).
- *  Ids are unchanged — the content switch still keys off them. */
-const PROJECT_NAV: { group: string; items: { id: ProjectTab; icon: string; label: string }[] }[] = [
-  {
-    group: "Project",
-    items: [
-      { id: "overview", icon: "home", label: "Overview" },
-      { id: "nested", icon: "grid", label: "Works" },
-      { id: "artifacts", icon: "file", label: "Artifacts" },
-      { id: "analyze", icon: "scan", label: "Spec Quality" },
-      { id: "people", icon: "users", label: "Team" },
-    ],
-  },
-  {
-    group: "Project setup",
-    items: [
-      { id: "integrations", icon: "plug", label: "Connectors" },
-      { id: "secrets", icon: "key", label: "Secrets" },
-    ],
-  },
-];
-
-function ProjectDetail({
+/** Level 2: the projects (child tenants of type `project`) inside a workspace,
+ *  plus a "New project" that creates a project tenant + its config metadata. */
+function WorkspaceProjects({
   token,
-  root,
-  filters,
-  tab,
-  setTab,
-  onBack,
-  onOpenStudio,
-  onOpenNested,
+  workspace,
+  onOpenProject,
   onChanged,
 }: {
   token: string;
-  root: Workspace;
-  filters: Filters;
-  /** Active tab and its setter — owned by the shell so the SIDEBAR is the nav. */
-  tab: ProjectTab;
-  setTab: (t: ProjectTab) => void;
-  onBack: () => void;
-  onOpenStudio: (target: StudioTarget) => void;
-  onOpenNested: (p: Project) => void;
+  workspace: Workspace;
+  onOpenProject: (p: { id: string; name: string }) => void;
   onChanged: () => void;
 }) {
+  const [projects, setProjects] = useState<{ id: string; name: string }[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newMode, setNewMode] = useState<import("./api").ProjectMode>("greenfield");
+
+  const reload = useCallback(async () => {
+    setErr(null);
+    try {
+      const page = await api.tenantChildren(token, workspace.id);
+      setProjects(
+        (page.items ?? [])
+          .filter((t) => t.tenant_type === TENANT_TYPES.project)
+          .map((t) => ({ id: t.id, name: t.name })),
+      );
+    } catch (e) {
+      setErr(errText(e));
+    }
+  }, [token, workspace.id]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  const create = async () => {
+    const name = newName.trim();
+    if (!name) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const tenant = await api.createTenant(token, {
+        name,
+        parent_id: workspace.id,
+        tenant_type: TENANT_TYPES.project,
+      });
+      await api
+        .putProjectConfig(token, tenant.id, { mode: newMode, stages: [], status: "draft" })
+        .catch(() => {});
+      setNewName("");
+      setCreating(false);
+      await reload();
+      onChanged();
+      onOpenProject({ id: tenant.id, name });
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <>
       <div className="topbar">
         <div>
-          <h1>{root.name}</h1>
+          <h1>{workspace.name}</h1>
           <p className="subtitle" style={{ margin: 0 }}>
-            project · <code>{root.id.slice(0, 8)}…</code>
-            {root.self_managed ? " · self-managed" : ""}
+            workspace · <code>{workspace.id.slice(0, 8)}…</code>
+          </p>
+        </div>
+        <button className="primary" onClick={() => setCreating((v) => !v)}>
+          New project
+        </button>
+      </div>
+      {err && <div className="error">{err}</div>}
+      {creating && (
+        <div className="card">
+          <div className="card-head">
+            <h2>New project</h2>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <input
+              placeholder="Project name"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+            />
+            <select
+              value={newMode}
+              onChange={(e) => setNewMode(e.target.value as import("./api").ProjectMode)}
+            >
+              <option value="greenfield">Build something new</option>
+              <option value="modernize">Modernize existing</option>
+            </select>
+            <button className="primary" onClick={() => void create()} disabled={!newName.trim() || busy}>
+              {busy ? "Creating…" : "Create"}
+            </button>
+            <button className="ghost" onClick={() => setCreating(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      <div className="card">
+        <div className="card-head">
+          <h2>Projects{projects ? ` · ${projects.length}` : ""}</h2>
+        </div>
+        {projects === null ? (
+          <p className="empty">Loading…</p>
+        ) : projects.length === 0 ? (
+          <p className="empty">
+            No projects yet — create one to get a codebase context (sources, IDE, artifacts).
+          </p>
+        ) : (
+          <ul className="rows">
+            {projects.map((p) => (
+              <li key={p.id}>
+                <div className="grow">
+                  <div className="name">{p.name}</div>
+                  <div className="sub">
+                    <code>{p.id.slice(0, 8)}…</code>
+                  </div>
+                </div>
+                <button className="ghost" onClick={() => onOpenProject(p)}>
+                  Open
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </>
+  );
+}
+
+/** Level 3: one project (its own AM tenant). Self-contained tabbed screen —
+ *  the code context (sources, IDE, artifacts, spec-quality) is scoped to this
+ *  tenant, so every tab operates on the project tenant id. */
+function ProjectScreen({
+  token,
+  projectTenantId,
+  workspace,
+  filters,
+  onBack,
+  onOpenStudio,
+}: {
+  token: string;
+  projectTenantId: string;
+  workspace: Workspace;
+  filters: Filters;
+  onBack: () => void;
+  onOpenStudio: (target: StudioTarget) => void;
+}) {
+  const [tenant, setTenant] = useState<Tenant | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [tab, setTab] = useState<"overview" | "artifacts" | "analyze" | "people">("overview");
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .tenant(token, projectTenantId)
+      .then((t) => {
+        if (!cancelled) setTenant(t);
+      })
+      .catch((e) => {
+        if (!cancelled) setErr(errText(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, projectTenantId]);
+
+  if (err) return <div className="error">{err}</div>;
+  if (!tenant) return <p className="empty">Loading project…</p>;
+
+  // A project tenant, presented as a Workspace so the existing tab components
+  // (which take a Workspace) operate on it unchanged.
+  const proj = { ...tenant, orgId: workspace.orgId, orgName: workspace.orgName } as Workspace;
+  const tabs: { id: typeof tab; label: string }[] = [
+    { id: "overview", label: "Overview" },
+    { id: "artifacts", label: "Artifacts" },
+    { id: "analyze", label: "Spec Quality" },
+    { id: "people", label: "Team" },
+  ];
+
+  return (
+    <>
+      <div className="topbar">
+        <div>
+          <h1>{tenant.name}</h1>
+          <p className="subtitle" style={{ margin: 0 }}>
+            project · <code>{tenant.id.slice(0, 8)}…</code>
           </p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={onBack}>← All projects</button>
-          <button className="primary" onClick={() => onOpenStudio(root)}>
+          <button onClick={onBack}>← {workspace.name}</button>
+          <button className="primary" onClick={() => onOpenStudio(proj)}>
             Open Studio
           </button>
         </div>
       </div>
-
-      {/* The nav for these tabs now lives in the sidebar (the experiment); this
-          page is just the content of the selected tab. */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            className={tab === t.id ? "primary" : "ghost"}
+            onClick={() => setTab(t.id)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
       <div className="proj-content">
-          {tab === "overview" && (
-            <WorkspaceDashboard token={token} ws={root} embedded onBack={onBack} onOpenStudio={onOpenStudio} />
-          )}
-          {tab === "nested" && (
-            <WorkspaceProjectsCard
-              token={token}
-              ws={root}
-              onChanged={onChanged}
-              onOpen={onOpenNested}
-              onOpenStudio={onOpenStudio}
-            />
-          )}
-          {tab === "artifacts" && (
-            <ArtifactsView token={token} workspace={root} onOpenStudio={onOpenStudio} />
-          )}
-          {tab === "analyze" && <SpecQuality token={token} workspaceId={root.id} />}
-          {tab === "people" && (
-            <PeopleView
-              token={token}
-              mode="team"
-              org={{ id: root.orgId, name: root.orgName }}
-              roots={[root]}
-              query={filters.query}
-              onOpenProject={() => setTab("overview")}
-            />
-          )}
-          {tab === "integrations" && (
-            <ConnectorsView token={token} workspace={root} filters={filters} />
-          )}
-          {tab === "secrets" && <SecretsView token={token} workspaces={[root]} filters={filters} />}
+        {tab === "overview" && (
+          <WorkspaceDashboard token={token} ws={proj} embedded onBack={onBack} onOpenStudio={onOpenStudio} />
+        )}
+        {tab === "artifacts" && (
+          <ArtifactsView token={token} workspace={proj} onOpenStudio={onOpenStudio} />
+        )}
+        {tab === "analyze" && <SpecQuality token={token} workspaceId={proj.id} />}
+        {tab === "people" && (
+          <PeopleView
+            token={token}
+            mode="team"
+            org={{ id: proj.orgId, name: proj.orgName }}
+            roots={[proj]}
+            query={filters.query}
+            onOpenProject={() => setTab("overview")}
+          />
+        )}
       </div>
-    </>
-  );
-}
-
-/** One nested project.
- *
- *  Honest boundary: the gear stores the shape (greenfield vs modernize), the
- *  journey stages, the status and the member group — and that is all there is.
- *  What belongs here next is the execution plan the planner already writes to
- *  `.cf-studio/.plans/`, served instead of living only on disk. */
-function NestedProjectLevel({
-  token,
-  root,
-  nestedId,
-  fallbackName,
-  onBack,
-}: {
-  token: string;
-  root: Workspace;
-  nestedId: string;
-  fallbackName?: string;
-  onBack: () => void;
-}) {
-  const [project, setProject] = useState<Project | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void api.project(token, nestedId, root.id).then(
-      (p) => {
-        if (!cancelled) setProject(p);
-      },
-      (e) => {
-        if (!cancelled) setError(errText(e));
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [token, nestedId, root.id]);
-
-  return (
-    <>
-      <div className="topbar">
-        <div>
-          <h1>{project?.name ?? fallbackName ?? "Nested project"}</h1>
-          <p className="subtitle" style={{ margin: 0 }}>
-            nested in {root.name}
-            {project ? ` · ${project.mode === "modernize" ? "modernization" : "new build"}` : ""}
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={onBack}>← {root.name}</button>
-        </div>
-      </div>
-      {error && <div className="error">{error}</div>}
-
-      {project && (
-        <div className="card">
-          <h2>Shape</h2>
-          <ul className="rows">
-            <li>
-              <div className="grow">
-                <div className="sub">Status</div>
-                <div className="name">{project.status}</div>
-              </div>
-            </li>
-            <li>
-              <div className="grow">
-                <div className="sub">{project.mode === "modernize" ? "Imported from" : "Brief"}</div>
-                <div className="name">
-                  {project.mode === "modernize"
-                    ? project.git_url || "uploaded archive"
-                    : project.brief?.trim() || "— none given —"}
-                </div>
-              </div>
-            </li>
-            <li>
-              <div className="grow">
-                <div className="sub">Journey stages</div>
-                <div className="name">{project.stages.join(", ") || "none"}</div>
-              </div>
-            </li>
-          </ul>
-          <p className="hint">
-            The plan itself — phases, briefs and outputs — is still written to{" "}
-            <code>.cf-studio/.plans/</code> by the planner and has no server surface yet. This page
-            is where it lands when it gets one.
-          </p>
-        </div>
-      )}
-
-      {project?.members_group_id ? (
-        <ProjectMembers
-          token={token}
-          /* Membership stayed on Resource Group (ADR-0002), so the group the
-             gear created is what this needs. */
-          project={{
-            id: project.members_group_id,
-            type: PROJECT_RG_TYPE,
-            name: project.name,
-            hierarchy: { parent_id: null, tenant_id: root.id, depth: 0 },
-            metadata: { workspace_id: root.id },
-          }}
-          workspace={root}
-          onClose={onBack}
-        />
-      ) : (
-        project && (
-          <div className="card">
-            <h2>Members</h2>
-            <p className="empty">
-              No Resource Group member list exists for this project — resource-group was unavailable
-              when it was created, so there is nothing to show rather than an empty list pretending
-              otherwise.
-            </p>
-          </div>
-        )
-      )}
     </>
   );
 }
@@ -2887,561 +2777,6 @@ function SystemView({ token, filters }: { token: string; filters: Filters }) {
    In the domain model a Project is a managed object of type Project — a
    graph object inside a workspace's context, not a control-plane citizen.
    Hence no top-level Projects view: they live on the Workspace Dashboard. */
-
-/** Pick a repository through one of the project's connectors and hand back its
- *  clone URL — so a modernization's source can be chosen from a list instead of
- *  pasting a URL. Uses the same connections + list-repositories the Sources tab
- *  does; auth for private repos is resolved by the workspace at launch. */
-function NestedRepoPicker({
-  token,
-  workspace,
-  onPick,
-}: {
-  token: string;
-  workspace: Workspace;
-  onPick: (url: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [connections, setConnections] = useState<Connection[] | null>(null);
-  const [connId, setConnId] = useState("");
-  const [search, setSearch] = useState("");
-  const [repos, setRepos] = useState<RemoteRepo[] | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!open || connections) return;
-    void api.connections(token, workspace.id).then(
-      (c) => {
-        setConnections(c.items);
-        if (c.items[0]) setConnId(c.items[0].id);
-      },
-      (e) => setErr(errText(e)),
-    );
-  }, [open, connections, token, workspace.id]);
-
-  const load = useCallback(
-    async (q: string) => {
-      if (!connId) return;
-      setErr(null);
-      setRepos(null);
-      try {
-        const r = await api.connectionRepositories(token, connId, workspace.id, q);
-        setRepos(r.items);
-      } catch (e) {
-        setErr(errText(e));
-        setRepos([]);
-      }
-    },
-    [token, connId, workspace.id],
-  );
-
-  useEffect(() => {
-    if (open && connId) void load("");
-  }, [open, connId, load]);
-
-  if (!open) {
-    return (
-      <button type="button" className="ghost" style={{ marginTop: 6 }} onClick={() => setOpen(true)}>
-        Pick from a connector…
-      </button>
-    );
-  }
-
-  return (
-    <div className="nested" style={{ marginTop: 6 }}>
-      {err && <p className="error">{err}</p>}
-      {connections && connections.length === 0 ? (
-        <p className="empty">
-          No connectors on this project yet — add one on the Sources tab, then pick a repository here.
-        </p>
-      ) : (
-        <>
-          <div className="row">
-            <select value={connId} onChange={(e) => setConnId(e.target.value)}>
-              {(connections ?? []).map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.label} ({c.provider})
-                </option>
-              ))}
-            </select>
-            <input
-              className="grow"
-              placeholder="Search repositories…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void load(search);
-              }}
-            />
-            <button type="button" onClick={() => void load(search)}>
-              Search
-            </button>
-            <button type="button" className="ghost" onClick={() => setOpen(false)}>
-              Cancel
-            </button>
-          </div>
-          {repos === null ? (
-            <p className="empty">Loading repositories…</p>
-          ) : repos.length === 0 ? (
-            <p className="empty">Nothing reachable with this connector.</p>
-          ) : (
-            <ul className="rows">
-              {repos.map((r) => (
-                <li key={r.id}>
-                  <div className="grow">
-                    <div className="name">{r.full_path}</div>
-                    <div className="sub">{r.default_branch ?? "default branch"}</div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onPick(r.clone_url);
-                      setOpen(false);
-                    }}
-                  >
-                    Use
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
-function WorkspaceProjectsCard({
-  token,
-  ws,
-  onChanged,
-  onOpen,
-  onOpenStudio,
-}: {
-  token: string;
-  ws: Workspace;
-  onChanged?: () => void;
-  /** Drill into the project level. Absent when the card is embedded somewhere
-   *  that has no navigation of its own. */
-  onOpen?: (p: Project) => void;
-  /** Launch a Studio session for a nested project — its own session (keyed by
-   *  the project id) cloning its own source, independent of the root's. */
-  onOpenStudio?: (target: StudioTarget) => void;
-}) {
-  const wsId = ws.id;
-  const [projects, setProjects] = useState<Project[] | null>(null);
-  /** Fetched, not hardcoded: the gear validates against this catalogue, so a
-   *  local copy that drifts shows up as a checkbox that does nothing. */
-  const [stages, setStages] = useState<Stage[]>([]);
-  const [openProject, setOpenProject] = useState<Project | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  // Creation form. Mode is the first choice because it decides what the rest of
-  // the form even asks for — the two options are two different shapes, not one
-  // shape with a switch.
-  const [mode, setMode] = useState<"greenfield" | "modernize">("greenfield");
-  const [name, setName] = useState("");
-  const [picked, setPicked] = useState<string[]>([]);
-  const [brief, setBrief] = useState("");
-  const [gitUrl, setGitUrl] = useState("");
-  // The create form is collapsed by default so it doesn't crowd the list.
-  const [creating, setCreating] = useState(false);
-
-  const load = useCallback(async () => {
-    setError(null);
-    setOpenProject(null);
-    try {
-      const page = await api.projects(token, wsId);
-      setProjects(page.items ?? []);
-    } catch (e) {
-      setError(errText(e));
-    }
-  }, [token, wsId]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await api.projectStages(token);
-        if (cancelled) return;
-        const items = res.items ?? [];
-        setStages(items);
-        // Everything on by default; unticking is easier than hunting for what
-        // you meant to include. Required stages are applied by the backend
-        // whether or not they are sent.
-        setPicked(items.map((s) => s.key));
-      } catch {
-        /* the catalogue is cosmetic — creation still works without it */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
-
-  function toggle(key: string) {
-    setPicked((cur) => (cur.includes(key) ? cur.filter((k) => k !== key) : [...cur, key]));
-  }
-
-  const canCreate =
-    !!name.trim() && !busy && (mode === "greenfield" || !!gitUrl.trim());
-
-  async function create(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setBusy(true);
-    try {
-      await api.createProject(token, {
-        name: name.trim(),
-        mode,
-        stages: picked,
-        workspace_id: wsId,
-        ...(mode === "greenfield"
-          ? brief.trim()
-            ? { brief: brief.trim() }
-            : {}
-          : { git_url: gitUrl.trim() }),
-      });
-      setName("");
-      setBrief("");
-      setGitUrl("");
-      setCreating(false);
-      await load();
-      onChanged?.();
-    } catch (err) {
-      setError(errText(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function move(p: Project, status: "active" | "archived") {
-    setError(null);
-    try {
-      await api.patchProject(token, p.id, { status }, wsId);
-      await load();
-      onChanged?.();
-    } catch (err) {
-      setError(errText(err));
-    }
-  }
-
-  async function removeProject(p: Project) {
-    if (!window.confirm(`Delete work \u201c${p.name}\u201d (members included)?`)) return;
-    setError(null);
-    try {
-      await api.deleteProject(token, p.id, wsId);
-      await load();
-      onChanged?.();
-    } catch (err) {
-      setError(errText(err));
-    }
-  }
-
-  const visible = projects ?? [];
-
-  return (
-    <>
-      <div className="card">
-        <div className="card-head">
-          <h2>Works</h2>
-          <button className="primary" onClick={() => setCreating((v) => !v)}>
-            {creating ? "Cancel" : "New work"}
-          </button>
-        </div>
-        <p className="hint">
-          The stages of work on this project — each Work with its own repositories and artifacts.
-          Each Work's record lives in the studio-project gear (ADR-0005); membership stays on
-          Resource Group, so a Work without a member group says so rather than showing an empty list.
-        </p>
-
-        {projects && (
-          <>
-            {projects.length === 0 ? (
-              <p className="empty" style={{ marginTop: 12 }}>
-                No works in “{ws.name}” yet.
-              </p>
-            ) : (
-              <ul className="rows" style={{ marginTop: 12 }}>
-                {visible.map((p) => (
-                  <li key={p.id}>
-                    <div className="grow">
-                      <div className="name">{p.name}</div>
-                      <div className="sub">
-                        {p.mode === "modernize" ? p.git_url || "uploaded archive" : "new build"}
-                        {" \u00b7 "}
-                        {p.stages.length} stages
-                      </div>
-                    </div>
-                    <span className="badge">{p.status}</span>
-                    {onOpen && <button onClick={() => onOpen(p)}>Open</button>}
-                    {onOpenStudio && (
-                      <button
-                        className="primary"
-                        title="Open a Studio session for this work — its own workspace, cloning its own source"
-                        onClick={() =>
-                          onOpenStudio({
-                            id: p.id,
-                            name: p.name,
-                            standalone: true,
-                            root: p.git_url ? { repoUrl: p.git_url } : undefined,
-                          })
-                        }
-                      >
-                        Open Studio
-                      </button>
-                    )}
-                    {p.status === "draft" && (
-                      <button onClick={() => void move(p, "active")}>Activate</button>
-                    )}
-                    {p.status !== "archived" && (
-                      <button onClick={() => void move(p, "archived")}>Archive</button>
-                    )}
-                    <button
-                      onClick={() => setOpenProject(p)}
-                      disabled={!p.members_available}
-                      title={
-                        p.members_available
-                          ? "Project members"
-                          : "No member group for this project \u2014 resource-group was unavailable when it was created"
-                      }
-                    >
-                      members
-                    </button>
-                    <button
-                      className="ghost"
-                      title="Delete work"
-                      onClick={() => void removeProject(p)}
-                    >
-                      ✕
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            {creating && (
-              <form onSubmit={create} className="work-create">
-              {/* Two shapes, picked first: a greenfield work starts from a
-                  description, a modernization from existing code. */}
-              <div className="inline" style={{ gap: 8 }}>
-                <button
-                  type="button"
-                  className={mode === "greenfield" ? "primary" : ""}
-                  onClick={() => setMode("greenfield")}
-                >
-                  Build something new
-                </button>
-                <button
-                  type="button"
-                  className={mode === "modernize" ? "primary" : ""}
-                  onClick={() => setMode("modernize")}
-                >
-                  Modernize existing code
-                </button>
-              </div>
-
-              <div className="inline" style={{ marginTop: 8 }}>
-                <input
-                  placeholder="Work name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                />
-              </div>
-
-              {stages.length > 0 && (
-                <div>
-                  <div className="field-label">Journey stages</div>
-                  <div className="stage-grid">
-                    {stages.map((s) => (
-                      <label key={s.key}>
-                        <input
-                          type="checkbox"
-                          checked={s.required || picked.includes(s.key)}
-                          disabled={s.required}
-                          onChange={() => toggle(s.key)}
-                        />
-                        {s.label}
-                        {s.required && <span className="badge">required</span>}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {mode === "greenfield" ? (
-                <textarea
-                  style={{ marginTop: 8, width: "100%", minHeight: 96 }}
-                  placeholder="Describe the product idea, or paste a PRD / meeting notes (optional)"
-                  value={brief}
-                  onChange={(e) => setBrief(e.target.value)}
-                />
-              ) : (
-                <div style={{ marginTop: 8 }}>
-                  <div className="inline">
-                    <input
-                      style={{ flex: 1 }}
-                      placeholder="Repository URL to import, e.g. https://gitlab.constr.dev/team/app.git"
-                      value={gitUrl}
-                      onChange={(e) => setGitUrl(e.target.value)}
-                    />
-                  </div>
-                  {/* Or pick from a connector instead of pasting a URL. */}
-                  <NestedRepoPicker token={token} workspace={ws} onPick={setGitUrl} />
-                  {/* Deliberately visible and disabled rather than absent: the
-                      backend accepts a file_id, but file-storage moves bytes
-                      through a data-plane sidecar that this deployment does not
-                      run, so there is no way to obtain one. Showing the option
-                      greyed out with the reason beats a button that 500s. */}
-                  <label
-                    className="hint"
-                    style={{ display: "block", marginTop: 6, opacity: 0.6 }}
-                    title="file-storage needs its data-plane sidecar for uploads; it is not deployed here"
-                  >
-                    <input type="checkbox" disabled /> Upload an archive instead —
-                    unavailable in this deployment (file-storage sidecar not running)
-                  </label>
-                </div>
-              )}
-
-              <div className="inline" style={{ marginTop: 12 }}>
-                <button className="primary" disabled={!canCreate}>
-                  {busy ? "Creating\u2026" : "Create work"}
-                </button>
-                <button type="button" onClick={() => setCreating(false)}>
-                  Cancel
-                </button>
-              </div>
-              </form>
-            )}
-          </>
-        )}
-        {error && <div className="error">{error}</div>}
-      </div>
-
-      {openProject && openProject.members_group_id && (
-        <ProjectMembers
-          key={openProject.id}
-          token={token}
-          /* ProjectMembers speaks RG: membership stayed there (ADR-0002), so the
-             group the gear created is what it needs. */
-          project={{
-            id: openProject.members_group_id,
-            type: PROJECT_RG_TYPE,
-            name: openProject.name,
-            hierarchy: { parent_id: null, tenant_id: wsId, depth: 0 },
-            metadata: { workspace_id: wsId },
-          }}
-          workspace={ws}
-          onClose={() => setOpenProject(null)}
-        />
-      )}
-    </>
-  );
-}
-
-function ProjectMembers({
-  token,
-  project,
-  workspace,
-  onClose,
-}: {
-  token: string;
-  project: Group;
-  workspace: Workspace;
-  onClose: () => void;
-}) {
-  const [memberIds, setMemberIds] = useState<string[]>([]);
-  const [wsUsers, setWsUsers] = useState<User[]>([]);
-  const [pick, setPick] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const [ms, users] = await Promise.all([
-        api.memberships(token),
-        api.tenantUsers(token, workspace.id),
-      ]);
-      setMemberIds(
-        (ms.items ?? [])
-          .filter((m) => m.group_id === project.id && m.resource_type === USER_MEMBER_HANDLE)
-          .map((m) => m.resource_id),
-      );
-      setWsUsers(users.items ?? []);
-    } catch (e) {
-      setError(errText(e));
-    }
-  }, [token, project.id, workspace.id]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  async function add(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    try {
-      await api.addMembership(token, project.id, USER_MEMBER_HANDLE, pick);
-      setPick("");
-      await load();
-    } catch (err) {
-      setError(errText(err));
-    }
-  }
-
-  const byId = new Map(wsUsers.map((u) => [u.id, u]));
-  const candidates = wsUsers.filter((u) => !memberIds.includes(u.id));
-
-  return (
-    <div className="card">
-      <div className="card-head">
-        <h2>
-          Members of “{project.name}” <span className="sub">({workspace.name})</span>
-        </h2>
-        <button className="ghost" onClick={onClose}>
-          close
-        </button>
-      </div>
-      {memberIds.length === 0 ? (
-        <p className="empty">No members yet.</p>
-      ) : (
-        <ul className="rows">
-          {memberIds.map((id) => {
-            const u = byId.get(id);
-            return (
-              <li key={id}>
-                <div className="grow">
-                  <div className="name">{u?.display_name ?? u?.username ?? id}</div>
-                  <div className="sub">{u ? u.username : "person outside this project"}</div>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-      <form className="inline" onSubmit={add}>
-        <select value={pick} onChange={(e) => setPick(e.target.value)}>
-          <option value="">Add someone from this project…</option>
-          {candidates.map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.display_name ?? u.username}
-            </option>
-          ))}
-        </select>
-        <button className="primary" disabled={!pick}>
-          Add
-        </button>
-      </form>
-      {error && <div className="error">{error}</div>}
-    </div>
-  );
-}
 
 /* ── Organizations ── */
 

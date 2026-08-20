@@ -374,13 +374,10 @@ fn deny() -> EvaluationResponse {
 /// Map a platform request `(resource_type, action)` to a Studio privilege id
 /// (the portal's `access.ts` catalogue). TODO(step 4): complete the table and
 /// key off the real Studio GTS resource-type ids.
-fn privilege_for(resource_type: &str, action: &str) -> Option<&'static str> {
-    match (resource_type, action) {
-        // studio-project is the backend "project" = the portal's Work.
-        (rt, "list" | "get") if rt.contains("studio.project") => Some("work.view"),
-        (rt, "create") if rt.contains("studio.project") => Some("work.create"),
-        (rt, "update") if rt.contains("studio.project") => Some("work.edit"),
-        (rt, "delete") if rt.contains("studio.project") => Some("work.archive"),
-        _ => None,
-    }
+fn privilege_for(_resource_type: &str, _action: &str) -> Option<&'static str> {
+    // studio-project (the portal's "Work") has been retired — projects are now
+    // AM tenants and their access is governed by tenant membership, not by a
+    // Studio privilege grant. No Studio resource type is role-mapped yet, so
+    // every request falls through to the caller's tenant-scoping branch.
+    None
 }
