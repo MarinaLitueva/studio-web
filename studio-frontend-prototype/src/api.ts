@@ -30,15 +30,24 @@ export interface Page<T> {
 export const TENANT_TYPES = {
   organization: "gts.cf.core.am.tenant_type.v1~cf.studio.tenant.organization.v1~",
   workspace: "gts.cf.core.am.tenant_type.v1~cf.studio.tenant.workspace.v1~",
+  /** A project is now its own AM tenant, child of a workspace — its codebase
+   *  context (sources, IDE, artifacts, spec-quality) is tenant-scoped on it. */
+  project: "gts.cf.core.am.tenant_type.v1~cf.studio.tenant.project.v1~",
 } as const;
 
-// Project MEMBERSHIP is Resource Group-backed: an RG group of this type, bound
-// to a workspace via metadata.workspace_id. The project RECORD moved out of RG
-// into the studio-project gear (ADR-0005) — see the `project` client below.
-// The gear registers this type itself at start, so setup-projects.sh is only
-// needed against a backend that predates it.
-export const PROJECT_RG_TYPE = "gts.cf.core.rg.type.v1~cf.studio.project.v1~";
-export const USER_MEMBER_HANDLE = "gts.cf.core.rg.type.v1~cf.core.am.user.v1~";
+/** Project attributes stored as tenant metadata on the project tenant. */
+export const PROJECT_CONFIG_TYPE =
+  "gts.cf.core.am.tenant_metadata.v1~cf.studio.project.config.v1~";
+
+/** The project attributes carried in PROJECT_CONFIG_TYPE metadata. */
+export interface ProjectConfig {
+  mode?: ProjectMode;
+  stages?: string[];
+  status?: ProjectStatus;
+  /** Seed source: a git url, a brief, or an uploaded file id. */
+  source_git_url?: string;
+  brief?: string;
+}
 
 // Workspace settings live as AM tenant metadata (schema seeded by the backend config).
 export const WS_SETTINGS_TYPE = "gts.cf.core.am.tenant_metadata.v1~cf.studio.workspace.settings.v1~";
@@ -46,61 +55,12 @@ export const WS_SETTINGS_TYPE = "gts.cf.core.am.tenant_metadata.v1~cf.studio.wor
 // mechanism as workspace settings (schema seeded by the backend config).
 export const ACCESS_TYPE = "gts.cf.core.am.tenant_metadata.v1~cf.studio.access.config.v1~";
 
-/** One journey stage from `GET /studio-project/v1/stages`.
- *  Fetched rather than hardcoded: the gear validates against this catalogue,
- *  and a client-side copy that drifts shows up as a checkbox that does nothing. */
-export interface Stage {
-  key: string;
-  label: string;
-  /** Always applied — render it ticked and disabled. */
-  required: boolean;
-}
-
 /** The two creation shapes. A greenfield project has no source to import; a
- *  modernization has exactly one. The backend rejects any other combination. */
+ *  modernization has exactly one. Carried in a project's config metadata. */
 export type ProjectMode = "greenfield" | "modernize";
 
 /** Forward-only: draft -> active -> archived, and archived is terminal. */
 export type ProjectStatus = "draft" | "active" | "archived";
-
-export interface Project {
-  id: string;
-  workspace_id: string;
-  name: string;
-  mode: ProjectMode;
-  status: ProjectStatus;
-  stages: string[];
-  /** Greenfield only. */
-  brief?: string | null;
-  /** Modernize via repository. */
-  git_url?: string | null;
-  /** Modernize via an archive already in file-storage. */
-  file_id?: string | null;
-  members_group_id?: string | null;
-  /** `false` when the project has no RG member group — explain the missing
-   *  member list rather than rendering an empty one. */
-  members_available: boolean;
-  created_by: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface NewProjectInput {
-  name: string;
-  mode: ProjectMode;
-  /** Required stages are added by the backend whether or not they are sent. */
-  stages: string[];
-  /** Greenfield: the idea, pasted PRD or notes. */
-  brief?: string;
-  /** Modernize: mutually exclusive with file_id. */
-  git_url?: string;
-  /** Modernize: mutually exclusive with git_url. NB uploads need the
-   *  file-storage data-plane sidecar, which the compose stack does not run —
-   *  see the note on `project.uploadAvailable`. */
-  file_id?: string;
-  /** Omitted = the caller's own tenant. */
-  workspace_id?: string;
-}
 
 export type RepoSource = "local" | "git" | "github" | "gitlab";
 
@@ -464,51 +424,6 @@ export const api = {
       { method: "PATCH", body: JSON.stringify(input) },
     ),
 
-  /* ── Projects (studio-project gear, ADR-0005) ── */
-
-  /** The stage catalogue the gear validates against. */
-  projectStages: (token: string) =>
-    request<{ items: Stage[] }>("/studio-project/v1/stages", token),
-
-  projects: (token: string, workspaceId?: string) =>
-    request<{ items: Project[] }>(
-      `/studio-project/v1/projects${workspaceId ? `?tenant=${workspaceId}` : ""}`,
-      token,
-    ),
-
-  project: (token: string, id: string, workspaceId?: string) =>
-    request<Project>(
-      `/studio-project/v1/projects/${id}${workspaceId ? `?tenant=${workspaceId}` : ""}`,
-      token,
-    ),
-
-  createProject: (token: string, input: NewProjectInput) =>
-    request<Project>("/studio-project/v1/projects", token, {
-      method: "POST",
-      body: JSON.stringify(input),
-    }),
-
-  /** Rename, replace the stage selection, or move the status forward.
-   *  `stages` is a full replacement, not a delta. */
-  patchProject: (
-    token: string,
-    id: string,
-    input: { name?: string; stages?: string[]; status?: ProjectStatus },
-    workspaceId?: string,
-  ) =>
-    request<Project>(
-      `/studio-project/v1/projects/${id}${workspaceId ? `?tenant=${workspaceId}` : ""}`,
-      token,
-      { method: "PATCH", body: JSON.stringify(input) },
-    ),
-
-  deleteProject: (token: string, id: string, workspaceId?: string) =>
-    request<void>(
-      `/studio-project/v1/projects/${id}${workspaceId ? `?tenant=${workspaceId}` : ""}`,
-      token,
-      { method: "DELETE" },
-    ),
-
   /* ── Workspace settings (AM tenant metadata) ── */
 
   workspaceSettings: async (token: string, tenantId: string): Promise<WorkspaceSettings | null> => {
@@ -592,6 +507,27 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(value), // transparent payload; GTS-validated server-side
     }),
+
+  /* ── Project attributes (AM tenant metadata on the project tenant) ── */
+  projectConfig: async (token: string, tenantId: string): Promise<ProjectConfig | null> => {
+    try {
+      const entry = await request<{ value: ProjectConfig }>(
+        `/account-management/v1/tenants/${tenantId}/metadata/${PROJECT_CONFIG_TYPE}`,
+        token,
+      );
+      return entry.value;
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return null;
+      throw e;
+    }
+  },
+
+  putProjectConfig: (token: string, tenantId: string, value: ProjectConfig) =>
+    request<unknown>(
+      `/account-management/v1/tenants/${tenantId}/metadata/${PROJECT_CONFIG_TYPE}`,
+      token,
+      { method: "PUT", body: JSON.stringify(value) },
+    ),
 
   /* ── Organization access config (AM tenant metadata) ── */
 

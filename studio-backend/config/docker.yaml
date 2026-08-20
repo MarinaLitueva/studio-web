@@ -159,6 +159,17 @@ gears:
           x-gts-traits:
             allowed_parent_types: ["gts.cf.core.am.tenant_type.v1~cf.studio.tenant.organization.v1~"]
             idp_provisioning: false
+        # Studio project tenant: the leaf of Org → Workspace → Project. A project
+        # is its own codebase context (sources, IDE session, artifact graph,
+        # spec-quality) — all of which are already tenant-scoped, so the id of
+        # this tenant is what the session/ingest/settings paths key on.
+        - "$id": "gts://gts.cf.core.am.tenant_type.v1~cf.studio.tenant.project.v1~"
+          "$schema": "http://json-schema.org/draft-07/schema#"
+          description: "Studio project tenant (a codebase context inside a workspace)"
+          type: "object"
+          x-gts-traits:
+            allowed_parent_types: ["gts.cf.core.am.tenant_type.v1~cf.studio.tenant.workspace.v1~"]
+            idp_provisioning: false
         # Connector driver contract (see oidc.yaml for the rationale).
         - "$id": "gts://gts.cf.toolkit.plugins.plugin.v1~cf.studio.connector.plugin.v1~"
           "$schema": "http://json-schema.org/draft-07/schema#"
@@ -182,6 +193,15 @@ gears:
           # client-side until the base schema is relaxed upstream.
           "$schema": "http://json-schema.org/draft-07/schema#"
           description: "Studio workspace settings (free-form until gears issue #4)"
+          type: "object"
+          x-gts-traits:
+            inheritance_policy: "override_only"
+        - "$id": "gts://gts.cf.core.am.tenant_metadata.v1~cf.studio.project.config.v1~"
+          # Project attributes on the project tenant: {mode, stages[], status,
+          # source}. Free-form for the same gears issue #4 reason as the settings
+          # above; shape enforced client-side. Per-tenant (not inherited).
+          "$schema": "http://json-schema.org/draft-07/schema#"
+          description: "Studio project attributes (mode, stages, status, source) — free-form until gears issue #4"
           type: "object"
           x-gts-traits:
             inheritance_policy: "override_only"
@@ -437,21 +457,10 @@ gears:
           value_env: "STUDIO_ANTHROPIC_API_KEY"
           sharing: "shared"
 
-  # ── Projects (ADR-0005) ──
-  # Two creation shapes (greenfield / modernize), journey stages with a
-  # mandatory Intent, and a forward-only status ladder — the reasons this is a
-  # gear and not Resource Group metadata. Membership stays on RG per ADR-0002,
-  # and this gear registers the RG project type at start, which retires the
-  # manual demo/setup-projects.sh step.
-  #
-  # Uploaded codebases go to the file-storage gear over REST; only the file id
-  # is stored here. There is no in-process path to storage to take even if we
-  # wanted one — FileStorageClientV1 is still a stub with one method.
-  studio-project:
-    database:
-      server: "pg_main"
-      dbname: "studio_projects"
-    config: {}
+  # Projects (ADR-0005 studio-project gear) retired: a project is now an AM
+  # tenant (type cf.studio.tenant.project.v1~) and its attributes live in the
+  # cf.studio.project.config.v1~ tenant metadata, so there is no separate
+  # project gear or studio_projects database.
 
   studio-session:
     config:

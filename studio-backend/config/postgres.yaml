@@ -347,21 +347,9 @@ gears:
   # ── Studio's own gear: per-workspace Theia IDE sessions in containers ──
   # Requires a Docker daemon; the CI-published image is pulled/refreshed
   # automatically (docker login ghcr.io once if the package is private).
-  # ── Projects (ADR-0005) ──
-  # Two creation shapes (greenfield / modernize), journey stages with a
-  # mandatory Intent, and a forward-only status ladder — the reasons this is a
-  # gear and not Resource Group metadata. Membership stays on RG per ADR-0002,
-  # and this gear registers the RG project type at start, which retires the
-  # manual demo/setup-projects.sh step.
-  #
-  # Uploaded codebases go to the file-storage gear over REST; only the file id
-  # is stored here. There is no in-process path to storage to take even if we
-  # wanted one — FileStorageClientV1 is still a stub with one method.
-  studio-project:
-    database:
-      server: "pg_main"
-      dbname: "studio_projects"
-    config: {}
+  # Projects (ADR-0005 studio-project gear) retired: a project is now an AM
+  # tenant (type cf.studio.tenant.project.v1~) with its attributes in the
+  # cf.studio.project.config.v1~ tenant metadata — no separate project gear.
 
   studio-session:
     config:
