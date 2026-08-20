@@ -22,23 +22,11 @@
 name: studio
 
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: studio-backend-pg
-    environment:
-      POSTGRES_USER: studio
-      POSTGRES_PASSWORD: ${STUDIO_PG_PASSWORD:-studio}
-      POSTGRES_DB: studio
-    ports:
-      - "127.0.0.1:5432:5432"
-    volumes:
-      - studio_pg_data:/var/lib/postgresql/data
-      - ./studio-backend/docker/initdb:/docker-entrypoint-initdb.d:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U studio -d studio"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
+  # Variant B: a SINGLE Postgres for the whole assembly. The graph-postgres
+  # service below (PostgreSQL 19 + pgvector) is the only database instance —
+  # it hosts every gear database AND graph_storage. The former postgres:16
+  # service ("studio-backend-pg") was removed; config/docker.yaml now points
+  # both server aliases (pg_main, pg_graph) at graph-postgres.
 
   # OIDC IdP for real login (config/oidc.yaml profile). Dev-grade: self-signed
   # TLS (certs in docker/keycloak/certs, CA trusted by the backend via
@@ -125,20 +113,23 @@ services:
     build:
       context: studio-backend/docker/graph-postgres
     container_name: studio-graph-pg
+    # The single instance for the whole assembly (Variant B). User/db renamed to
+    # `studio` so the gear databases (created by the init script) and graph_storage
+    # all share one superuser; graph_storage is created by the init script now.
     environment:
-      POSTGRES_USER: graph
-      POSTGRES_PASSWORD: ${STUDIO_GRAPH_PG_PASSWORD:-graph}
-      POSTGRES_DB: graph_storage
+      POSTGRES_USER: studio
+      POSTGRES_PASSWORD: ${STUDIO_PG_PASSWORD:-studio}
+      POSTGRES_DB: studio
     ports:
-      # 5433 on the host: 5432 belongs to `postgres`, and the graph-storage
-      # prototype stacks already hold 55432/55433.
       - "127.0.0.1:5433:5432"
     volumes:
       # postgres:18+ images keep data in a versioned subdirectory and expect
       # the mount one level up, which also leaves room for pg_upgrade.
       - studio_graph_pg_data:/var/lib/postgresql
+      # Per-gear databases + graph_storage, created once on first volume init.
+      - ./studio-backend/docker/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U graph -d graph_storage"]
+      test: ["CMD-SHELL", "pg_isready -U studio -d studio"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -198,11 +189,9 @@ services:
     ports:
       - "127.0.0.1:8090:8090"   # direct API + /cf/docs
     depends_on:
-      # Postgres HAS to be healthy: the backend runs its migrations during boot
-      # and exits non-zero if the databases are not reachable.
-      postgres:
-        condition: service_healthy
-      # Same reason as `postgres`: the graph-storage migrations run during boot.
+      # The single Postgres HAS to be healthy: the backend runs every gear's
+      # migrations (and graph-storage's) during boot and exits non-zero if the
+      # databases are not reachable.
       graph-postgres:
         condition: service_healthy
       # Keycloak only has to be STARTED, not healthy. Nothing in the backend's
@@ -258,7 +247,7 @@ services:
       - /srv/cf-studio-workspaces:/srv/cf-studio-workspaces
       - ./docker/keycloak/certs/dev-ca.pem:/app/certs/dev-ca.pem:ro
     depends_on:
-      postgres:
+      graph-postgres:
         condition: service_healthy
       keycloak:
         condition: service_started
@@ -309,10 +298,7 @@ services:
         restart: true
 
 volumes:
+  # The single Postgres instance's data (Variant B). The former studio_pg_data
+  # volume (postgres:16) is retired; on an existing machine it simply goes
+  # unused — data now lives here on the PG19 instance.
   studio_graph_pg_data:
-  studio_pg_data:
-    # Pinned to the volume created by the ORIGINAL studio-backend compose
-    # project (before `name: studio` unified everything): regrouping the
-    # containers must not orphan the Postgres data. Fresh machines simply
-    # get a volume with this name.
-    name: studio-backend_studio_pg_data
