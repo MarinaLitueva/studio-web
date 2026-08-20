@@ -13,6 +13,8 @@
 
 mod clone;
 mod graph;
+#[cfg(feature = "graph")]
+mod graph_backend;
 mod gts;
 mod rest;
 mod service;
@@ -51,73 +53,41 @@ pub struct StudioArtifactIngestGear {
 impl Gear for StudioArtifactIngestGear {
     async fn init(&self, ctx: &GearCtx) -> anyhow::Result<()> {
         // Register the artifact GTS type schemas (idempotent — same documents
-        // every boot).
+        // every boot). The rest of the wiring — drivers, credstore, and the
+        // graph store — is resolved in the REST phase, where every gear is
+        // initialized: the graph-storage client must not be fetched in `init`,
+        // which has no ordering guarantee against the graph-storage gear.
         let registry = ctx.client_hub().get::<dyn TypesRegistryClient>()?;
         let results = registry.register(gts::type_schemas()).await?;
         RegisterResult::ensure_all_ok(&results)?;
-
-        // Resolve the source connector drivers by the same ClientHub ids the
-        // connector gear uses. A provider whose plugin is not linked is skipped.
-        let mut drivers: HashMap<String, Arc<dyn ConnectorDriver>> = HashMap::new();
-        for id in crate::connectors::source_driver_ids() {
-            if let Ok(d) = ctx
-                .client_hub()
-                .get_scoped::<dyn ConnectorDriver>(&ClientScope::gts_id(id))
-            {
-                drivers.insert(d.provider().to_string(), d);
-            }
-        }
-
-        // Preferred file source: the studio-session workspaces root. When the
-        // IDE has cloned a repo into `{root}/{workspace_id}/{repo_dir}`, ingest
-        // reads that same checkout — one shared clone. Mirrors the session
-        // gear's default (`~/.cf-studio-workspaces`) and its `~` expansion.
-        let workspaces_root = resolve_dir("STUDIO_WORKSPACES_ROOT")
-            .or_else(|| resolve_home_relative(".cf-studio-workspaces"));
-        if let Some(r) = &workspaces_root {
-            info!(dir = %r.display(), "studio-artifact-ingest: reading files from the session workspaces root when present");
-        }
-
-        // Optional fallback: our own shallow clone volume. Off unless
-        // STUDIO_ARTIFACT_WORKDIR is set — with the shared workspace as the
-        // primary source, most deployments leave this unset (tree API otherwise).
-        let work_root = match resolve_dir("STUDIO_ARTIFACT_WORKDIR") {
-            Some(path) => match std::fs::create_dir_all(&path) {
-                Ok(()) => {
-                    info!(dir = %path.display(), "studio-artifact-ingest: fallback own-clone volume enabled");
-                    Some(path)
-                }
-                Err(e) => {
-                    warn!(dir = %path.display(), error = %e, "studio-artifact-ingest: fallback work dir not usable");
-                    None
-                }
-            },
-            None => None,
-        };
-
-        let service = if drivers.is_empty() {
-            warn!(
-                "studio-artifact-ingest: no connector driver plugins registered — \
-                 /sync will answer 503"
-            );
-            None
-        } else {
-            let credstore = ctx.client_hub().get::<dyn CredStoreClientV1>()?;
-            Some(Arc::new(IngestService::new(
-                credstore,
-                drivers,
-                Arc::new(InMemoryGraphStore::default()),
-                workspaces_root,
-                work_root,
-            )))
-        };
-
-        self.service
-            .set(service)
-            .map_err(|_| anyhow::anyhow!("studio-artifact-ingest gear already initialized"))?;
-        info!("studio-artifact-ingest: initialized");
+        info!("studio-artifact-ingest: types registered");
         Ok(())
     }
+}
+
+/// Resolve the artifact graph store. Prefers the real graph-storage gear (when
+/// the `graph` feature is on and its client is published); otherwise the
+/// in-memory fallback so the pipeline still runs and the portal still shows
+/// what was ingested.
+fn build_graph_store(ctx: &GearCtx) -> Arc<dyn graph::GraphStore> {
+    #[cfg(feature = "graph")]
+    {
+        match ctx
+            .client_hub()
+            .get::<dyn crate::graph_storage::sdk::GraphStorageClientV1>()
+        {
+            Ok(client) => {
+                info!("studio-artifact-ingest: using the graph-storage gear as the artifact graph store");
+                return Arc::new(graph_backend::GraphStorageBackend::new(client));
+            }
+            Err(e) => warn!(
+                error = %e,
+                "studio-artifact-ingest: graph-storage client unavailable — using the in-memory store"
+            ),
+        }
+    }
+    let _ = ctx;
+    Arc::new(InMemoryGraphStore::default())
 }
 
 /// A directory path from an env var, `~`-expanded, or `None` if unset/empty.
@@ -146,11 +116,69 @@ fn resolve_home_relative(rel: &str) -> Option<PathBuf> {
 impl RestApiCapability for StudioArtifactIngestGear {
     fn register_rest(
         &self,
-        _ctx: &GearCtx,
+        ctx: &GearCtx,
         router: Router,
         openapi: &dyn OpenApiRegistry,
     ) -> anyhow::Result<Router> {
-        let service = self.service.get().cloned().flatten();
+        // Resolve the source connector drivers by the same ClientHub ids the
+        // connector gear uses. A provider whose plugin is not linked is skipped.
+        let mut drivers: HashMap<String, Arc<dyn ConnectorDriver>> = HashMap::new();
+        for id in crate::connectors::source_driver_ids() {
+            if let Ok(d) = ctx
+                .client_hub()
+                .get_scoped::<dyn ConnectorDriver>(&ClientScope::gts_id(id))
+            {
+                drivers.insert(d.provider().to_string(), d);
+            }
+        }
+
+        let service = if drivers.is_empty() {
+            warn!(
+                "studio-artifact-ingest: no connector driver plugins registered — \
+                 /sync will answer 503"
+            );
+            None
+        } else {
+            let credstore = ctx.client_hub().get::<dyn CredStoreClientV1>()?;
+            let graph = build_graph_store(ctx);
+
+            // Preferred file source: the studio-session workspaces root. When
+            // the IDE has cloned a repo into `{root}/{workspace_id}/{repo_dir}`,
+            // ingest reads that same checkout — one shared clone. Mirrors the
+            // session gear's default (`~/.cf-studio-workspaces`).
+            let workspaces_root = resolve_dir("STUDIO_WORKSPACES_ROOT")
+                .or_else(|| resolve_home_relative(".cf-studio-workspaces"));
+            if let Some(r) = &workspaces_root {
+                info!(dir = %r.display(), "studio-artifact-ingest: reading files from the session workspaces root when present");
+            }
+
+            // Optional fallback: our own shallow clone volume (off unless
+            // STUDIO_ARTIFACT_WORKDIR is set).
+            let work_root = match resolve_dir("STUDIO_ARTIFACT_WORKDIR") {
+                Some(path) => match std::fs::create_dir_all(&path) {
+                    Ok(()) => {
+                        info!(dir = %path.display(), "studio-artifact-ingest: fallback own-clone volume enabled");
+                        Some(path)
+                    }
+                    Err(e) => {
+                        warn!(dir = %path.display(), error = %e, "studio-artifact-ingest: fallback work dir not usable");
+                        None
+                    }
+                },
+                None => None,
+            };
+
+            Some(Arc::new(IngestService::new(
+                credstore,
+                drivers,
+                graph,
+                workspaces_root,
+                work_root,
+            )))
+        };
+
+        // Retain for the process lifetime; the router also owns a clone.
+        let _ = self.service.set(service.clone());
         Ok(rest::register_routes(router, openapi, service))
     }
 }

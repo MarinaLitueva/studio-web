@@ -247,6 +247,7 @@ export function SpecQuality({
   const [stopped, setStopped] = useState(false);
   // Ingested-artifact loader state (the "From artifacts" button).
   const [loadingArtifacts, setLoadingArtifacts] = useState(false);
+  const [loadingRepo, setLoadingRepo] = useState(false);
   const [artifactNote, setArtifactNote] = useState<string>("");
   const abortRef = useRef<AbortController | null>(null);
 
@@ -331,6 +332,54 @@ export function SpecQuality({
       setLoadingArtifacts(false);
     }
   }, [token]);
+
+  // Load the cloned repository's own files (from the IDE workspace checkout) as
+  // documents — the primary way to analyse the repo instead of hand-picking a
+  // file or folder. Needs the project context (workspaceId) and an opened
+  // Studio session (so the repo is cloned).
+  const loadRepoFiles = useCallback(async () => {
+    if (!workspaceId) return;
+    setLoadingRepo(true);
+    setArtifactNote("");
+    setError("");
+    try {
+      const settings = await api.workspaceSettings(token, workspaceId).catch(() => null);
+      const repos = (settings?.repos ?? []).filter((r) => r.source !== "local");
+      if (repos.length === 0) {
+        setArtifactNote("No git repositories attached to this project.");
+        return;
+      }
+      const seeded: DocEntry[] = [];
+      for (const r of repos) {
+        const dir = r.target || r.name;
+        try {
+          const { files } = await api.repoFiles(token, workspaceId, dir);
+          for (const f of files) {
+            const path = `${r.name}/${f.path}`;
+            seeded.push({ path, text: f.text, size: f.text.length });
+          }
+        } catch {
+          // One repo failing (e.g. never cloned) should not stop the others.
+        }
+      }
+      if (seeded.length === 0) {
+        setArtifactNote(
+          "No repository files yet — open Studio for this project so the repo is cloned, then retry.",
+        );
+        return;
+      }
+      setDocs((prev) => {
+        const byPath = new Map(prev.map((d) => [d.path, d]));
+        for (const d of seeded) byPath.set(d.path, d);
+        return Array.from(byPath.values()).sort((a, b) => a.path.localeCompare(b.path));
+      });
+      setArtifactNote(`Added ${seeded.length} repository file${seeded.length === 1 ? "" : "s"}.`);
+    } catch (e: any) {
+      setError(e?.message || String(e));
+    } finally {
+      setLoadingRepo(false);
+    }
+  }, [token, workspaceId]);
 
   // Input actually sent to set-wise detectors / used for batch — after the
   // spec-doc filter (when enabled).
@@ -487,9 +536,14 @@ export function SpecQuality({
           <div>
             <h2>Spec Quality</h2>
             <p className="subtitle" style={{ margin: 0 }}>
-              Run the spec-quality detectors over this project's artifacts — use{" "}
-              <b>+ From artifacts</b> to pull the ingested issues and PRs, or add files by hand. Calls
-              go through the backend wrapper (<code>/cf/spec-quality</code>).
+              Run the spec-quality detectors over this project's repository — use{" "}
+              {workspaceId ? (
+                <>
+                  <b>+ From repository</b> to load the cloned repo's files,{" "}
+                </>
+              ) : null}
+              <b>+ From artifacts</b> for ingested issues and PRs, or add files by hand. Calls go
+              through the backend wrapper (<code>/cf/spec-quality</code>).
               {workspaceId ? ` · project ${workspaceId.slice(0, 8)}…` : ""}
             </p>
           </div>
@@ -507,6 +561,16 @@ export function SpecQuality({
               <button className="chip" onClick={() => dirRef.current?.click()}>
                 + Add folder
               </button>
+              {workspaceId && (
+                <button
+                  className="chip"
+                  onClick={() => void loadRepoFiles()}
+                  disabled={loadingRepo}
+                  title="Load the cloned repository's files (from the IDE workspace) as documents"
+                >
+                  {loadingRepo ? "Loading…" : "+ From repository"}
+                </button>
+              )}
               <button
                 className="chip"
                 onClick={() => void loadArtifacts()}

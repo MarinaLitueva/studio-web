@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use serde::Deserialize;
 
 use super::driver::{
-    ConnectionAuth, ConnectorCategory, ConnectorDriver, DriverIdentity, RemoteFile, RemoteIssue,
-    RemotePullRequest, RemoteRepo,
+    ConnectionAuth, ConnectorCategory, ConnectorDriver, Contributor, DriverIdentity, RemoteFile,
+    RemoteIssue, RemotePullRequest, RemoteRepo, RepoTree, RepoTreeEntry,
 };
 
 pub struct GitHubDriver {
@@ -101,6 +101,15 @@ struct GitHubTree {
     /// GitHub caps the tree response; when set, some entries were dropped.
     #[serde(default)]
     truncated: bool,
+}
+
+/// One row of `/repos/{path}/contributors`.
+#[derive(Deserialize)]
+struct GitHubContributor {
+    #[serde(default)]
+    login: String,
+    #[serde(default)]
+    contributions: i64,
 }
 
 #[derive(Deserialize)]
@@ -385,5 +394,97 @@ impl ConnectorDriver for GitHubDriver {
             root.trim_end_matches("/api/v3").to_string()
         };
         Ok(format!("{host}/{repo_full_path}.git"))
+    }
+
+    async fn repo_tree(
+        &self,
+        auth: &ConnectionAuth,
+        repo_full_path: &str,
+        git_ref: Option<&str>,
+    ) -> anyhow::Result<RepoTree> {
+        // Resolve the ref: the caller's, or the repo's default branch.
+        let git_ref = match git_ref.map(str::trim).filter(|s| !s.is_empty()) {
+            Some(r) => r.to_string(),
+            None => {
+                let url = format!("{}/repos/{repo_full_path}", auth.root());
+                let res = self.request(&url, auth).send().await?;
+                let status = res.status();
+                if !status.is_success() {
+                    let body = res.text().await.unwrap_or_default();
+                    anyhow::bail!(
+                        "GitHub {status}: {}",
+                        body.chars().take(200).collect::<String>()
+                    );
+                }
+                let repo: GitHubRepo = res.json().await?;
+                repo.default_branch.unwrap_or_else(|| "main".to_string())
+            }
+        };
+
+        let url = format!(
+            "{}/repos/{repo_full_path}/git/trees/{git_ref}?recursive=1",
+            auth.root()
+        );
+        let res = self.request(&url, auth).send().await?;
+        let status = res.status();
+        if !status.is_success() {
+            let body = res.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "GitHub {status}: {}",
+                body.chars().take(200).collect::<String>()
+            );
+        }
+        let tree: GitHubTree = res.json().await?;
+        let entries = tree
+            .tree
+            .into_iter()
+            .filter(|e| e.entry_type == "blob" || e.entry_type == "tree")
+            .map(|e| RepoTreeEntry {
+                is_dir: e.entry_type == "tree",
+                path: e.path,
+            })
+            .collect();
+        Ok(RepoTree {
+            git_ref,
+            entries,
+            truncated: tree.truncated,
+        })
+    }
+
+    async fn contributors(
+        &self,
+        auth: &ConnectionAuth,
+        repo_full_path: &str,
+        max: u32,
+    ) -> anyhow::Result<Vec<Contributor>> {
+        let per_page = max.clamp(1, 100);
+        let url = format!(
+            "{}/repos/{repo_full_path}/contributors?per_page={per_page}",
+            auth.root()
+        );
+        let res = self.request(&url, auth).send().await?;
+        let status = res.status();
+        // GitHub answers 204 (no body) for a repository with no contributor
+        // history — an empty list, not an error.
+        if status == reqwest::StatusCode::NO_CONTENT {
+            return Ok(Vec::new());
+        }
+        if !status.is_success() {
+            let body = res.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "GitHub {status}: {}",
+                body.chars().take(200).collect::<String>()
+            );
+        }
+        let list: Vec<GitHubContributor> = res.json().await?;
+        Ok(list
+            .into_iter()
+            .take(max as usize)
+            .map(|c| Contributor {
+                login: c.login,
+                display_name: None,
+                contributions: c.contributions.max(0) as u64,
+            })
+            .collect())
     }
 }

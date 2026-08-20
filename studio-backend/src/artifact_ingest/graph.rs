@@ -1,15 +1,20 @@
 //! The graph-store contract for artifact ingest.
 //!
 //! Artifacts are normalized into typed GTS nodes and handed to a
-//! [`GraphStore`]. The real `hypothesis/graph-storage` adapter is future work
-//! (its API is not defined yet); until then [`InMemoryGraphStore`] keeps the
-//! ingested nodes so the portal can show them.
+//! [`GraphStore`]. The real store is the graph-storage gear (see
+//! `graph_backend::GraphStorageBackend`); [`InMemoryGraphStore`] is the
+//! fallback when that gear is not linked (the `graph` Cargo feature is off) or
+//! its client is not available.
+//!
+//! Every operation carries the caller's [`SecurityContext`] because the real
+//! store is tenant-scoped; the in-memory fallback ignores it.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
 
 use async_trait::async_trait;
 use serde_json::Value;
+use toolkit_security::SecurityContext;
 
 /// A GTS node to persist: its type id (`gts.cf.studio.artifact.*`), a
 /// deterministic instance id (uuid5 of a stable key — idempotent across
@@ -25,11 +30,15 @@ pub struct GtsNode {
 /// back so the UI can list what was ingested.
 #[async_trait]
 pub trait GraphStore: Send + Sync {
-    async fn upsert_nodes(&self, nodes: &[GtsNode]) -> anyhow::Result<()>;
+    async fn upsert_nodes(&self, ctx: &SecurityContext, nodes: &[GtsNode]) -> anyhow::Result<()>;
 
     /// All stored nodes, optionally filtered to those whose type id contains
-    /// `type_filter` (e.g. `issue`, `pull_request`, `repo`).
-    async fn list(&self, type_filter: Option<&str>) -> anyhow::Result<Vec<GtsNode>>;
+    /// `type_filter` (e.g. `issue`, `pull_request`, `file`, `repo`).
+    async fn list(
+        &self,
+        ctx: &SecurityContext,
+        type_filter: Option<&str>,
+    ) -> anyhow::Result<Vec<GtsNode>>;
 }
 
 /// In-memory store: keyed by instance id, so a re-sync upserts. Not persistent
@@ -42,7 +51,7 @@ pub struct InMemoryGraphStore {
 
 #[async_trait]
 impl GraphStore for InMemoryGraphStore {
-    async fn upsert_nodes(&self, nodes: &[GtsNode]) -> anyhow::Result<()> {
+    async fn upsert_nodes(&self, _ctx: &SecurityContext, nodes: &[GtsNode]) -> anyhow::Result<()> {
         let total = {
             let mut map = self
                 .nodes
@@ -61,7 +70,11 @@ impl GraphStore for InMemoryGraphStore {
         Ok(())
     }
 
-    async fn list(&self, type_filter: Option<&str>) -> anyhow::Result<Vec<GtsNode>> {
+    async fn list(
+        &self,
+        _ctx: &SecurityContext,
+        type_filter: Option<&str>,
+    ) -> anyhow::Result<Vec<GtsNode>> {
         let out = {
             let map = self
                 .nodes

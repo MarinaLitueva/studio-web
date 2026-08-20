@@ -19,6 +19,27 @@ pub const ISSUE_TYPE: &str = "gts.cf.studio.artifact.issue.v1~";
 pub const PULL_REQUEST_TYPE: &str = "gts.cf.studio.artifact.pull_request.v1~";
 pub const FILE_TYPE: &str = "gts.cf.studio.artifact.file.v1~";
 
+/// Every artifact node type, for registering and enumerating.
+pub const ALL_NODE_TYPES: [&str; 4] = [REPO_TYPE, ISSUE_TYPE, PULL_REQUEST_TYPE, FILE_TYPE];
+
+/// The type id the graph-storage gear stores this artifact type under. The gear
+/// keeps its own type table and its ids omit the `gts.` scheme token (its own
+/// examples are `cf.studio.kg.file.v1~`), so we strip it.
+pub fn graph_type_id(our_type: &str) -> String {
+    our_type
+        .strip_prefix("gts.")
+        .unwrap_or(our_type)
+        .to_string()
+}
+
+/// Reverse of [`graph_type_id`]: map a graph-storage type id back to our
+/// `&'static` constant so a node read back becomes a [`GtsNode`].
+pub fn our_type_from_graph(graph_type: &str) -> Option<&'static str> {
+    ALL_NODE_TYPES
+        .into_iter()
+        .find(|t| graph_type_id(t) == graph_type)
+}
+
 /// GTS Type Schemas registered at gear init. Declared free-form (`type:
 /// object`) — the same shape the studio types use in `config/*.yaml` — so
 /// registration never trips the closed-envelope narrowing check; the full

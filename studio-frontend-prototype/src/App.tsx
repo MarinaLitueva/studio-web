@@ -2460,6 +2460,79 @@ function WorkspaceDashboard({
       )}
       {error && <div className="error">{error}</div>}
 
+      {/* Project at a glance: identity, attached repositories, and a placeholder
+          for the artifact map + work status that will render here next. */}
+      <div className="card">
+        <div className="card-head">
+          <h2>Project</h2>
+        </div>
+        <ul className="rows">
+          <li>
+            <div className="grow">
+              <div className="name">{ws.name}</div>
+              <div className="sub">
+                id <code>{ws.id}</code>
+                {ws.orgName ? ` · ${ws.orgName}` : ""}
+                {ws.self_managed ? " · self-managed" : ""}
+              </div>
+            </div>
+          </li>
+        </ul>
+        <p className="hint">
+          {settings?.root_repo_url
+            ? `Workspace repository: ${settings.root_repo_url}`
+            : settings?.root_path
+              ? `Workspace folder: ${settings.root_path}`
+              : "Managed workspace — sources are cloned in when a session launches."}
+        </p>
+      </div>
+
+      <div className="card">
+        <div className="card-head">
+          <h2>
+            Repositories
+            {settings?.repos && settings.repos.length > 0 ? ` · ${settings.repos.length}` : ""}
+          </h2>
+          {onOpenStudio && (
+            <button className="primary" onClick={() => onOpenStudio(ws)}>
+              Open Studio
+            </button>
+          )}
+        </div>
+        {!settings ? (
+          <p className="empty">Loading…</p>
+        ) : (settings.repos?.length ?? 0) === 0 ? (
+          <p className="empty">No repositories attached — add them on the Artifacts tab.</p>
+        ) : (
+          <ul className="rows">
+            {settings.repos!.map((r) => (
+              <li key={r.name}>
+                <div className="grow">
+                  <div className="name">{r.name}</div>
+                  <div className="sub">
+                    {r.source}
+                    {r.url ? ` · ${r.url}` : ""}
+                    {r.branch ? ` · ${r.branch}` : ""}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="card">
+        <div className="card-head">
+          <h2>Artifact map</h2>
+        </div>
+        <p className="hint">
+          How this project's artifacts relate — the repository, its issues, pull requests and files,
+          read back from the knowledge graph. Run Sync on the Artifacts tab to populate it. (Live
+          work statuses are still planned.)
+        </p>
+        <ArtifactGraph token={token} />
+      </div>
+
       <div className="card">
         <h2>Automation — trust ramp</h2>
         <p className="hint">
@@ -3931,6 +4004,215 @@ function IngestedArtifacts({ token, refreshKey }: { token: string; refreshKey: n
         </ul>
       )}
     </div>
+  );
+}
+
+/** The artifact relationship map for the Overview: reads the ingested nodes
+ *  back from the graph and draws each repository with its issues, pull requests
+ *  and files as a radial hub-and-spoke. Edges are derived from each node's
+ *  `repo` reference — no extra endpoint needed. */
+function ArtifactGraph({ token }: { token: string }) {
+  const [nodes, setNodes] = useState<import("./api").ArtifactNode[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const reload = useCallback(() => {
+    setErr(null);
+    api
+      .listArtifactNodes(token)
+      .then((r) => setNodes(r.nodes ?? []))
+      .catch((e) => setErr(errText(e)));
+  }, [token]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  const repos = (nodes ?? []).filter((n) => n.type_id.includes("repo"));
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+        <button className="ghost" onClick={reload}>
+          Refresh
+        </button>
+      </div>
+      {err && <p className="error">{err}</p>}
+      {nodes === null ? (
+        <p className="empty">Loading graph…</p>
+      ) : repos.length === 0 ? (
+        <p className="empty">
+          Nothing ingested yet — run Sync on a repository in the Artifacts tab to build the graph.
+        </p>
+      ) : (
+        <>
+          {repos.map((repo) => (
+            <RepoGraph key={repo.instance_id} repo={repo} nodes={nodes!} />
+          ))}
+          <div
+            style={{
+              display: "flex",
+              gap: 16,
+              flexWrap: "wrap",
+              marginTop: 8,
+              fontSize: 12,
+              color: "var(--muted, #9aa0a6)",
+            }}
+          >
+            {[
+              ["Repository", "#3b82f6"],
+              ["Issue", "#10b981"],
+              ["Pull request", "#8b5cf6"],
+              ["File", "#f59e0b"],
+            ].map(([label, color]) => (
+              <span key={label} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <span
+                  style={{ width: 10, height: 10, borderRadius: 10, background: color as string }}
+                />
+                {label}
+              </span>
+            ))}
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+/** One repository's radial graph: repo in the centre, three category hubs
+ *  (Issues / Pull requests / Files) with counts, and a capped sample of items
+ *  under each. */
+function RepoGraph({
+  repo,
+  nodes,
+}: {
+  repo: import("./api").ArtifactNode;
+  nodes: import("./api").ArtifactNode[];
+}) {
+  const rid = repo.instance_id;
+  const mine = (n: import("./api").ArtifactNode) => n.value.repo === rid;
+  const issues = nodes.filter((n) => n.type_id.includes("issue") && mine(n));
+  const prs = nodes.filter((n) => n.type_id.includes("pull_request") && mine(n));
+  const files = nodes.filter((n) => n.type_id.includes("file") && mine(n));
+
+  const CAP = 8;
+  const hubs = [
+    { label: "Issues", kind: "issue" as const, all: issues, color: "#10b981" },
+    { label: "Pull requests", kind: "pr" as const, all: prs, color: "#8b5cf6" },
+    { label: "Files", kind: "file" as const, all: files, color: "#f59e0b" },
+  ].map((h) => ({ ...h, items: h.all.slice(0, CAP), count: h.all.length }));
+
+  const W = 1100;
+  const rowH = 24;
+  const leavesTop = 210;
+  const maxLeaves = Math.max(1, ...hubs.map((h) => h.items.length));
+  const H = leavesTop + maxLeaves * rowH + 34;
+
+  const repoX = W / 2;
+  const repoY = 44;
+  const hubY = 132;
+  const hubX = [W * 0.2, W * 0.5, W * 0.8];
+
+  const leafLabel = (n: import("./api").ArtifactNode, kind: "issue" | "pr" | "file") => {
+    const v = n.value;
+    if (kind === "file") return String(v.path ?? "(file)");
+    return `${v.number != null ? `#${v.number} ` : ""}${v.title ?? "(untitled)"}`;
+  };
+  const truncate = (s: string, n = 44) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+
+  return (
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      width="100%"
+      role="img"
+      style={{ maxWidth: "100%", background: "var(--bg, #0e1116)", borderRadius: 10 }}
+    >
+      {/* repo → hub edges */}
+      {hubs.map((_, i) => (
+        <line
+          key={`e${i}`}
+          x1={repoX}
+          y1={repoY + 14}
+          x2={hubX[i]}
+          y2={hubY - 12}
+          stroke="var(--border, #333)"
+          strokeWidth={1.5}
+        />
+      ))}
+      {/* hub → leaf edges */}
+      {hubs.map((h, i) =>
+        h.items.map((_, j) => (
+          <line
+            key={`el${i}-${j}`}
+            x1={hubX[i]}
+            y1={hubY + 12}
+            x2={hubX[i]}
+            y2={leavesTop + j * rowH - 5}
+            stroke="var(--border, #333)"
+            strokeWidth={1}
+            opacity={0.45}
+          />
+        )),
+      )}
+      {/* repo node */}
+      <circle cx={repoX} cy={repoY} r={13} fill="#3b82f6" />
+      <text
+        x={repoX}
+        y={repoY - 20}
+        textAnchor="middle"
+        fontSize={13}
+        fontWeight={600}
+        fill="var(--text, #e6e6e6)"
+      >
+        {truncate(String(repo.value.full_path ?? "repository"), 60)}
+      </text>
+      {/* hubs */}
+      {hubs.map((h, i) => (
+        <g key={`h${i}`}>
+          <circle cx={hubX[i]} cy={hubY} r={10} fill={h.color} />
+          <text
+            x={hubX[i]}
+            y={hubY - 16}
+            textAnchor="middle"
+            fontSize={12.5}
+            fontWeight={600}
+            fill="var(--text, #e6e6e6)"
+          >
+            {h.label} · {h.count}
+          </text>
+        </g>
+      ))}
+      {/* leaves */}
+      {hubs.map((h, i) =>
+        h.items.map((n, j) => (
+          <text
+            key={`l${i}-${j}`}
+            x={hubX[i]}
+            y={leavesTop + j * rowH}
+            textAnchor="middle"
+            fontSize={11.5}
+            fill="var(--muted, #9aa0a6)"
+          >
+            {truncate(leafLabel(n, h.kind))}
+            <title>{leafLabel(n, h.kind)}</title>
+          </text>
+        )),
+      )}
+      {/* +N more */}
+      {hubs.map((h, i) =>
+        h.count > h.items.length ? (
+          <text
+            key={`m${i}`}
+            x={hubX[i]}
+            y={leavesTop + h.items.length * rowH + 6}
+            textAnchor="middle"
+            fontSize={11}
+            fill="var(--muted, #9aa0a6)"
+          >
+            +{h.count - h.items.length} more
+          </text>
+        ) : null,
+      )}
+    </svg>
   );
 }
 
