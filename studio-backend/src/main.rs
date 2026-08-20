@@ -7,6 +7,8 @@
 mod artifact_ingest; // pull issues/PRs from a connector source into the graph as GTS nodes
 mod connectors; // source connectors: driver plugins + tenant connection catalogue
 mod credstore_pg; // persistent credstore value store (issue #66)
+#[cfg(feature = "graph")]
+mod graph_storage; // knowledge graph: typed nodes/edges, traversal, hybrid search
 mod keycloak_idp_plugin; // real user provisioning via Keycloak Admin API (ADR-0004)
 #[cfg(feature = "llm")]
 mod llm_proxy; // OpenAI-compatible LLM proxy for Theia AI in IDE sessions (llm feature)

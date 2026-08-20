@@ -132,6 +132,7 @@ pub struct RemotePullRequest {
 }
 
 #[async_trait]
+#[cfg_attr(not(feature = "graph"), allow(dead_code))]
 pub trait ConnectorDriver: Send + Sync + 'static {
     /// Stable provider key used in the API and the UI (`gitlab`, `github`).
     fn provider(&self) -> &'static str;

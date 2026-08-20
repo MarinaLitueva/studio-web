@@ -43,11 +43,15 @@ COPY --from=planner /src/studio-backend/recipe.json recipe.json
 # rather than local to one BuildKit daemon.
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY studio-backend/ .
-# CARGO_FEATURES lets the two-step dev bootstrap build a no-LLM binary
+# CARGO_FEATURES lets the two-step dev bootstrap build a stripped binary
 # (--no-default-features) that reaches the serve phase and seeds the root
-# tenant, without the oagw post_init that deadlocks on an empty DB. Default is
-# empty = the normal dev build (llm feature on). The cargo-chef dep layer above
-# is unchanged, so both variants share it and only the final app compile differs.
+# tenant, without the oagw post_init that deadlocks on an empty DB. Note that
+# this drops BOTH default features: `llm` (mini-chat + oagw) and `graph`
+# (graph-storage + the repository importer). The bootstrap run only has to seed
+# a tenant, so neither is missed — but a binary built this way serves no
+# /graph-storage routes. Default is empty = the normal dev build with both on.
+# The cargo-chef dep layer above is unchanged, so both variants share it and
+# only the final app compile differs.
 ARG CARGO_FEATURES=""
 # cargo update again here (the COPY above restored the committed lock) so the
 # final compile also resolves the latest gears-rust main; no --locked.
