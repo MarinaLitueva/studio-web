@@ -16,7 +16,8 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { apiUrl } from "./api";
+import { api, apiUrl } from "./api";
+import type { ArtifactNode } from "./api";
 
 /* ── Types ── */
 
@@ -193,15 +194,60 @@ const ROLE_COLORS: Record<string, string> = {
   other: "#9aa0a6",
 };
 
+/** Filesystem-safe slug for an artifact title, so each issue/PR becomes a
+ *  distinct, readable doc path the detectors can key on. */
+const slug = (s: string) =>
+  (s || "untitled")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60) || "untitled";
+
+/** Turn ingested issue/PR nodes into detector documents: one markdown doc per
+ *  artifact (title as H1, then body). Files (`repo`) are skipped — they carry
+ *  no prose to analyse. Returns them sorted, ready to merge into `docs`. */
+function artifactsToDocs(nodes: ArtifactNode[]): DocEntry[] {
+  const out: DocEntry[] = [];
+  for (const n of nodes) {
+    const isIssue = n.type_id.includes("issue");
+    const isPr = n.type_id.includes("pull_request");
+    if (!isIssue && !isPr) continue;
+    const v = n.value ?? {};
+    const dir = isPr ? "pull_requests" : "issues";
+    const num = v.number != null ? String(v.number) : n.instance_id.slice(0, 8);
+    const title = typeof v.title === "string" ? v.title : "(untitled)";
+    const body = typeof v.body === "string" ? v.body : "";
+    const labels = Array.isArray(v.labels) && v.labels.length ? `\n\n_labels: ${v.labels.join(", ")}_` : "";
+    const text = `# ${title}${labels}\n\n${body}`.trim() + "\n";
+    out.push({
+      path: `${dir}/${num}-${slug(title)}.md`,
+      text,
+      size: text.length,
+    });
+  }
+  return out.sort((a, b) => a.path.localeCompare(b.path));
+}
+
 /* ── Component ── */
 
-export function SpecQuality({ token }: { token: string }) {
+export function SpecQuality({
+  token,
+  workspaceId,
+}: {
+  token: string;
+  /** When rendered inside a project, the project id — lets the artifact loader
+   *  label its source. Undefined = the standalone playground. */
+  workspaceId?: string;
+}) {
   const [docs, setDocs] = useState<DocEntry[]>([]);
   const [detector, setDetector] = useState<Detector>("bloat");
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [stopped, setStopped] = useState(false);
+  // Ingested-artifact loader state (the "From artifacts" button).
+  const [loadingArtifacts, setLoadingArtifacts] = useState(false);
+  const [artifactNote, setArtifactNote] = useState<string>("");
   const abortRef = useRef<AbortController | null>(null);
 
   // Results are kept PER detector type, so switching tabs shows that
@@ -256,7 +302,35 @@ export function SpecQuality({ token }: { token: string }) {
     setDocs([]);
     setResults({});
     setBatches({});
+    setArtifactNote("");
   };
+
+  // Pull the ingested issues/PRs (from the repository sync) and add them as
+  // documents. This is what "run for artifacts pulled from the repository"
+  // means: the same corpus the artifact-ingest gear stored in the graph.
+  const loadArtifacts = useCallback(async () => {
+    setLoadingArtifacts(true);
+    setArtifactNote("");
+    setError("");
+    try {
+      const { nodes } = await api.listArtifactNodes(token);
+      const seeded = artifactsToDocs(nodes ?? []);
+      if (seeded.length === 0) {
+        setArtifactNote("No ingested issues or PRs yet — run Sync on a repository in Artifacts first.");
+        return;
+      }
+      setDocs((prev) => {
+        const byPath = new Map(prev.map((d) => [d.path, d]));
+        for (const d of seeded) byPath.set(d.path, d);
+        return Array.from(byPath.values()).sort((a, b) => a.path.localeCompare(b.path));
+      });
+      setArtifactNote(`Added ${seeded.length} artifact document${seeded.length === 1 ? "" : "s"}.`);
+    } catch (e: any) {
+      setError(e?.message || String(e));
+    } finally {
+      setLoadingArtifacts(false);
+    }
+  }, [token]);
 
   // Input actually sent to set-wise detectors / used for batch — after the
   // spec-doc filter (when enabled).
@@ -413,8 +487,10 @@ export function SpecQuality({ token }: { token: string }) {
           <div>
             <h2>Spec Quality</h2>
             <p className="subtitle" style={{ margin: 0 }}>
-              Exercise the spec-quality detectors on a document set. Calls go through the backend
-              wrapper (<code>/cf/spec-quality</code>); the service key stays in backend config.
+              Run the spec-quality detectors over this project's artifacts — use{" "}
+              <b>+ From artifacts</b> to pull the ingested issues and PRs, or add files by hand. Calls
+              go through the backend wrapper (<code>/cf/spec-quality</code>).
+              {workspaceId ? ` · project ${workspaceId.slice(0, 8)}…` : ""}
             </p>
           </div>
           <SqStatusChip token={token} />
@@ -431,6 +507,14 @@ export function SpecQuality({ token }: { token: string }) {
               <button className="chip" onClick={() => dirRef.current?.click()}>
                 + Add folder
               </button>
+              <button
+                className="chip"
+                onClick={() => void loadArtifacts()}
+                disabled={loadingArtifacts}
+                title="Load the ingested issues and pull requests from the repository sync as documents"
+              >
+                {loadingArtifacts ? "Loading…" : "+ From artifacts"}
+              </button>
               {docs.length > 0 && (
                 <button className="chip" onClick={clearDocs}>
                   Clear
@@ -440,6 +524,11 @@ export function SpecQuality({ token }: { token: string }) {
                 {docs.length} file{docs.length === 1 ? "" : "s"} · {totalKb} KB
               </span>
             </div>
+            {artifactNote && (
+              <div className="sq-muted" style={{ marginTop: 6 }}>
+                {artifactNote}
+              </div>
+            )}
             <label className="sq-opt sq-check" style={{ marginTop: 8 }}>
               <input
                 type="checkbox"

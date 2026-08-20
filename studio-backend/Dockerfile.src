@@ -58,8 +58,10 @@ RUN cargo update \
 FROM debian:bookworm-slim
 # gosu drops privileges in the entrypoint without the signal-forwarding and
 # TTY quirks of su/sudo — the process it execs stays PID 1.
+# git: the artifact-ingest gear shells out to it to clone repositories into the
+# artifacts volume (STUDIO_ARTIFACT_WORKDIR) and walk their files.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl gosu \
+ && apt-get install -y --no-install-recommends ca-certificates curl gosu git \
  && rm -rf /var/lib/apt/lists/* \
  && groupadd --gid 1000 studio \
  && useradd --system --uid 1000 --gid 1000 --create-home --home /app studio

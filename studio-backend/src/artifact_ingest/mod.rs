@@ -1,18 +1,25 @@
-//! studio-artifact-ingest — pull issues/PRs from a connector source into the
-//! graph as typed GTS nodes.
+//! studio-artifact-ingest — pull issues, pull requests and files from a
+//! connector source into the graph as typed GTS nodes.
 //!
-//! Two channels feed the artifact graph: git clone (files — future slice) and
-//! the connector API (issues, pull requests — this gear). Entities are
-//! normalized to `gts.cf.studio.artifact.*` instances with deterministic ids
-//! and upserted into a graph store (a logging stub until the real
+//! Three channels feed the artifact graph: the connector API (issues, pull
+//! requests) and files. Files are read from the studio-session workspace
+//! checkout when the IDE has already cloned the repo (one shared clone,
+//! `STUDIO_WORKSPACES_ROOT`); otherwise from our own shallow clone
+//! (`STUDIO_ARTIFACT_WORKDIR`, opt-in), otherwise the connector tree API
+//! (metadata only). Entities are normalized to `gts.cf.studio.artifact.*`
+//! instances with deterministic ids and upserted into a graph store (an
+//! in-memory store, readable back by the portal, until the real
 //! `hypothesis/graph-storage` adapter lands).
 
+mod clone;
 mod graph;
 mod gts;
 mod rest;
 mod service;
+mod tasks;
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -26,7 +33,7 @@ use tracing::{info, warn};
 use types_registry_sdk::{RegisterResult, TypesRegistryClient};
 
 use crate::connectors::driver::ConnectorDriver;
-use graph::LoggingGraphStore;
+use graph::InMemoryGraphStore;
 use service::IngestService;
 
 #[toolkit::gear(
@@ -61,6 +68,33 @@ impl Gear for StudioArtifactIngestGear {
             }
         }
 
+        // Preferred file source: the studio-session workspaces root. When the
+        // IDE has cloned a repo into `{root}/{workspace_id}/{repo_dir}`, ingest
+        // reads that same checkout — one shared clone. Mirrors the session
+        // gear's default (`~/.cf-studio-workspaces`) and its `~` expansion.
+        let workspaces_root = resolve_dir("STUDIO_WORKSPACES_ROOT")
+            .or_else(|| resolve_home_relative(".cf-studio-workspaces"));
+        if let Some(r) = &workspaces_root {
+            info!(dir = %r.display(), "studio-artifact-ingest: reading files from the session workspaces root when present");
+        }
+
+        // Optional fallback: our own shallow clone volume. Off unless
+        // STUDIO_ARTIFACT_WORKDIR is set — with the shared workspace as the
+        // primary source, most deployments leave this unset (tree API otherwise).
+        let work_root = match resolve_dir("STUDIO_ARTIFACT_WORKDIR") {
+            Some(path) => match std::fs::create_dir_all(&path) {
+                Ok(()) => {
+                    info!(dir = %path.display(), "studio-artifact-ingest: fallback own-clone volume enabled");
+                    Some(path)
+                }
+                Err(e) => {
+                    warn!(dir = %path.display(), error = %e, "studio-artifact-ingest: fallback work dir not usable");
+                    None
+                }
+            },
+            None => None,
+        };
+
         let service = if drivers.is_empty() {
             warn!(
                 "studio-artifact-ingest: no connector driver plugins registered — \
@@ -72,7 +106,9 @@ impl Gear for StudioArtifactIngestGear {
             Some(Arc::new(IngestService::new(
                 credstore,
                 drivers,
-                Arc::new(LoggingGraphStore),
+                Arc::new(InMemoryGraphStore::default()),
+                workspaces_root,
+                work_root,
             )))
         };
 
@@ -82,6 +118,28 @@ impl Gear for StudioArtifactIngestGear {
         info!("studio-artifact-ingest: initialized");
         Ok(())
     }
+}
+
+/// A directory path from an env var, `~`-expanded, or `None` if unset/empty.
+fn resolve_dir(env: &str) -> Option<PathBuf> {
+    let raw = std::env::var(env).ok()?;
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    if let Some(rest) = raw.strip_prefix("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            return Some(PathBuf::from(home).join(rest));
+        }
+    }
+    Some(PathBuf::from(raw))
+}
+
+/// `$HOME/<rel>`, or `None` when `$HOME` is unset.
+fn resolve_home_relative(rel: &str) -> Option<PathBuf> {
+    std::env::var("HOME")
+        .ok()
+        .map(|h| PathBuf::from(h).join(rel))
 }
 
 #[async_trait]

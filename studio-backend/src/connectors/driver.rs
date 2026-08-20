@@ -97,6 +97,22 @@ pub struct RemoteIssue {
     pub labels: Vec<String>,
 }
 
+/// One file (or directory) entry in a repository tree, as the provider
+/// describes it. Produced from a recursive tree listing — no file content, just
+/// the shape of the repo — so the ingest can turn each path into a File node.
+#[derive(Debug, Clone)]
+pub struct RemoteFile {
+    /// Repo-relative path, e.g. `src/main.rs`.
+    pub path: String,
+    /// Provider blob/tree sha, stringified — the stable key for the GTS
+    /// instance (content-addressed, so it changes only when the file does).
+    pub sha: String,
+    /// `true` for a directory (tree), `false` for a file (blob).
+    pub is_dir: bool,
+    /// Size in bytes for blobs, when the provider reports it.
+    pub size: Option<i64>,
+}
+
 /// One pull/merge request as the provider describes it.
 #[derive(Debug, Clone)]
 pub struct RemotePullRequest {
@@ -199,5 +215,43 @@ pub trait ConnectorDriver: Send + Sync + 'static {
             "{} does not expose pull requests",
             self.display_name()
         ))
+    }
+
+    /// Files in one repository as a flat, recursive tree of the given ref (or
+    /// the repo's default branch when `git_ref` is `None`). There is no paging
+    /// contract — providers return the whole tree in one response, which they
+    /// may truncate for very large repos; the driver logs when that happens.
+    /// Defaulted so a non-source driver stays a small, local job.
+    async fn list_files(
+        &self,
+        auth: &ConnectionAuth,
+        repo_full_path: &str,
+        git_ref: Option<&str>,
+    ) -> anyhow::Result<Vec<RemoteFile>> {
+        let _ = (auth, repo_full_path, git_ref);
+        Err(anyhow::anyhow!(
+            "{} does not expose files",
+            self.display_name()
+        ))
+    }
+
+    /// Plain HTTPS clone URL (no credentials) for `repo_full_path` under this
+    /// installation. `base_url` is the API root the connection uses; the driver
+    /// maps it to the git host (e.g. `api.github.com` → `github.com`).
+    /// Defaulted to an error for non-source drivers.
+    fn clone_url(&self, base_url: &str, repo_full_path: &str) -> anyhow::Result<String> {
+        let _ = (base_url, repo_full_path);
+        Err(anyhow::anyhow!(
+            "{} is not a source host — nothing to clone",
+            self.display_name()
+        ))
+    }
+
+    /// Username/password pair to authenticate a clone with the given token.
+    /// Fed to git through a credential helper so the token never lands in the
+    /// URL, the process arguments, or any log line. Defaulted to the common
+    /// "token as password" shape; providers override the username.
+    fn clone_credentials<'a>(&self, token: &'a str) -> (&'static str, &'a str) {
+        ("x-access-token", token)
     }
 }

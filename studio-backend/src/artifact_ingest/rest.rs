@@ -1,17 +1,26 @@
 //! REST surface for artifact ingest.
 //!
-//! `POST /studio-artifact-ingest/v1/sync` pulls issues and pull requests from a
-//! connector source and upserts them into the graph as typed GTS nodes.
+//! `POST /studio-artifact-ingest/v1/sync` enqueues a background sync (issues,
+//! pull requests and files) and returns a task id; `GET /tasks/{id}` polls it.
 
 use std::sync::Arc;
 
+use axum::extract::{Path, Query};
 use axum::{Extension, Router};
+use serde_json::Value;
 use toolkit::api::canonical_prelude::*;
-use toolkit::api::operation_builder::{CORE_GLOBAL_BASE_LICENSE_FEATURE, LicenseFeature};
+use toolkit::api::operation_builder::{LicenseFeature, CORE_GLOBAL_BASE_LICENSE_FEATURE};
 use toolkit::api::{OpenApiRegistry, OperationBuilder};
+use toolkit_canonical_errors::resource_error;
 use toolkit_security::SecurityContext;
 
 use super::service::IngestService;
+
+/// Errors attributable to an artifact-ingest resource (e.g. an unknown task).
+/// Five tokens in the segment (`vendor.package.namespace.type.vN`); `_` is the
+/// empty namespace slot.
+#[resource_error(gts_id!("cf.studio._.artifact_ingest.v1~"))]
+pub struct StudioArtifactIngestError;
 
 /// Service handle. `None` = the gear booted without any connector driver
 /// linked; the route stays mounted and answers 503 with the reason.
@@ -54,35 +63,166 @@ pub struct SyncRequest {
     /// RFC 3339 lower bound for incremental sync (optional).
     #[serde(default)]
     pub since: Option<String>,
+    /// Workspace this repo belongs to. With `repo_dir`, lets ingest read the
+    /// studio-session checkout (the same clone the IDE opens) instead of
+    /// cloning its own. Omitted = fall back to own-clone / tree API.
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    /// Directory name of this repo under the workspace root (the source's
+    /// `target`, or its `name`). Pairs with `workspace_id`.
+    #[serde(default)]
+    pub repo_dir: Option<String>,
+}
+
+/// Acknowledgement that a sync was accepted and is running in the background.
+#[derive(Debug)]
+#[toolkit_macros::api_dto(response)]
+pub struct SyncEnqueued {
+    /// Poll `GET /studio-artifact-ingest/v1/tasks/{task_id}` for the outcome.
+    pub task_id: String,
+    /// `queued` at enqueue time.
+    pub status: String,
+}
+
+/// The state of a background sync task.
+#[derive(Debug)]
+#[toolkit_macros::api_dto(response)]
+pub struct TaskStatusResponse {
+    pub task_id: String,
+    /// `queued` | `running` | `succeeded` | `failed`.
+    pub status: String,
+    pub repo_full_path: String,
+    /// Current phase while running, or the error message on failure.
+    pub message: Option<String>,
+    /// Populated once `succeeded`.
+    pub issues: u32,
+    pub pull_requests: u32,
+    pub files: u32,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct NodesQuery {
+    /// Type substring to filter by: `issue`, `pull_request` or `repo`.
+    /// Omitted = every ingested node.
+    #[serde(default)]
+    pub r#type: Option<String>,
+}
+
+/// One ingested artifact node.
+#[derive(Debug)]
+#[toolkit_macros::api_dto(response)]
+pub struct ArtifactNodeDto {
+    /// GTS type id, e.g. `gts.cf.studio.artifact.issue.v1~`.
+    pub type_id: String,
+    /// Deterministic instance id (uuid5 of a stable key).
+    pub instance_id: String,
+    /// The normalized artifact payload.
+    #[schema(value_type = Object)]
+    pub value: Value,
 }
 
 #[derive(Debug)]
 #[toolkit_macros::api_dto(response)]
-pub struct SyncResponse {
-    pub issues: u32,
-    pub pull_requests: u32,
+pub struct ArtifactNodeListResponse {
+    pub nodes: Vec<ArtifactNodeDto>,
 }
 
 async fn sync(
     Extension(ctx): Extension<SecurityContext>,
     Extension(ingest): Extension<Ingest>,
     Json(req): Json<SyncRequest>,
-) -> ApiResult<JsonBody<SyncResponse>> {
+) -> ApiResult<JsonBody<SyncEnqueued>> {
     let svc = ingest.get()?;
-    let summary = svc
-        .sync(
-            &ctx,
-            req.provider.trim(),
-            req.base_url.as_deref(),
-            req.secret_ref.trim(),
-            req.repo_full_path.trim(),
-            req.since.as_deref(),
-        )
+    // Resolve the token now, while we still have the request's security context;
+    // the background job carries only the resolved token.
+    let secret_ref = req.secret_ref.trim().to_string();
+    let token = svc
+        .resolve_token(&ctx, &secret_ref)
         .await
         .map_err(|e| CanonicalError::internal(format!("{e:#}")).create())?;
-    Ok(Json(SyncResponse {
-        issues: summary.issues as u32,
-        pull_requests: summary.pull_requests as u32,
+    let task_id = svc.enqueue_sync(
+        req.provider.trim().to_string(),
+        req.base_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string),
+        secret_ref,
+        req.repo_full_path.trim().to_string(),
+        req.since
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string),
+        token,
+        req.workspace_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string),
+        req.repo_dir
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string),
+    );
+    Ok(Json(SyncEnqueued {
+        task_id,
+        status: "queued".to_string(),
+    }))
+}
+
+async fn task_status(
+    Extension(_ctx): Extension<SecurityContext>,
+    Extension(ingest): Extension<Ingest>,
+    Path(id): Path<String>,
+) -> ApiResult<JsonBody<TaskStatusResponse>> {
+    let svc = ingest.get()?;
+    let rec = svc.task(&id).ok_or_else(|| {
+        StudioArtifactIngestError::not_found("no such sync task")
+            .with_resource(id.clone())
+            .create()
+    })?;
+    Ok(Json(TaskStatusResponse {
+        task_id: rec.id,
+        status: rec.status.as_str().to_string(),
+        repo_full_path: rec.repo_full_path,
+        message: rec.message,
+        issues: rec.issues,
+        pull_requests: rec.pull_requests,
+        files: rec.files,
+    }))
+}
+
+async fn list_nodes(
+    Extension(_ctx): Extension<SecurityContext>,
+    Extension(ingest): Extension<Ingest>,
+    Query(q): Query<NodesQuery>,
+) -> ApiResult<JsonBody<ArtifactNodeListResponse>> {
+    let svc = ingest.get()?;
+    let filter = q.r#type.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let nodes = svc
+        .list_nodes(filter)
+        .await
+        .map_err(|e| CanonicalError::internal(format!("{e:#}")).create())?;
+    Ok(Json(ArtifactNodeListResponse {
+        nodes: nodes
+            .into_iter()
+            .map(|n| {
+                // File nodes carry full text content; drop it from the listing
+                // so the payload stays small (`has_text` still flags it). A
+                // dedicated content endpoint can serve the body when needed.
+                let mut value = n.value;
+                if let Some(obj) = value.as_object_mut() {
+                    obj.remove("text");
+                }
+                ArtifactNodeDto {
+                    type_id: n.type_id.to_string(),
+                    instance_id: n.instance_id,
+                    value,
+                }
+            })
+            .collect(),
     }))
 }
 
@@ -93,19 +233,55 @@ pub fn register_routes(
 ) -> Router {
     let router = OperationBuilder::post("/studio-artifact-ingest/v1/sync")
         .operation_id("studio_artifact_ingest.sync")
-        .summary("Ingest issues and pull requests from a connector source into the graph")
+        .summary("Enqueue a background sync of a connector source into the graph")
         .description(
-            "Resolves the connector driver and token, pulls issues and pull \
-             requests, normalizes them to typed GTS nodes and upserts them into \
-             the graph store.",
+            "Resolves the connector driver and token, then runs a background \
+             sync: issues and pull requests from the API, and files from a \
+             shallow git clone (or the tree API when no volume is mounted). \
+             Returns a task id to poll.",
         )
         .tag("StudioArtifactIngest")
         .authenticated()
         .require_license_features::<License>([])
         .json_request::<SyncRequest>(openapi, "Source to ingest")
         .handler(sync)
-        .json_response_with_schema::<SyncResponse>(openapi, StatusCode::OK, "Ingest summary")
+        .json_response_with_schema::<SyncEnqueued>(openapi, StatusCode::OK, "Sync enqueued")
         .error_400(openapi)
+        .error_401(openapi)
+        .error_500(openapi)
+        .register(router, openapi);
+
+    let router = OperationBuilder::get("/studio-artifact-ingest/v1/tasks/{id}")
+        .operation_id("studio_artifact_ingest.task_status")
+        .summary("Poll a background sync task")
+        .description("Returns the status of a sync task and, once succeeded, its counts.")
+        .tag("StudioArtifactIngest")
+        .authenticated()
+        .require_license_features::<License>([])
+        .path_param("id", "Sync task id")
+        .handler(task_status)
+        .json_response_with_schema::<TaskStatusResponse>(openapi, StatusCode::OK, "Task status")
+        .error_401(openapi)
+        .error_404(openapi)
+        .error_500(openapi)
+        .register(router, openapi);
+
+    let router = OperationBuilder::get("/studio-artifact-ingest/v1/nodes")
+        .operation_id("studio_artifact_ingest.list_nodes")
+        .summary("List ingested artifact nodes")
+        .description(
+            "Reads back the artifact nodes upserted by /sync, optionally \
+             filtered to a type (issue, pull_request, repo).",
+        )
+        .tag("StudioArtifactIngest")
+        .authenticated()
+        .require_license_features::<License>([])
+        .handler(list_nodes)
+        .json_response_with_schema::<ArtifactNodeListResponse>(
+            openapi,
+            StatusCode::OK,
+            "Ingested nodes",
+        )
         .error_401(openapi)
         .error_500(openapi)
         .register(router, openapi);

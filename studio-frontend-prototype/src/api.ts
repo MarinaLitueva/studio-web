@@ -171,6 +171,37 @@ export interface RemoteRepo {
   visibility?: string;
 }
 
+/** One ingested artifact node from `GET /studio-artifact-ingest/v1/nodes`.
+ * `value` is the free-form GTS payload (issue/PR/repo fields). */
+export interface ArtifactNode {
+  type_id: string;
+  instance_id: string;
+  value: {
+    repo?: string;
+    external_id?: string;
+    number?: number;
+    title?: string;
+    state?: string;
+    author?: string | null;
+    body?: string | null;
+    url?: string | null;
+    labels?: string[];
+    source_branch?: string | null;
+    target_branch?: string | null;
+    merged?: boolean;
+    provider?: string;
+    full_path?: string;
+    // File nodes:
+    path?: string;
+    sha?: string;
+    is_dir?: boolean;
+    size?: number | null;
+    created_at?: string | null;
+    updated_at?: string | null;
+    [key: string]: unknown;
+  };
+}
+
 export interface WorkspaceSettings {
   automation_level?: "manual" | "recommendations" | "autonomous";
   approved_worker_categories?: string[];
@@ -672,12 +703,36 @@ export const api = {
       repo_full_path: string;
       base_url?: string;
       since?: string;
+      /** Workspace + repo dir → ingest reads the IDE's checkout instead of
+       *  cloning its own. */
+      workspace_id?: string;
+      repo_dir?: string;
     },
   ) =>
-    request<{ issues: number; pull_requests: number }>(
+    request<{ task_id: string; status: string }>(
       "/studio-artifact-ingest/v1/sync",
       token,
       { method: "POST", body: JSON.stringify(body) },
+    ),
+
+  /** Poll a background sync task. Terminal states are `succeeded` / `failed`. */
+  artifactSyncTask: (token: string, taskId: string) =>
+    request<{
+      task_id: string;
+      status: "queued" | "running" | "succeeded" | "failed";
+      repo_full_path: string;
+      message?: string | null;
+      issues: number;
+      pull_requests: number;
+      files: number;
+    }>(`/studio-artifact-ingest/v1/tasks/${encodeURIComponent(taskId)}`, token),
+
+  /** Read back the ingested artifact nodes, optionally filtered by type
+   * substring (`issue`, `pull_request`, `file`, `repo`). */
+  listArtifactNodes: (token: string, type?: string) =>
+    request<{ nodes: ArtifactNode[] }>(
+      `/studio-artifact-ingest/v1/nodes${type ? `?type=${encodeURIComponent(type)}` : ""}`,
+      token,
     ),
 
   /* ── studio-session gear: per-workspace Theia IDE containers ── */

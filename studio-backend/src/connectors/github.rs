@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 
 use super::driver::{
-    ConnectionAuth, ConnectorCategory, ConnectorDriver, DriverIdentity, RemoteIssue,
+    ConnectionAuth, ConnectorCategory, ConnectorDriver, DriverIdentity, RemoteFile, RemoteIssue,
     RemotePullRequest, RemoteRepo,
 };
 
@@ -80,6 +80,27 @@ struct GitHubIssue {
     /// `/issues` endpoint returns both, and we drop the PRs here.
     #[serde(default)]
     pull_request: Option<serde_json::Value>,
+}
+
+/// One entry of a recursive git tree (`GET /repos/{path}/git/trees/{ref}`).
+#[derive(Deserialize)]
+struct GitHubTreeEntry {
+    path: String,
+    /// `blob` (file), `tree` (directory) or `commit` (submodule).
+    #[serde(rename = "type")]
+    entry_type: String,
+    sha: String,
+    #[serde(default)]
+    size: Option<i64>,
+}
+
+#[derive(Deserialize)]
+struct GitHubTree {
+    #[serde(default)]
+    tree: Vec<GitHubTreeEntry>,
+    /// GitHub caps the tree response; when set, some entries were dropped.
+    #[serde(default)]
+    truncated: bool,
 }
 
 #[derive(Deserialize)]
@@ -289,5 +310,80 @@ impl ConnectorDriver for GitHubDriver {
                 }
             })
             .collect())
+    }
+
+    async fn list_files(
+        &self,
+        auth: &ConnectionAuth,
+        repo_full_path: &str,
+        git_ref: Option<&str>,
+    ) -> anyhow::Result<Vec<RemoteFile>> {
+        // Resolve the ref: the caller's, or the repo's default branch (one
+        // extra call, only when no ref was given).
+        let git_ref = match git_ref.map(str::trim).filter(|s| !s.is_empty()) {
+            Some(r) => r.to_string(),
+            None => {
+                let url = format!("{}/repos/{repo_full_path}", auth.root());
+                let res = self.request(&url, auth).send().await?;
+                let status = res.status();
+                if !status.is_success() {
+                    let body = res.text().await.unwrap_or_default();
+                    anyhow::bail!(
+                        "GitHub {status}: {}",
+                        body.chars().take(200).collect::<String>()
+                    );
+                }
+                let repo: GitHubRepo = res.json().await?;
+                repo.default_branch.unwrap_or_else(|| "main".to_string())
+            }
+        };
+
+        // One recursive call returns the whole tree; GitHub may truncate it for
+        // very large repos (we log, and take what we got).
+        let url = format!(
+            "{}/repos/{repo_full_path}/git/trees/{git_ref}?recursive=1",
+            auth.root()
+        );
+        let res = self.request(&url, auth).send().await?;
+        let status = res.status();
+        if !status.is_success() {
+            let body = res.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "GitHub {status}: {}",
+                body.chars().take(200).collect::<String>()
+            );
+        }
+        let tree: GitHubTree = res.json().await?;
+        if tree.truncated {
+            tracing::warn!(
+                repo = repo_full_path,
+                git_ref = git_ref,
+                "GitHub truncated the recursive tree — file listing is partial"
+            );
+        }
+        Ok(tree
+            .tree
+            .into_iter()
+            .filter(|e| e.entry_type == "blob" || e.entry_type == "tree")
+            .map(|e| RemoteFile {
+                is_dir: e.entry_type == "tree",
+                path: e.path,
+                sha: e.sha,
+                size: e.size,
+            })
+            .collect())
+    }
+
+    fn clone_url(&self, base_url: &str, repo_full_path: &str) -> anyhow::Result<String> {
+        // The API root differs from the git host: github.com serves its API at
+        // api.github.com, and GitHub Enterprise Server serves it at
+        // `<host>/api/v3`. Map both back to the git host.
+        let root = base_url.trim_end_matches('/');
+        let host = if root.contains("api.github.com") {
+            "https://github.com".to_string()
+        } else {
+            root.trim_end_matches("/api/v3").to_string()
+        };
+        Ok(format!("{host}/{repo_full_path}.git"))
     }
 }

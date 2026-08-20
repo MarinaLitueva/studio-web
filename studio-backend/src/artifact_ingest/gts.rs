@@ -5,11 +5,11 @@
 //! graph-store contract). Instance ids are deterministic (uuid5 of a stable
 //! key) so re-syncing the same entity upserts rather than duplicates.
 
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use uuid::Uuid;
 
 use super::graph::GtsNode;
-use crate::connectors::driver::{RemoteIssue, RemotePullRequest};
+use crate::connectors::driver::{RemoteFile, RemoteIssue, RemotePullRequest};
 
 /// Fixed namespace for uuid5 instance ids (studio artifact graph).
 const INSTANCE_NS: Uuid = Uuid::from_u128(0xcf57_0000_0000_4000_8000_0000_0000_0001);
@@ -17,6 +17,7 @@ const INSTANCE_NS: Uuid = Uuid::from_u128(0xcf57_0000_0000_4000_8000_0000_0000_0
 pub const REPO_TYPE: &str = "gts.cf.studio.artifact.repo.v1~";
 pub const ISSUE_TYPE: &str = "gts.cf.studio.artifact.issue.v1~";
 pub const PULL_REQUEST_TYPE: &str = "gts.cf.studio.artifact.pull_request.v1~";
+pub const FILE_TYPE: &str = "gts.cf.studio.artifact.file.v1~";
 
 /// GTS Type Schemas registered at gear init. Declared free-form (`type:
 /// object`) — the same shape the studio types use in `config/*.yaml` — so
@@ -38,6 +39,11 @@ pub fn type_schemas() -> Vec<Value> {
             PULL_REQUEST_TYPE,
             "PullRequest",
             "A pull/merge request pulled from the connector API.",
+        ),
+        (
+            FILE_TYPE,
+            "File",
+            "A file in the repository tree pulled from the connector API.",
         ),
     ]
     .into_iter()
@@ -93,6 +99,52 @@ pub fn issue_node(
             "labels": i.labels,
             "created_at": i.created_at,
             "updated_at": i.updated_at,
+        }),
+    }
+}
+
+pub fn file_node(
+    repo_id: &str,
+    connector_id: &str,
+    repo_full_path: &str,
+    f: RemoteFile,
+) -> GtsNode {
+    GtsNode {
+        type_id: FILE_TYPE,
+        instance_id: anon_id(&[connector_id, repo_full_path, "file", &f.path]),
+        value: json!({
+            "repo": repo_id,
+            "path": f.path,
+            "sha": f.sha,
+            "is_dir": f.is_dir,
+            "size": f.size,
+        }),
+    }
+}
+
+/// A File node built from a real checkout on disk: same identity as the
+/// tree-API node (keyed on path, so the two channels upsert the same instance),
+/// but carrying the snapshot `commit` and, for text files, their `text`.
+pub fn file_node_cloned(
+    repo_id: &str,
+    connector_id: &str,
+    repo_full_path: &str,
+    path: &str,
+    size: u64,
+    text: Option<String>,
+    commit: Option<&str>,
+) -> GtsNode {
+    GtsNode {
+        type_id: FILE_TYPE,
+        instance_id: anon_id(&[connector_id, repo_full_path, "file", path]),
+        value: json!({
+            "repo": repo_id,
+            "path": path,
+            "is_dir": false,
+            "size": size,
+            "commit": commit,
+            "has_text": text.is_some(),
+            "text": text,
         }),
     }
 }

@@ -15,9 +15,6 @@
 #   Database only (daily dev: backend in WSL, frontend via npm run dev):
 #     docker compose up -d postgres
 #
-#   The pre-FrontX prototype SPA (a playground) comes up with the stack too:
-#     → http://localhost:8081 — own image, same backend
-#
 # NB: the backend image builds the 90-crate gears workspace — the first
 # `--build` takes a while; BuildKit caches make rebuilds fast. No sibling
 # checkout is needed — gears-rust is a git dependency pinned in Cargo.toml.
@@ -48,8 +45,7 @@ services:
   # http_client.custom_ca_certificate_paths), realm imported on start.
   # Admin console: https://localhost:8443 (admin/admin). Realm users:
   # admin/studio, demo/studio. The studio-portal client whitelists both
-  # localhost and 127.0.0.1 on :8080 (nginx), :8081 (prototype) and :5173
-  # (vite) — the portal
+  # localhost and 127.0.0.1 on :8080 (nginx) and :5173 (vite) — the portal
   # derives redirect_uri from window.location.origin, so opening the same
   # page under a hostname that is not in realm-studio.json fails the login
   # with "Invalid parameter: redirect_uri". NOT started by default `up` of backend+frontend
@@ -132,11 +128,6 @@ services:
       #   the Claude Code agent in IDE sessions -> STUDIO_ANTHROPIC_API_KEY
       STUDIO_LLM_API_KEY: ${STUDIO_LLM_API_KEY:-}
       STUDIO_ANTHROPIC_API_KEY: ${STUDIO_ANTHROPIC_API_KEY:-}
-      # External spec-quality detector service (studio-spec-quality gear).
-      # Its own bearer secret; empty = the gear loads but analysis calls 500.
-      # base_url has a config default; override here only to point elsewhere.
-      STUDIO_SPEC_QUALITY_API_KEY: ${STUDIO_SPEC_QUALITY_API_KEY:-}
-      STUDIO_SPEC_QUALITY_BASE_URL: ${STUDIO_SPEC_QUALITY_BASE_URL:-}
       # Encryption key for credstore secret VALUES at rest (issue #66, base64,
       # 32 bytes). Without it the backend falls back to the in-memory value
       # store and every secret typed into the portal — source PATs, connector
@@ -153,6 +144,9 @@ services:
       # bind-mount below writable for the unprivileged server user. Keep it
       # equal to studio-session.workspaces_root in config/docker.yaml and to
       # the bind path below — all three name the same directory.
+      # Shared by studio-session AND studio-artifact-ingest: the session gear
+      # clones repos into {root}/{workspace_id}/{repo_dir}, and the ingest gear
+      # reads those same checkouts to build the artifact graph — one clone.
       STUDIO_WORKSPACES_ROOT: /srv/cf-studio-workspaces
     volumes:
       # studio-session gear: launches sibling Theia containers via the host
@@ -187,7 +181,7 @@ services:
       keycloak:
         condition: service_started
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8090/cf/health"]
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8090/healthz"]
       interval: 10s
       timeout: 3s
       # Long grace before any failure counts against the backend: a healthy first
@@ -196,43 +190,6 @@ services:
       # probe neither counts toward retries nor marks the container unhealthy.
       start_period: 180s
       retries: 30
-
-  # Two-step bootstrap for a FRESH/empty Postgres (see scripts/dev-up.sh).
-  # On a brand-new volume the LLM chain's oagw gear deadlocks in post_init: it
-  # needs the root tenant, but account-management only seeds it later, in its
-  # serve phase. This variant is built --no-default-features, so it has NO oagw,
-  # reaches serve, and seeds the root — then the normal `backend` (llm on) finds
-  # it and boots. Behind the `bootstrap` profile, so a plain `up` never runs it.
-  # Idempotent: on a warm volume the root already exists and this is a fast no-op.
-  backend-bootstrap:
-    profiles: ["bootstrap"]
-    build:
-      context: .
-      dockerfile: studio-backend/Dockerfile.src
-      args:
-        CARGO_FEATURES: "--no-default-features"
-    container_name: studio-backend-bootstrap
-    restart: "no"
-    environment:
-      STUDIO_PG_PASSWORD: ${STUDIO_PG_PASSWORD:-studio}
-      STUDIO_CREDSTORE_KEY: ${STUDIO_CREDSTORE_KEY:-}
-      STUDIO_WORKSPACES_ROOT: /srv/cf-studio-workspaces
-    volumes:
-      - /srv/cf-studio-workspaces:/srv/cf-studio-workspaces
-      - ./docker/keycloak/certs/dev-ca.pem:/app/certs/dev-ca.pem:ro
-    depends_on:
-      postgres:
-        condition: service_healthy
-      keycloak:
-        condition: service_started
-    # Healthy = the backend reached its serve phase, i.e. account-management's
-    # bootstrap saga has seeded the root tenant. scripts/dev-up.sh waits on this.
-    healthcheck:
-      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8090/healthz"]
-      interval: 5s
-      timeout: 3s
-      start_period: 180s
-      retries: 60
 
   frontend:
     build:
@@ -252,25 +209,6 @@ services:
         restart: true
     # nginx.conf proxies /cf/ to http://studio-backend:8090 — the service's
     # container_name above must stay in sync with it.
-
-  # The pre-FrontX portal SPA, kept as a playground (полигон) and deployed
-  # alongside the main portal in its OWN image: `docker compose pull` takes
-  # the published ghcr image, `up --build` still builds from source (image:
-  # then only names the local build). http://localhost:8081, same backend,
-  # same /cf/ proxy.
-  frontend-prototype:
-    image: ghcr.io/constructorfabric/studio-web/studio-frontend-prototype:latest
-    build:
-      context: .
-      dockerfile: studio-frontend-prototype/Dockerfile.src
-    container_name: studio-frontend-prototype
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:8081:8080"   # 8080 is taken by the main frontend
-    depends_on:
-      backend:
-        condition: service_healthy
-        restart: true
 
 volumes:
   studio_pg_data:

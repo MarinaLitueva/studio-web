@@ -332,7 +332,6 @@ type View =
   | "files"
   | "connectors"
   | "system"
-  | "spec-quality"
   | "profile";
 
 /** Monochrome line icons (lucide-style): consistent stroke, currentColor —
@@ -446,10 +445,9 @@ const NAV_SECTIONS: {
       { id: "files", icon: "file", label: "Files" },
     ],
   },
-  {
-    title: "Analyze",
-    items: [{ id: "spec-quality", icon: "scan", label: "Spec Quality" }],
-  },
+  // Spec Quality is no longer a top-level surface — it moved onto the project
+  // page (the "Analyze" project tab), where it runs over that project's
+  // ingested artifacts.
   {
     title: "Monitor",
     items: [{ id: "system", icon: "cog", label: "System" }],
@@ -1528,7 +1526,6 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
         {view === "chats" && <ChatsView token={token} filters={filters} />}
         {view === "files" && <FilesView token={token} filters={filters} />}
         {view === "system" && <SystemView token={token} filters={filters} />}
-        {view === "spec-quality" && <SpecQuality token={token} />}
         {view === "profile" && <ProfileView me={me} home={home} token={token} />}
           </>
         )}
@@ -1588,7 +1585,7 @@ function FilterPanel({
 
   const count = activeFilterCount(view, filters);
   const set = (patch: Partial<Filters>) => onChange({ ...filters, ...patch });
-  const noFilters = view === "profile" || view === "dashboard" || view === "spec-quality";
+  const noFilters = view === "profile" || view === "dashboard";
   const hasSearch = !noFilters && view !== "system";
 
   if (!open) {
@@ -2020,7 +2017,14 @@ function ProjectsView({
 
 /** Tabs of one project. Everything a project owns is here — that is what makes
  *  it the unit of work rather than a container you have to select first. */
-type ProjectTab = "overview" | "nested" | "artifacts" | "people" | "integrations" | "secrets";
+type ProjectTab =
+  | "overview"
+  | "nested"
+  | "artifacts"
+  | "analyze"
+  | "people"
+  | "integrations"
+  | "secrets";
 
 /** Project-scoped nav. When a project is open this replaces the organization
  *  nav in the sidebar (the experiment: the sidebar follows what you're in).
@@ -2032,6 +2036,7 @@ const PROJECT_NAV: { group: string; items: { id: ProjectTab; icon: string; label
       { id: "overview", icon: "home", label: "Overview" },
       { id: "nested", icon: "grid", label: "Works" },
       { id: "artifacts", icon: "file", label: "Artifacts" },
+      { id: "analyze", icon: "scan", label: "Spec Quality" },
       { id: "people", icon: "users", label: "Team" },
     ],
   },
@@ -2102,6 +2107,7 @@ function ProjectDetail({
           {tab === "artifacts" && (
             <ArtifactsView token={token} workspace={root} onOpenStudio={onOpenStudio} />
           )}
+          {tab === "analyze" && <SpecQuality token={token} workspaceId={root.id} />}
           {tab === "people" && (
             <PeopleView
               token={token}
@@ -3782,6 +3788,8 @@ function ArtifactsView({
   workspace: Workspace;
   onOpenStudio?: (ws: Workspace) => void;
 }) {
+  // Bumped after every successful sync so the ingested-artifacts viewer reloads.
+  const [refreshKey, setRefreshKey] = useState(0);
   return (
     <>
       <h1>Artifacts</h1>
@@ -3789,9 +3797,140 @@ function ArtifactsView({
         What this project works on — repositories attached as sources, plus files added by hand. A
         session clones these into the IDE when you open Studio.
       </p>
-      <ProjectSources token={token} workspace={workspace} onOpenStudio={onOpenStudio} />
+      <ProjectSources
+        token={token}
+        workspace={workspace}
+        onOpenStudio={onOpenStudio}
+        onSynced={() => setRefreshKey((k) => k + 1)}
+      />
+      <IngestedArtifacts token={token} refreshKey={refreshKey} />
       <ProjectFiles token={token} />
     </>
+  );
+}
+
+/** The ingested-artifacts viewer: issues and pull requests pulled from the
+ *  attached sources by the artifact-ingest gear and read back from the graph
+ *  store. Reloads whenever `refreshKey` changes (i.e. after a Sync). */
+function IngestedArtifacts({ token, refreshKey }: { token: string; refreshKey: number }) {
+  const [nodes, setNodes] = useState<import("./api").ArtifactNode[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [tab, setTab] = useState<"issue" | "pull_request" | "file">("issue");
+
+  const reload = useCallback(() => {
+    setErr(null);
+    api
+      .listArtifactNodes(token)
+      .then((r) => setNodes(r.nodes ?? []))
+      .catch((e) => setErr(errText(e)));
+  }, [token]);
+
+  useEffect(() => {
+    reload();
+  }, [reload, refreshKey]);
+
+  const issues = (nodes ?? []).filter((n) => n.type_id.includes("issue"));
+  const prs = (nodes ?? []).filter((n) => n.type_id.includes("pull_request"));
+  const files = (nodes ?? []).filter((n) => n.type_id.includes("file"));
+  const rows = tab === "issue" ? issues : tab === "pull_request" ? prs : files;
+
+  const emptyLabel =
+    tab === "issue" ? "issues" : tab === "pull_request" ? "pull requests" : "files";
+
+  return (
+    <div className="card">
+      <div className="card-head">
+        <h2>Ingested{nodes ? ` · ${issues.length + prs.length + files.length}` : ""}</h2>
+        <button className="ghost" onClick={reload}>
+          Refresh
+        </button>
+      </div>
+      <p className="hint">
+        Issues, pull requests and repository files pulled from the attached sources by Sync. Stored
+        in the graph as typed GTS nodes — this reads them back.
+      </p>
+      <div className="row" style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <button className={tab === "issue" ? "primary" : "ghost"} onClick={() => setTab("issue")}>
+          Issues · {issues.length}
+        </button>
+        <button
+          className={tab === "pull_request" ? "primary" : "ghost"}
+          onClick={() => setTab("pull_request")}
+        >
+          Pull requests · {prs.length}
+        </button>
+        <button className={tab === "file" ? "primary" : "ghost"} onClick={() => setTab("file")}>
+          Files · {files.length}
+        </button>
+      </div>
+      {err && <p className="error">{err}</p>}
+      {nodes === null ? (
+        <p className="empty">Loading artifacts…</p>
+      ) : rows.length === 0 ? (
+        <p className="empty">
+          Nothing ingested yet — hit Sync on a repository above to pull its {emptyLabel}.
+        </p>
+      ) : tab === "file" ? (
+        <ul className="rows">
+          {files
+            .slice()
+            .sort((a, b) => (a.value.path ?? "").localeCompare(b.value.path ?? ""))
+            .map((n) => {
+              const v = n.value;
+              const kb = typeof v.size === "number" ? `${(v.size / 1024).toFixed(1)} KB` : "";
+              return (
+                <li key={n.instance_id}>
+                  <div className="grow">
+                    <div className="name" style={{ fontFamily: "var(--mono, monospace)" }}>
+                      {v.path ?? "(no path)"}
+                    </div>
+                    <div className="sub">
+                      {kb}
+                      {v.sha ? `${kb ? " · " : ""}${String(v.sha).slice(0, 7)}` : ""}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+        </ul>
+      ) : (
+        <ul className="rows">
+          {rows
+            .slice()
+            .sort((a, b) => (b.value.number ?? 0) - (a.value.number ?? 0))
+            .map((n) => {
+              const v = n.value;
+              const url = typeof v.url === "string" ? v.url : undefined;
+              return (
+                <li key={n.instance_id}>
+                  <div className="grow">
+                    <div className="name">
+                      {v.number != null ? `#${v.number} ` : ""}
+                      {v.title ?? "(untitled)"}
+                    </div>
+                    <div className="sub">
+                      {v.state ?? "?"}
+                      {v.author ? ` · ${v.author}` : ""}
+                      {tab === "pull_request" && v.source_branch
+                        ? ` · ${v.source_branch} → ${v.target_branch ?? "?"}`
+                        : ""}
+                      {tab === "pull_request" && v.merged ? " · merged" : ""}
+                      {Array.isArray(v.labels) && v.labels.length > 0
+                        ? ` · ${v.labels.join(", ")}`
+                        : ""}
+                    </div>
+                  </div>
+                  {url && (
+                    <a className="ghost" href={url} target="_blank" rel="noreferrer">
+                      Open
+                    </a>
+                  )}
+                </li>
+              );
+            })}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -3887,10 +4026,12 @@ function ProjectSources({
   token,
   workspace: ws,
   onOpenStudio,
+  onSynced,
 }: {
   token: string;
   workspace: Workspace;
   onOpenStudio?: (ws: Workspace) => void;
+  onSynced?: () => void;
 }) {
   const [repos, setRepos] = useState<RepoEntry[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -3908,15 +4049,44 @@ function ProjectSources({
       setSync((s) => ({ ...s, [r.name]: "no token — attach it from a connector" }));
       return;
     }
-    setSync((s) => ({ ...s, [r.name]: "…" }));
+    setSync((s) => ({ ...s, [r.name]: "queued…" }));
     try {
-      const res = await api.syncArtifacts(token, {
+      // Sync runs in the background (cloning can take a while); enqueue, then
+      // poll the task to completion. A trailing "…" marks a running state and
+      // keeps the button disabled.
+      const { task_id } = await api.syncArtifacts(token, {
         provider: parsed.provider,
         secret_ref: r.token_ref,
         repo_full_path: parsed.full_path,
         base_url: parsed.base_url,
+        // Let the backend read this repo's checkout from the IDE workspace
+        // (one shared clone) when the session has already materialized it.
+        workspace_id: ws.id,
+        repo_dir: r.target || r.name,
       });
-      setSync((s) => ({ ...s, [r.name]: `${res.issues} issues · ${res.pull_requests} PRs` }));
+      const deadline = Date.now() + 5 * 60 * 1000;
+      for (;;) {
+        await new Promise((res) => setTimeout(res, 1200));
+        const t = await api.artifactSyncTask(token, task_id);
+        if (t.status === "succeeded") {
+          setSync((s) => ({
+            ...s,
+            [r.name]: `${t.issues} issues · ${t.pull_requests} PRs · ${t.files} files`,
+          }));
+          onSynced?.();
+          break;
+        }
+        if (t.status === "failed") {
+          setSync((s) => ({ ...s, [r.name]: t.message || "sync failed" }));
+          break;
+        }
+        const phase = t.message || t.status;
+        setSync((s) => ({ ...s, [r.name]: /…$/.test(phase) ? phase : `${phase}…` }));
+        if (Date.now() > deadline) {
+          setSync((s) => ({ ...s, [r.name]: "timed out — still running server-side" }));
+          break;
+        }
+      }
     } catch (e) {
       setSync((s) => ({ ...s, [r.name]: errText(e) }));
     }
@@ -3984,11 +4154,11 @@ function ProjectSources({
               </div>
               <button
                 className="ghost"
-                title="Pull issues and pull requests from this source into the graph"
-                disabled={sync[r.name] === "…"}
+                title="Clone this source and pull its issues, pull requests and files into the graph"
+                disabled={!!sync[r.name]?.endsWith("…")}
                 onClick={() => void syncRepo(r)}
               >
-                {sync[r.name] === "…" ? "…" : "Sync"}
+                {sync[r.name]?.endsWith("…") ? "…" : "Sync"}
               </button>
               <button className="ghost" disabled={busy === r.name} onClick={() => void detach(r.name)}>
                 {busy === r.name ? "…" : "Detach"}
