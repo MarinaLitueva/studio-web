@@ -1,63 +1,250 @@
-# Graph Storage — current API, missing endpoints, and node payloads
+# Graph Storage — API reference for consumers
 
 From: Studio backend integration (`studio-web/studio-backend`, branch
-`feature/graph-storage-gear`) · Date: 2026-08-20
+`feature/graph-storage-gear`) · Updated: 2026-08-20
 
-Context: the graph-storage gear was vendored into the Studio assembly
-(`src/graph_storage`, copied from `gears-rust/gears/graph-storage`), pointed at a
-dedicated PostgreSQL 19 + pgvector server, and driven end to end — register
-types, import a real GitHub repository, traverse it, search it. Everything below
-was checked against that running integration, not against documentation.
+The graph-storage gear is vendored into the Studio assembly
+(`src/graph_storage`, copied from `gears-rust/gears/graph-storage`) and pointed
+at a dedicated PostgreSQL 19 + pgvector server. This document is what another
+developer needs to build on it: the whole surface, the semantics that are not
+obvious from the shapes, and what is still missing.
 
-Reference import: `constructorfabric/insight` @ `main` → 824 nodes, 823 edges
-(622 files, 178 directories, 23 contributors) in 2.4 s, traversal served by the
-SQL/PGQ `GRAPH_TABLE` backend with no fallback.
+Everything here was checked against the running integration. Reference import:
+`constructorfabric/insight` @ `main` → 824 nodes, 823 edges (622 files, 178
+directories, 23 contributors) in 2.4 s, traversal served by the SQL/PGQ
+`GRAPH_TABLE` backend with no fallback.
 
 ---
 
-## 1. Current API
+## 1. REST
 
-### 1.1 REST
-
-Base path `/graph-storage/v1`, mounted under the gateway prefix (`/cf` in this
+Base path `/graph-storage/v1`, under the gateway prefix (`/cf` in this
 assembly). Every operation is authenticated and scoped to the caller's tenant.
+
+### Counters
+
+| Method | Path | Response |
+| --- | --- | --- |
+| `GET` | `/stats` | `{ nodes, edges, graph_revision }` |
+
+`graph_revision` is a real per-tenant counter, bumped inside the same
+transaction as the write it describes. **This is the change-detection
+mechanism** — poll it to learn that the graph moved. The upsert counts are not a
+change feed (see § 3).
+
+### Types
 
 | Method | Path | Request | Response |
 | --- | --- | --- | --- |
-| `GET` | `/stats` | — | `{ nodes, edges, graph_revision }` |
-| `POST` | `/types` | `{ type_id, kind }` — `kind` is `node`, `edge` or `attribute` | `{ id }` — the interned integer id |
-| `POST` | `/ingest` | `{ nodes: [{ node_key, type_id, name, search_text? }], edges: [{ type_id, from, to }] }` | `{ nodes_upserted, edges_upserted }` |
-| `GET` | `/neighbours` | `?seeds=1,2,3&depth=2` | `{ nodes: [i64], truncated }` |
-| `GET` | `/search` | `?q=text&limit=20` | `{ nodes: [{ id, node_key, name, type_id }] }` |
-| `GET` | `/subgraph` | `?seeds=1,2,3&depth=2` | `{ nodes: [...], edges: [{ src, dst, type_id }], truncated }` |
+| `GET` | `/types` | — | `{ items: [{ id, type_id, kind, json_schema }] }` |
+| `POST` | `/types` | `{ type_id, kind, json_schema? }` | `{ id }` |
 
-`search` and `subgraph` were added by this integration — traversal otherwise
-answers with bare node ids, which is enough for a consuming gear that knows its
-own keys but not enough to render a graph or back a search box. Both are
-candidates to go upstream.
+`kind` is `node`, `edge` or `attribute`. Registration is idempotent: an
+already-registered type keeps its interned id. Sending a `json_schema` for an
+existing type replaces it, which is how a type gains a schema after the fact. A
+schema that is not compilable is refused at registration rather than at the
+first ingest, where it would read as the producer's fault.
 
-Edges in `subgraph` require **both** endpoints to be in the authorised node set.
-An edge with one visible endpoint would draw a line to a node the caller cannot
-see and disclose that it exists.
+`json_schema` comes back `null` for a type that declares no constraints — which
+is the difference between "your payloads are checked" and "they are not".
 
-### 1.2 In-process client
+### Write
 
-`GraphStorageClientV1`, published to `ClientHub`, is the only in-process entry
-point. It has three methods:
+| Method | Path | Request | Response |
+| --- | --- | --- | --- |
+| `POST` | `/ingest` | see below | `{ nodes_upserted, edges_upserted, graph_revision }` |
 
-```rust
-async fn stats(&self, ctx: &SecurityContext) -> Result<GraphStats, GraphStorageError>;
-async fn ingest(&self, ctx: &SecurityContext, nodes: &[NodeInput], edges: &[EdgeInput])
-    -> Result<IngestResult, GraphStorageError>;
-async fn register_type(&self, ctx: &SecurityContext, type_id: &str, kind: &str)
-    -> Result<i32, GraphStorageError>;
+```jsonc
+{
+  "nodes": [{
+    "node_key": "file:owner/repo:src/main.rs",  // stable, unique in the tenant
+    "type_id":  "cf.studio.kg.file.v1~",        // a registered node type
+    "name":     "main.rs",
+    "search_text": "src/main.rs main.rs rs owner/repo",  // optional
+    "payload":  { "path": "src/main.rs" },      // optional, object only
+    "embedding": [0.01, -0.2]                   // optional, exact dimension
+  }],
+  "edges": [{
+    "type_id": "cf.studio.kg.contains.v1~",
+    "from":    "dir:owner/repo:src",            // endpoints are node KEYS
+    "to":      "file:owner/repo:src/main.rs",
+    "payload": { "since": "2026-01-01" }        // optional
+  }]
+}
 ```
 
-**Write and count only.** A gear in the same binary cannot traverse, search or
-read a subgraph without calling the HTTP surface of its own process. This is the
-single largest gap for product use — see § 2.1.
+**Atomic.** The whole batch commits or nothing does — types, nodes, edges and
+the revision bump are one transaction.
 
-### 1.3 Configuration
+**Convergent.** Nodes conflict on `(tenant, node_key)`, edges on a derived key
+of `(type, from, to)`. Repeating a batch does not duplicate.
+
+**Endpoints resolve within the batch.** An edge may name a node that arrives in
+the same call or already exists; anything else is a 400 naming the key.
+
+### Delete
+
+| Method | Path | Request | Response |
+| --- | --- | --- | --- |
+| `DELETE` | `/nodes?key=…` | — | `{ nodes_deleted, edges_deleted, graph_revision }` |
+| `DELETE` | `/edges/{id}` | — | same |
+| `POST` | `/prune` | `{ type_id?, node_key_prefix?, not_seen_since? }` | same |
+
+Nodes are addressed by key, as a query parameter rather than a path segment,
+because keys carry slashes and colons — `file:owner/repo:src/main.rs` is a
+normal one.
+
+Deleting a node detaches its incident edges first, in the same transaction: the
+endpoint foreign keys are `RESTRICT` by design, because removing a static node
+must not silently destroy analysis edges attached to it.
+
+`prune` is the sweep an importer runs after a re-import. Filters are ANDed and
+**at least one is required** — a prune with none would take the tenant's whole
+graph, which is not an operation offered by accident. The idiomatic use:
+
+```jsonc
+{ "node_key_prefix": "file:owner/repo:", "not_seen_since": "2026-08-20T10:00:00Z" }
+```
+
+Re-import, then prune everything under your own prefix that the import did not
+refresh. `updated_at` is stamped on every touched row, so this removes exactly
+what disappeared upstream.
+
+### Read
+
+| Method | Path | Response |
+| --- | --- | --- |
+| `GET` | `/nodes?type_id=&key=&cursor=&limit=&include_payload=` | `{ items: [node], next_cursor }` |
+| `GET` | `/nodes/{id}?include_payload=` | one node, or 404 |
+| `GET` | `/nodes/{id}/edges?direction=&cursor=&limit=&include_payload=` | `{ items: [edge], next_cursor }` |
+
+`GET /nodes` with `key=` answers in the listing shape with zero or one item, so
+a client that renders pages needs no second code path for one node.
+
+Listings are **keyset-paginated on the surrogate id**, not `OFFSET`, so a page
+boundary cannot drift under concurrent writes. `next_cursor` is absent on the
+last page. A cursor this gear did not issue is a 400, never a silent reset.
+
+A node addressed directly and not visible is **404, not 403**: telling a caller
+that a node exists but is not theirs is itself a disclosure.
+
+### Traverse and search
+
+| Method | Path | Response |
+| --- | --- | --- |
+| `GET` | `/neighbours?seeds=&depth=&direction=&edge_types=` | `{ nodes: [i64], truncated }` |
+| `GET` | `/subgraph?seeds=&depth=&direction=&edge_types=&include_payload=` | `{ nodes, edges, truncated }` |
+| `GET` | `/search?q=&limit=&include_payload=` | `{ nodes: [node] }` |
+| `POST` | `/hybrid` | `{ nodes: [{ id, distance }] }` |
+
+`direction` is `out`, `in` or `both` (default). An unrecognised value is a 400,
+not a silent `both` — a typo that widens a traversal is the kind of bug that
+looks like data.
+
+`edge_types` is a comma-separated list of GTS edge types the walk may follow;
+absent means any.
+
+`depth` is clamped to `traversal_max_depth` and the result to
+`traversal_max_nodes`; `truncated` says the budget cut it.
+
+`subgraph` returns the same node set as `neighbours`, resolved into names and
+types, plus the edges between them. An edge is included only when **both** its
+endpoints are authorised — one visible endpoint would draw a line to a node the
+caller cannot see and disclose that it exists.
+
+`POST /hybrid` takes `{ query_vector, text, seed_limit, limit }`: vector
+similarity picks the seeds, the graph expands around them, and a full-text
+predicate filters what is reached, in one SQL/PGQ statement. It needs ingested
+nodes to carry embeddings — the gear has no model and never computes one, in
+either direction, so the query vector is the caller's too.
+
+### Payloads are opt-in everywhere
+
+`include_payload` defaults to **false** on every read. The drawing path fetches
+hundreds of nodes to render names and types and should not pay to transfer
+attributes it will not display.
+
+---
+
+## 2. In-process client
+
+`GraphStorageClientV1`, published to `ClientHub`, mirrors the REST surface
+method for method — fifteen operations: `stats`, `register_type`, `types`,
+`ingest`, `delete_node`, `delete_edge`, `prune`, `node_by_key`, `node_by_id`,
+`list_nodes`, `list_edges`, `neighbours`, `subgraph`, `search`, `hybrid`.
+
+```rust
+use crate::graph_storage::sdk::{GraphStorageClientV1, TraversalQuery, Direction};
+
+let graph = ctx.client_hub().get::<dyn GraphStorageClientV1>()?;
+let sub = graph.subgraph(&ctx, &TraversalQuery {
+    seeds: &[repo_id],
+    depth: 2,
+    direction: Direction::Outgoing,
+    edge_types: &["cf.studio.kg.contains.v1~".to_owned()],
+    include_payload: false,
+}).await?;
+```
+
+Every method is a straight delegation to the same domain service the REST
+handlers call, so the two surfaces cannot diverge in behaviour or in what they
+enforce. Resolve the client in the REST phase or later, not in `init` — that way
+it does not depend on gear initialisation order.
+
+---
+
+## 3. Semantics worth knowing before you build
+
+**Node ids are surrogate and per-tenant.** They are not stable across tenants
+and are not your key. Address nodes by `node_key` on write; ids come back from
+reads. Keep your key derivation deterministic and you never need an id table.
+
+**`nodes_upserted` / `edges_upserted` count what the statement wrote**, not the
+batch size — but for nodes the conflict action is `DO UPDATE` and fires on every
+conflicting row, so a re-ingest of unchanged nodes still counts them. For edges
+the action is `DO NOTHING`, so only genuinely new edges are counted. **Use
+`graph_revision` for change detection**, not the counts.
+
+**Payload semantics.** Absent means "no opinion — leave what is stored";
+`{}` means "clear the attributes". A supplied payload **replaces** the stored
+one rather than merging into it. Merging looks friendlier and is the wrong
+default: ADR-0003 requires that nothing is stored without passing validation,
+and under a merge the *result* is what would have to validate — so an ingest
+could fail because of data a different producer wrote earlier. Replace keeps a
+clean invariant: the stored payload is always exactly one producer's validated
+document. Genuine multi-producer merging belongs in a namespaced payload
+(`payload.<producer> = {...}`), which is a modelling decision for those types,
+not a default for all of them.
+
+**Payload limits.** Objects only; a scalar or array is refused. Size is capped
+by `ingest_max_payload_bytes` (64 KiB by default), measured on the serialized
+form, and the error names the offending node key so a large batch tells you
+which row was refused. Long-form content belongs in the file-storage gear,
+referenced from the payload by identifier — the ceiling is what stops the graph
+becoming the platform's accidental blob store.
+
+**Payload validation.** When a node's type declares a `json_schema`, payloads
+are validated against it and violations are reported with the JSON pointer of
+the offending location. Types without a schema accept anything, so this is
+additive.
+
+**Embeddings.** Optional on ingest, dimension-checked against the column
+(`embedding_dimensions`, 384) with a clear error rather than a database failure.
+The gear never computes them.
+
+**Scoping is by construction.** Every query goes through the secure ORM.
+Element keys are composite `(tenant_id, id)`, so an edge structurally cannot
+join a node of another tenant even before a scope predicate is applied.
+
+**Traversal backend selection.** `traversal_hop` picks `two_query`, `cte` or
+`pgq`. A request whose scope cannot be reduced to a set of tenants is served by
+`two_query` rather than refused, and the substitution is logged at `warn` — a
+deployment configured for `pgq` and silently served by `two_query` would make
+any measurement taken from it meaningless.
+
+---
+
+## 4. Configuration
 
 ```yaml
 graph-storage:
@@ -67,310 +254,47 @@ graph-storage:
   config:
     ingest_max_nodes: 10000
     ingest_max_edges: 20000
+    ingest_max_payload_bytes: 65536
+    embedding_dimensions: 384
+    default_page_size: 50
+    max_page_size: 500
     traversal_max_depth: 5
     traversal_max_nodes: 1000
-    traversal_hop: pgq          # two_query | cte | pgq
+    traversal_hop: pgq
 ```
 
-`traversal_hop` selects the hop implementation. A request whose scope cannot be
-reduced to a set of tenants is served by `two_query` instead of being refused,
-and the substitution is logged at `warn` — a deployment configured for `pgq` and
-silently served by `two_query` would make any measurement taken from it
-meaningless.
-
-### 1.4 Behaviour worth knowing
-
-- **Scoping is by construction.** Every query goes through the secure ORM;
-  element keys are composite `(tenant_id, id)`, so an edge structurally cannot
-  join a node of another tenant even before a scope predicate is applied.
-- **Ingest converges.** Nodes conflict on `(tenant_id, node_key)` and edges on a
-  derived `edge_key`, so repeating a batch does not duplicate. Verified on the
-  reference import: two consecutive runs leave the totals unchanged.
-- **Node ids are surrogate and per-tenant.** They are not stable across tenants
-  and are not the producer's key. Address nodes by `node_key` on write; you get
-  ids back only by reading.
-
-### 1.5 Known inaccuracies in the current contract
-
-These are places where the implementation and its documented behaviour disagree.
-They matter to a consumer because each one reads as a usable guarantee.
-
-1. **`ingest` is documented as atomic and is not.** The SDK trait says "either
-   every valid row commits or the call fails and nothing is written". There is no
-   transaction: type registration, node upsert and edge upsert are separate
-   statements on a pooled connection. Observed directly — a failed import left
-   five newly registered types committed.
-2. **`graph_revision` is always `0`.** Documented as "monotonic revision, bumped
-   whenever stored state changes"; the implementation returns the literal `0`. A
-   consumer polling it for change detection would wait forever.
-3. **`nodes_upserted` / `edges_upserted` count the submitted batch, not affected
-   rows.** A re-import that changes nothing still answers with the full count, so
-   the figure cannot be used to detect drift.
-4. **`search_text` is producer-supplied.** ADR-0003 specifies it as *composed* by
-   the gear from attributes annotated `x-gts-vectorized`. The current field is a
-   stopgap this integration added so lexical search has something to match; it
-   should be removed once § 3 step 3 lands.
-5. **Payload and `json_schema` columns exist and are always `{}`.** See § 3.
-
-Fixed on this branch and worth carrying upstream: registering an
-already-registered type, and re-ingesting an unchanged batch of edges, both
-answered 500. Both use `ON CONFLICT DO NOTHING`, and when the clause skips every
-row SeaORM reports the insert as `DbErr::RecordNotInserted`, which both call
-sites treated as failure.
+The gear needs `CREATE EXTENSION vector`, `CREATE PROPERTY GRAPH` (SQL/PGQ,
+PostgreSQL 19+) and an HNSW index, none of which the assembly's main 16-alpine
+server has. `docker-compose.yml` provides `graph-postgres` for it; nothing else
+in the assembly is exposed to a beta PostgreSQL.
 
 ---
 
-## 2. Endpoints to add
+## 5. What is still missing
 
-Ordered by what blocks a consumer first.
+**ADR-0003 annotations and the index lifecycle.** The accepted design has GTS
+schemas annotate attributes as `x-gts-indexed` and `x-gts-vectorized`, with a
+versioned annotation vocabulary published as a meta-schema, and a durable index
+activation lifecycle (`requested → building → active`, `retiring → removed`)
+running `CREATE INDEX CONCURRENTLY` in a background worker — with filters
+admitted only while the supporting index is `active`. None of that exists. Until
+it does:
 
-### 2.1 Read operations on the in-process client
+- payload attributes are stored and returned but **not indexed**, so filtering
+  on them is not offered rather than offered slowly;
+- validation walks the **leaf type only**, not the full GTS derivation chain, so
+  a derived type does not yet inherit its ancestors' constraints;
+- `search_text` is producer-supplied. ADR-0003 has the gear composing it from
+  the vectorized annotations, which will retire the field.
 
-Not a REST change — a trait change, and the highest-value one.
+**Tabular projection.** `cpt-cf-graph-storage-fr-tabular-projection` — OData
+filters over annotated attributes — depends on the above.
 
-```rust
-async fn neighbours(&self, ctx: &SecurityContext, seeds: &[i64], depth: u8)
-    -> Result<Vec<i64>, GraphStorageError>;
-async fn subgraph(&self, ctx: &SecurityContext, seeds: &[i64], depth: u8)
-    -> Result<Subgraph, GraphStorageError>;
-async fn search(&self, ctx: &SecurityContext, query: &SearchQuery)
-    -> Result<Vec<NodeView>, GraphStorageError>;
-async fn node_by_key(&self, ctx: &SecurityContext, node_key: &str)
-    -> Result<Option<NodeView>, GraphStorageError>;
-```
+**Embedding production.** Nothing in this assembly computes embeddings, so the
+hybrid endpoint works only for callers that bring their own vectors on both
+sides. Deciding where embeddings come from is a product question, not a gear
+one.
 
-The domain services already implement all four; only the trait and the local
-client adapter need extending. Without them, every in-process consumer that reads
-the graph has to talk HTTP to its own process.
-
-### 2.2 Delete
-
-```
-DELETE /graph-storage/v1/nodes/{id}          → 204
-DELETE /graph-storage/v1/nodes?key={node_key} → 204
-DELETE /graph-storage/v1/edges/{id}          → 204
-POST   /graph-storage/v1/prune                → { nodes_deleted, edges_deleted }
-       { "type_id": "...", "node_key_prefix": "repo:owner/name:", "not_seen_since": "<rfc3339>" }
-```
-
-Nothing can currently be removed. A graph that mirrors an external source only
-grows: re-import a repository after files were deleted upstream and the old file
-nodes stay indefinitely, indistinguishable from live ones.
-
-`prune` is the operation an importer actually needs — a bulk "everything under
-this prefix that this run did not touch". It presupposes that ingest stamps
-`updated_at` on every touched row, which it already does.
-
-Deleting a node must fail while edges reference it, or cascade explicitly. The
-endpoint FKs are `RESTRICT` by design (removing a static node must not silently
-destroy analysis edges attached to it), so the API needs to say which it does.
-
-### 2.3 Directed and type-filtered traversal
-
-```
-GET /graph-storage/v1/neighbours?seeds=1&depth=2&direction=out&edge_types=cf.studio.kg.contains.v1~
-GET /graph-storage/v1/subgraph  ?seeds=1&depth=2&direction=out&edge_types=...
-```
-
-`direction` ∈ `out` | `in` | `both` (default `both`, today's behaviour).
-`edge_types` is a comma-separated list of GTS type ids.
-
-The machinery already exists and is unused: the hop functions take an
-`edge_type_ids: Option<&[i32]>` filter and the pattern builder has a `Direction`
-enum, but the service passes `None` and always unions both directions. This is
-plumbing a parameter through, not new capability — the cheapest item on this
-list.
-
-### 2.4 Read by key, listing, pagination
-
-```
-GET /graph-storage/v1/nodes/{id}                      → NodeDto
-GET /graph-storage/v1/nodes?key={node_key}            → NodeDto
-GET /graph-storage/v1/nodes?type_id=...&cursor=...&limit=...
-                                                      → { items: [NodeDto], next_cursor }
-GET /graph-storage/v1/edges?node={id}&direction=out   → { items: [EdgeDto], next_cursor }
-GET /graph-storage/v1/types                           → { items: [{ id, type_id, kind }] }
-```
-
-Today a consumer can ingest a node under a key it chose and has no way to fetch
-it back by that key, no way to enumerate nodes of a type, and no continuation
-cursor anywhere — `search` takes a limit and `subgraph` a node budget, and both
-simply truncate. Consumers end up maintaining their own key-to-id table, which is
-a second source of truth for something the gear already knows.
-
-`GET /types` is needed internally too: this integration had to query `graph_type`
-directly to resolve interned ids back to GTS identifiers.
-
-### 2.5 Hybrid search
-
-```
-POST /graph-storage/v1/hybrid
-     { query_vector: [f32], text: "...", seed_limit: 50, limit: 20, depth: 1 }
-     → { nodes: [{ id, distance, ... }] }
-```
-
-`infra::storage::hybrid` already implements this as a single SQL/PGQ statement —
-vector similarity, graph expansion and full-text filtering together — and is unit
-tested, but it is routed nowhere and `ingest` accepts no embedding, so the
-`vector(384)` column is always NULL. This is the capability SQL/PGQ was chosen
-for in ADR-0001; it is currently dead code.
-
-Needs `embedding` on `NodeInput` (see § 3.2) and a decision on who computes query
-embeddings — the gear has no model and should not acquire one.
-
-### 2.6 Change detection
-
-Either implement `graph_revision` as a real monotonic counter bumped on every
-committed write, or remove it from `GraphStats`. A field that is documented to
-change and never does is worse than one that is absent.
-
-If implemented, the natural consumer-facing pairing is a conditional read:
-`GET /stats` returns the revision, and listing endpoints accept
-`?since_revision=` so an importer can ask what changed.
-
----
-
-## 3. Node payloads
-
-### 3.1 The design already exists
-
-This is not an open design question. ADR-0003
-(`cpt-cf-graph-storage-adr-metadata-partitioning`, status **accepted**) specifies
-the whole model, and DESIGN builds on it normatively. Node metadata splits four
-ways:
-
-1. **Common columns** — tenant, node key, GTS type, display name, timestamps,
-   actor, embedding, search vector. Gear-defined, every node has them.
-2. **Indexed JSONB attributes** — payload attributes annotated in the GTS schema
-   (`x-gts-indexed`) are filterable in tabular projections and scope filters; the
-   gear maintains the supporting JSONB indexes.
-3. **Vectorizable attributes** — string attributes annotated `x-gts-vectorized`
-   join the node's composed search text for embedding and full-text indexing.
-4. **Heavy content** — payloads above a configured ceiling are rejected;
-   long-form content goes to the file-storage gear and is referenced from the
-   payload by file identifier.
-
-The `payload` JSONB column exists on `graph_node` and `graph_edge`, and
-`graph_type.json_schema` exists to carry the type's schema. All three are always
-written as `{}`. What is missing is implementation, not a decision.
-
-The full ADR is a large body of work — a versioned annotation vocabulary with its
-own meta-schema, derivation-chain validation with JSON-pointer error reporting,
-and a durable index-activation lifecycle running `CREATE INDEX CONCURRENTLY` in a
-background worker. Consumers need attributes on nodes long before that lands, so
-the proposal below is a staged path whose first step is small and
-forward-compatible with the ADR rather than a detour around it.
-
-### 3.2 Step 1 — carry the payload (small, unblocks consumers)
-
-Add the field to the ingest contract and store it:
-
-```rust
-pub struct NodeInput {
-    pub node_key: String,
-    pub type_id: String,
-    pub name: String,
-    pub search_text: Option<String>,
-    /// Attributes of this node. A JSON **object**; anything else is rejected.
-    pub payload: Option<serde_json::Value>,
-}
-```
-
-Four decisions this needs, with the recommendation and why:
-
-**Absent ≠ empty.** `payload: null`/omitted means "I have no opinion, leave what
-is stored"; `payload: {}` means "this node has no attributes, clear them". A
-producer that knows only part of a node — this integration's repository importer
-knows paths but nothing about file contents — must be able to upsert a node
-without destroying attributes another producer wrote.
-
-**Replace, not merge.** When a payload is supplied, it replaces the stored one
-wholesale (`payload = EXCLUDED.payload`). Merging looks friendlier and is the
-wrong default here: the ADR requires that no payload is stored without passing
-validation, and under a merge the *result* is what would have to validate — so an
-ingest could fail because of data a different producer wrote earlier. Replace
-keeps a clean invariant: **the stored payload is always exactly one producer's
-validated document.** If genuine multi-producer attribute merging is needed later
-it should be namespaced per producer (`payload.<producer> = {...}`), which is a
-modelling decision for those types, not a default for all of them.
-
-**Ceiling enforced at ingest.** New config key `ingest_max_payload_bytes`
-(suggested default 64 KiB), measured on the serialized payload, per node.
-Exceeding it rejects the batch with a new `DomainError::PayloadTooLarge { node_key,
-limit, actual }` mapping to 400 with a field violation naming the node — the same
-shape `BatchTooLarge` already uses. This is
-`cpt-cf-graph-storage-constraint-payload-ceiling` and it must exist from the
-first version: it is what stops the graph becoming the platform's accidental blob
-store, and adding it later is a breaking change for whoever got used to its
-absence.
-
-**Objects only.** A scalar or array payload is rejected. The model is attributes;
-allowing a bare array now would make the annotation vocabulary in step 3
-ambiguous about what a path refers to.
-
-Reading it back has to come with it, or the field is write-only:
-
-- `GET /nodes/{id}` (§ 2.4) returns the payload.
-- `search` and `subgraph` take `?include=payload`, defaulting to **off** — the
-  drawing path fetches hundreds of nodes and should not pay for attributes it
-  does not render.
-
-`embedding` belongs to the same step if § 2.5 is wanted: an optional
-`Vec<f32>` on `NodeInput`, dimension-checked against the column (384) at
-ingest, with a clear error rather than a database-level failure.
-
-**Do not add `payload` to the property graph's `PROPERTIES` list.** A column
-absent from that list is invisible to `MATCH`, which is the desired outcome:
-pattern-level JSONB predicates would sit outside the index story the ADR
-describes, and PostgreSQL 19 expands every hop into a join whose cost is already
-the thing being managed. Payload filtering belongs in the outer scoped query, not
-in the pattern.
-
-### 3.3 Step 2 — validate against the type's schema
-
-`POST /types` gains an optional `json_schema`, stored in the column that already
-exists. When a type carries a schema, payloads are validated against it at ingest
-and failures are reported by JSON pointer, as DESIGN requires. Types registered
-without one keep accepting anything, so this is additive and needs no migration
-for data written under step 1.
-
-`jsonschema = "0.40"` is already a workspace dependency in `gears-rust`, so this
-costs no new third-party surface.
-
-Full GTS derivation-chain validation — walking the ancestry so a derived type
-inherits its parents' constraints — is the step-3 concern. Step 2 validates
-against the leaf type only, which is strictly better than today and does not
-contradict the final behaviour.
-
-### 3.4 Step 3 — ADR-0003 proper
-
-The remaining, larger work, listed so the increments above are visibly on the way
-to it and not a parallel design:
-
-- The `x-gts-indexed` / `x-gts-vectorized` annotation vocabulary, published as a
-  versioned meta-schema, with the conflict, inheritance and narrowing rules the
-  ADR enumerates; registration rejects unknown or malformed extensions.
-- Index activation lifecycle: `requested → building → active`, `retiring →
-  removed`, with `CREATE INDEX CONCURRENTLY` in a background worker and filters
-  admitted only while the supporting index is `active`.
-- Search text composed by the gear from `x-gts-vectorized` attributes, which
-  retires the producer-supplied `search_text` added by this integration.
-- Tabular projection (`cpt-cf-graph-storage-fr-tabular-projection`) over
-  annotated attributes, rejecting filters on unannotated ones with an error that
-  names the indexed alternatives.
-
-### 3.5 Order of work
-
-| # | Item | Size | Unblocks |
-| --- | --- | --- | --- |
-| 1 | Read methods on `GraphStorageClientV1` (§ 2.1) | S | every in-process consumer |
-| 2 | `payload` on ingest + read-back + ceiling (§ 3.2) | S | attributes on nodes at all |
-| 3 | `direction` / `edge_types` on traversal (§ 2.3) | XS | typed graph queries |
-| 4 | Delete and `prune` (§ 2.2) | M | any mirrored source that changes |
-| 5 | Read by key, listing, cursor (§ 2.4) | M | consumers dropping their own id tables |
-| 6 | Schema validation of payloads (§ 3.3) | M | contract enforcement between producers |
-| 7 | Hybrid endpoint + embeddings (§ 2.5) | M | the reason SQL/PGQ was chosen |
-| 8 | ADR-0003 annotations and index lifecycle (§ 3.4) | L | filterable attributes at scale |
-
-Items 1–3 are days, not weeks, and together they take the gear from
-"write-complete, read-thin" to usable as a dependency.
+**Prune is bounded.** One call removes at most `ingest_max_nodes` nodes; a
+larger sweep needs repeating until it reports zero. It reports what it removed,
+so the loop is easy, but it is not a single-shot operation on a large graph.
