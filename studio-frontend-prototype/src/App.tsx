@@ -533,6 +533,9 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
   const [home, setHome] = useState<Tenant | null>(null);
   const [orgs, setOrgs] = useState<Tenant[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  // Guards the one-time default-organization seed on a from-scratch deploy (see
+  // refresh): only try once per session so a failing create can't loop.
+  const seededOrgRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [studio, setStudio] = useState<StudioTarget | null>(null);
   const [dash, setDash] = useState<Workspace | null>(null);
@@ -850,7 +853,41 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
         .catch((e) => (e instanceof ApiError && e.status === 404 ? { items: [] } : Promise.reject(e)));
       setHome(homeTenant);
       const children = page.items ?? [];
-      const orgList = children.filter((t) => t.tenant_type === TENANT_TYPES.organization);
+      let orgList = children.filter((t) => t.tenant_type === TENANT_TYPES.organization);
+
+      // From-scratch bootstrap: the backend seeds only the platform root tenant,
+      // and a workspace must hang off an ORGANIZATION (the AM type barrier
+      // rejects a workspace directly under the platform root). So on the very
+      // first login — a fresh database with no organization yet — create a
+      // default one under the home tenant, mirroring demo.sh's step 3. This is
+      // what lets a clean deploy create workspaces and projects right away
+      // instead of dead-ending on an empty org list. Idempotent: only when
+      // there are zero orgs, and only once per session.
+      if (
+        orgList.length === 0 &&
+        homeTenant.tenant_type !== TENANT_TYPES.organization &&
+        !seededOrgRef.current
+      ) {
+        seededOrgRef.current = true;
+        try {
+          const org = await api.createTenant(token, {
+            name: "Default Organization",
+            parent_id: me.subject_tenant_id,
+            tenant_type: TENANT_TYPES.organization,
+          });
+          orgList = [org];
+        } catch {
+          // A concurrent first-login may have created it already (or we lack the
+          // right) — re-read children so an org someone else seeded still shows.
+          const again = await api
+            .tenantChildren(token, me.subject_tenant_id)
+            .catch(() => ({ items: [] as Tenant[] }));
+          orgList = (again.items ?? []).filter(
+            (t) => t.tenant_type === TENANT_TYPES.organization,
+          );
+        }
+      }
+
       const directWs = children
         .filter((t) => t.tenant_type === TENANT_TYPES.workspace)
         .map((t) => ({ ...t, orgName: homeTenant.name, orgId: homeTenant.id }));
