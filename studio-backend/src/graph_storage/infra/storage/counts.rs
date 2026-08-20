@@ -12,6 +12,7 @@ use sea_orm::EntityTrait;
 
 use crate::graph_storage::domain::error::DomainError;
 use crate::graph_storage::infra::storage::entity::{graph_edge, graph_node};
+use crate::graph_storage::infra::storage::mutate;
 
 /// Count the nodes and edges visible under `scope`.
 ///
@@ -35,9 +36,13 @@ pub async fn graph_stats<C: DBRunner>(
         .await
         .map_err(|e| DomainError::Storage(e.to_string()))?;
 
+    // Read, never derived from `max(updated_at)`: a deletion lowers that
+    // maximum and would make the revision go backwards.
+    let graph_revision = mutate::current_revision(conn, scope).await?;
+
     Ok(GraphStats {
         nodes,
         edges,
-        graph_revision: 0,
+        graph_revision,
     })
 }

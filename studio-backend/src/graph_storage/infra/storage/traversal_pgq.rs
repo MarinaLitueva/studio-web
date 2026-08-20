@@ -57,6 +57,7 @@ pub async fn expand_frontier_pgq<C: DBRunner>(
     scope: &AccessScope,
     frontier: &[i64],
     edge_type_ids: Option<&[i32]>,
+    outgoing: Option<bool>,
 ) -> Result<Vec<i64>, DomainError> {
     if frontier.is_empty() {
         return Ok(Vec::new());
@@ -67,7 +68,7 @@ pub async fn expand_frontier_pgq<C: DBRunner>(
         TenantBound::These(tenants) => tenants,
     };
 
-    let candidates = both_directions(&tenants, frontier, edge_type_ids);
+    let candidates = directions(&tenants, frontier, edge_type_ids, outgoing);
 
     let mut authorised: Vec<i64> = graph_node::Entity::find()
         .secure()
@@ -91,22 +92,30 @@ pub async fn expand_frontier_pgq<C: DBRunner>(
     Ok(authorised)
 }
 
-/// Candidate ids from both directions, as **one** subquery.
+/// Candidate ids from the requested direction, as **one** subquery.
 ///
-/// Unioned rather than left as two, because `id IN (out) OR id IN (inc)` is the
-/// same set and a sequential scan of the node table -- `PostgreSQL` cannot drive
-/// an index from two hashed subplans under an `OR` (`dev/FINDINGS.md (F9)`).
-fn both_directions(
+/// When both directions are wanted the legs are unioned rather than left as
+/// two, because `id IN (out) OR id IN (inc)` is the same set and a sequential
+/// scan of the node table -- `PostgreSQL` cannot drive an index from two hashed
+/// subplans under an `OR` (`dev/FINDINGS.md (F9)`).
+///
+/// A one-directional walk renders a single leg. This is not only narrower: the
+/// undirected shorthand a pattern *could* express instead is catastrophic on
+/// this release (735 ms for one element against ~1.5 ms directed), which is why
+/// both legs are always written with an explicit arrow.
+fn directions(
     tenants: &[uuid::Uuid],
     frontier: &[i64],
     edge_type_ids: Option<&[i32]>,
+    outgoing: Option<bool>,
 ) -> sea_orm::sea_query::SelectStatement {
-    direction_subquery(tenants, frontier, edge_type_ids, Direction::Outgoing)
-        .union(
-            UnionType::Distinct,
-            direction_subquery(tenants, frontier, edge_type_ids, Direction::Incoming),
-        )
-        .to_owned()
+    let out = || direction_subquery(tenants, frontier, edge_type_ids, Direction::Outgoing);
+    let inc = || direction_subquery(tenants, frontier, edge_type_ids, Direction::Incoming);
+    match outgoing {
+        Some(true) => out(),
+        Some(false) => inc(),
+        None => out().union(UnionType::Distinct, inc()).to_owned(),
+    }
 }
 
 /// One direction's candidate ids, as a subquery over `GRAPH_TABLE`.
@@ -140,7 +149,7 @@ pub fn expand_frontier_pgq_sql(scope: &AccessScope, frontier: &[i64]) -> String 
         return String::new();
     };
 
-    let candidates = both_directions(&tenants, frontier, None);
+    let candidates = directions(&tenants, frontier, None, None);
 
     graph_node::Entity::find()
         .secure()

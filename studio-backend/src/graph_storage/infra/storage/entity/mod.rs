@@ -2,4 +2,5 @@
 
 pub mod graph_edge;
 pub mod graph_node;
+pub mod graph_revision;
 pub mod graph_type;

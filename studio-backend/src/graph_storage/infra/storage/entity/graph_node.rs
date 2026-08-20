@@ -2,6 +2,7 @@
 //! the distinction is carried by the GTS type, not by storage (ADR-0002).
 
 use sea_orm::entity::prelude::*;
+use sea_orm::entity::prelude::PgVector;
 use time::OffsetDateTime;
 use toolkit_db_macros::Scopable;
 use uuid::Uuid;
@@ -23,6 +24,9 @@ pub struct Model {
     pub payload: Json,
     /// Composed text fed to lexical search and embedding.
     pub search_text: String,
+    /// Embedding of `search_text`, supplied by the producer. The gear has no
+    /// model and never computes one.
+    pub embedding: Option<PgVector>,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
 }

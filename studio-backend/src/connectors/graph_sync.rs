@@ -127,7 +127,7 @@ pub async fn sync_repository(
         (T_CONTRIBUTED_TO, "edge"),
         (T_INCLUDES, "edge"),
     ] {
-        graph.register_type(ctx, type_id, kind).await?;
+        graph.register_type(ctx, type_id, kind, None).await?;
     }
 
     let repo = request.repo_full_path;
@@ -141,6 +141,11 @@ pub async fn sync_repository(
         type_id: T_REPOSITORY.to_owned(),
         name: repo.to_owned(),
         search_text: Some(format!("{repo} repository {}", tree.git_ref)),
+        payload: Some(serde_json::json!({
+            "full_path": repo,
+            "git_ref": tree.git_ref,
+        })),
+        embedding: None,
     });
 
     if let Some(project_id) = request.project_id {
@@ -151,11 +156,14 @@ pub async fn sync_repository(
             type_id: T_PROJECT.to_owned(),
             name: project_name.to_owned(),
             search_text: Some(format!("{project_name} project")),
+            payload: Some(serde_json::json!({ "project_id": project_id })),
+            embedding: None,
         });
         edges.push(EdgeInput {
             type_id: T_INCLUDES.to_owned(),
             from: project_key,
             to: repo_key.clone(),
+            payload: None,
         });
     }
 
@@ -182,11 +190,14 @@ pub async fn sync_repository(
             type_id: T_DIRECTORY.to_owned(),
             name: basename(dir).to_owned(),
             search_text: Some(format!("{dir} directory {repo}")),
+            payload: Some(serde_json::json!({ "path": dir, "repository": repo })),
+            embedding: None,
         });
         edges.push(EdgeInput {
             type_id: T_CONTAINS.to_owned(),
             from: parent_key(repo, &repo_key, dir),
             to: format!("dir:{repo}:{dir}"),
+            payload: None,
         });
     }
 
@@ -207,11 +218,18 @@ pub async fn sync_repository(
                 entry.path,
                 extension(name).unwrap_or("")
             )),
+            payload: Some(serde_json::json!({
+                "path": entry.path,
+                "extension": extension(name),
+                "repository": repo,
+            })),
+            embedding: None,
         });
         edges.push(EdgeInput {
             type_id: T_CONTAINS.to_owned(),
             from: parent_key(repo, &repo_key, &entry.path),
             to: key,
+            payload: None,
         });
     }
 
@@ -226,11 +244,17 @@ pub async fn sync_repository(
                 "{} {display} contributor person {} commits",
                 person.login, person.contributions
             )),
+            payload: Some(serde_json::json!({ "login": person.login })),
+            embedding: None,
         });
         edges.push(EdgeInput {
             type_id: T_CONTRIBUTED_TO.to_owned(),
             from: key,
             to: repo_key.clone(),
+            // The commit count belongs to the relation, not to the person:
+            // the same account contributes different amounts to each
+            // repository it touches.
+            payload: Some(serde_json::json!({ "contributions": person.contributions })),
         });
     }
 

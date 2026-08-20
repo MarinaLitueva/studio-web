@@ -15,7 +15,10 @@ pub mod gts;
 pub mod models;
 
 pub use client::GraphStorageClientV1;
-pub use models::{EdgeInput, GraphStats, IngestResult, NodeInput};
+pub use models::{
+    DeleteResult, Direction, EdgeInput, EdgeView, GraphStats, HybridHit, HybridQuery, IngestResult,
+    NodeInput, NodeView, Page, PruneRequest, SearchQuery, Subgraph, TraversalQuery, TypeView,
+};
 
 /// Error type returned by every fallible SDK operation.
 pub type GraphStorageError = toolkit_canonical_errors::CanonicalError;

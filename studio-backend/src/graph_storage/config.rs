@@ -36,6 +36,21 @@ pub struct GraphStorageConfig {
     pub traversal_max_depth: u8,
     /// Default node budget of a traversal response.
     pub traversal_max_nodes: u32,
+    /// Maximum serialized size of one node or edge payload, in bytes.
+    ///
+    /// `cpt-cf-graph-storage-constraint-payload-ceiling`: heavy content is
+    /// rejected here and belongs in the file-storage gear, referenced from the
+    /// payload by identifier. The ceiling exists from the first version on
+    /// purpose — adding one later is a breaking change for whoever grew used to
+    /// its absence.
+    pub ingest_max_payload_bytes: u32,
+    /// Dimension of the embedding column. A supplied embedding of any other
+    /// length is refused at ingest rather than failing in the database.
+    pub embedding_dimensions: u16,
+    /// Default page size of the listing endpoints.
+    pub default_page_size: u32,
+    /// Maximum page size a caller may ask for.
+    pub max_page_size: u32,
     /// Hop execution strategy: `two_query` (works on stock toolkit-db), `cte`
     /// (one statement, requires safe CTE support), or `pgq` (one statement per
     /// direction through `GRAPH_TABLE`, requires `PostgreSQL` 19). Present so
@@ -50,6 +65,10 @@ impl Default for GraphStorageConfig {
             ingest_max_edges: 20_000,
             traversal_max_depth: 5,
             traversal_max_nodes: 1_000,
+            ingest_max_payload_bytes: 64 * 1024,
+            embedding_dimensions: 384,
+            default_page_size: 50,
+            max_page_size: 500,
             traversal_hop: HopStrategy::TwoQuery,
         }
     }

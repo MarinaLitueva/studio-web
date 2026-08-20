@@ -83,6 +83,12 @@ sea-orm = { version = "2.0", default-features = false, features = [
     "runtime-tokio",
     "with-uuid",
     "with-time",
+    "with-json",
+    # graph-storage stores node embeddings in a pgvector column. SeaORM 2.0
+    # carries pgvector support behind this feature and re-exports the type as
+    # `PgVector`, so the column is written through the ORM like any other
+    # rather than through a hand-built cast.
+    "postgres-vector",
     "macros",
 ] }
 time = "0.3"
@@ -110,6 +116,9 @@ sea-orm-migration = { version = "2.0", default-features = false, features = [
 ] }
 thiserror = "2.0"
 http = "1.3"
+# Payload validation against a type's registered JSON Schema. Same version the
+# gears-rust workspace pins.
+jsonschema = { version = "0.40", default-features = false }
 # Scopable derive: puts the tenant/resource columns on the graph entities so the
 # secure ORM can compile the caller's scope against them.
 toolkit-db-macros = { package = "cf-gears-toolkit-db-macros", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }

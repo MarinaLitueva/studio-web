@@ -128,15 +128,23 @@ pub async fn expand_frontier<C: DBRunner>(
     scope: &AccessScope,
     frontier: &[i64],
     edge_type_ids: Option<&[i32]>,
+    outgoing: Option<bool>,
 ) -> Result<Vec<i64>, DomainError> {
     if frontier.is_empty() {
         return Ok(Vec::new());
     }
 
-    // 1. Scoped edge query: every edge incident to the frontier, either direction.
-    let mut incident = sea_orm::Condition::any()
-        .add(graph_edge::Column::SrcNodeId.is_in(frontier.iter().copied()))
-        .add(graph_edge::Column::DstNodeId.is_in(frontier.iter().copied()));
+    // 1. Scoped edge query: the edges incident to the frontier on the side the
+    //    caller asked for.
+    let mut incident = match outgoing {
+        Some(true) => sea_orm::Condition::any()
+            .add(graph_edge::Column::SrcNodeId.is_in(frontier.iter().copied())),
+        Some(false) => sea_orm::Condition::any()
+            .add(graph_edge::Column::DstNodeId.is_in(frontier.iter().copied())),
+        None => sea_orm::Condition::any()
+            .add(graph_edge::Column::SrcNodeId.is_in(frontier.iter().copied()))
+            .add(graph_edge::Column::DstNodeId.is_in(frontier.iter().copied())),
+    };
     if let Some(types) = edge_type_ids {
         incident = sea_orm::Condition::all()
             .add(incident)
@@ -157,12 +165,18 @@ pub async fn expand_frontier<C: DBRunner>(
         .map_err(|e| DomainError::Storage(e.to_string()))?;
 
     // 2. The endpoint on the far side of each incident edge.
+    // A directed walk takes only the far side of the side it matched on.
+    // Without this the query above would be narrowed correctly and the step
+    // below would widen it again: an edge matched as outgoing whose *source*
+    // also happens to be a frontier node would contribute both endpoints.
+    let take_forward = outgoing != Some(false);
+    let take_backward = outgoing != Some(true);
     let mut candidates: Vec<i64> = Vec::with_capacity(endpoints.len());
     for e in endpoints {
-        if frontier.contains(&e.src_node_id) {
+        if take_forward && frontier.contains(&e.src_node_id) {
             candidates.push(e.dst_node_id);
         }
-        if frontier.contains(&e.dst_node_id) {
+        if take_backward && frontier.contains(&e.dst_node_id) {
             candidates.push(e.src_node_id);
         }
     }
@@ -205,7 +219,10 @@ pub async fn expand_frontier<C: DBRunner>(
 ///
 /// A frontier node still comes back when it is genuinely adjacent to another
 /// frontier node, which is the correct answer and what the two-query hop does.
-fn far_endpoints(frontier: &[i64]) -> sea_orm::sea_query::SelectStatement {
+fn far_endpoints(
+    frontier: &[i64],
+    outgoing: Option<bool>,
+) -> sea_orm::sea_query::SelectStatement {
     use sea_orm::sea_query::{Alias, Expr, ExprTrait, Query};
 
     let leg = |select: &str, matched: &str| {
@@ -216,12 +233,18 @@ fn far_endpoints(frontier: &[i64]) -> sea_orm::sea_query::SelectStatement {
             .to_owned()
     };
 
-    leg("dst_node_id", "src_node_id")
-        .union(
-            sea_orm::sea_query::UnionType::Distinct,
-            leg("src_node_id", "dst_node_id"),
-        )
-        .to_owned()
+    // Each leg selects the endpoint opposite the column it matched on, so a
+    // one-directional walk is exactly one leg.
+    match outgoing {
+        Some(true) => leg("dst_node_id", "src_node_id"),
+        Some(false) => leg("src_node_id", "dst_node_id"),
+        None => leg("dst_node_id", "src_node_id")
+            .union(
+                sea_orm::sea_query::UnionType::Distinct,
+                leg("src_node_id", "dst_node_id"),
+            )
+            .to_owned(),
+    }
 }
 
 /// Single-statement variant of [`expand_frontier`], using a scoped CTE.
@@ -238,6 +261,7 @@ pub async fn expand_frontier_cte<C: DBRunner>(
     scope: &AccessScope,
     frontier: &[i64],
     edge_type_ids: Option<&[i32]>,
+    outgoing: Option<bool>,
 ) -> Result<Vec<i64>, DomainError> {
     use sea_orm::sea_query::{Expr, ExprTrait};
 
@@ -245,9 +269,15 @@ pub async fn expand_frontier_cte<C: DBRunner>(
         return Ok(Vec::new());
     }
 
-    let mut incident = sea_orm::Condition::any()
-        .add(graph_edge::Column::SrcNodeId.is_in(frontier.iter().copied()))
-        .add(graph_edge::Column::DstNodeId.is_in(frontier.iter().copied()));
+    let mut incident = match outgoing {
+        Some(true) => sea_orm::Condition::any()
+            .add(graph_edge::Column::SrcNodeId.is_in(frontier.iter().copied())),
+        Some(false) => sea_orm::Condition::any()
+            .add(graph_edge::Column::DstNodeId.is_in(frontier.iter().copied())),
+        None => sea_orm::Condition::any()
+            .add(graph_edge::Column::SrcNodeId.is_in(frontier.iter().copied()))
+            .add(graph_edge::Column::DstNodeId.is_in(frontier.iter().copied())),
+    };
     if let Some(types) = edge_type_ids {
         incident = sea_orm::Condition::all()
             .add(incident)
@@ -271,7 +301,7 @@ pub async fn expand_frontier_cte<C: DBRunner>(
         // (`dev/FINDINGS.md (F9)`).
         .filter(
             sea_orm::Condition::all()
-                .add(Expr::col(graph_node::Column::Id).in_subquery(far_endpoints(frontier))),
+                .add(Expr::col(graph_node::Column::Id).in_subquery(far_endpoints(frontier, outgoing))),
         )
         .select_only()
         .column(graph_node::Column::Id)
@@ -305,7 +335,7 @@ mod cte_tests {
     fn the_candidate_subquery_is_one_union_not_two_predicates() {
         use sea_orm::sea_query::PostgresQueryBuilder;
 
-        let sql = far_endpoints(&[1, 2, 3]).to_string(PostgresQueryBuilder);
+        let sql = far_endpoints(&[1, 2, 3], None).to_string(PostgresQueryBuilder);
 
         assert!(
             sql.contains("UNION"),
@@ -326,7 +356,7 @@ mod cte_tests {
     fn each_leg_matches_on_the_opposite_column() {
         use sea_orm::sea_query::PostgresQueryBuilder;
 
-        let sql = far_endpoints(&[7]).to_string(PostgresQueryBuilder);
+        let sql = far_endpoints(&[7], None).to_string(PostgresQueryBuilder);
 
         assert!(
             sql.contains(r#"SELECT "dst_node_id" FROM "scoped_edges" WHERE "src_node_id" IN"#),
