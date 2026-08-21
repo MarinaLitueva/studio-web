@@ -33,6 +33,19 @@ database:
         max_conns: 10
         acquire_timeout: "30s"
 
+    # Same CloudNativePG instance as pg_main, but a distinct logical database.
+    # The graph-enabled release requires PostgreSQL 19 SQL/PGQ and pgvector.
+    pg_graph:
+      engine: "postgres"
+      host: "${STUDIO_PG_HOST}"
+      port: 5432
+      user: "${STUDIO_PG_USER}"
+      password: "${STUDIO_PG_PASSWORD}"
+      dbname: "graph_storage"
+      pool:
+        max_conns: 10
+        acquire_timeout: "30s"
+
 logging:
   default:
     console_level: info
@@ -433,6 +446,16 @@ gears:
               audio_transcription: false
               audio_translation: false
 
+  # Knowledge graph: PostgreSQL 19 SQL/PGQ plus pgvector. The release binary is
+  # compiled with `--no-default-features --features graph`, so this database
+  # must be available before the backend starts.
+  graph-storage:
+    database:
+      server: "pg_graph"
+      dbname: "graph_storage"
+    config:
+      traversal_hop: pgq
+
   # ── Studio's own gear: per-workspace Theia IDE sessions in containers ──
   # Requires: Docker daemon on the host and the Theia image built once:
   #   cd theia && docker build -t cf-studio-theia:latest .
@@ -445,7 +468,7 @@ gears:
       # IDE sessions via the Kubernetes Pod driver (ADR-0003). Needs the
       # backend Role over pods/services (Helm backend.sessions.enabled=true)
       # and a browser reachable through the /studio proxy.
-      enabled: true
+      enabled: false
       driver: "kubernetes"
       # kyverno on this cluster admits only harbor.constr.dev images, so the
       # session image goes through the ghcr proxy project (same as the backend
@@ -535,4 +558,3 @@ gears:
             subject_tenant_id: "00000000-0000-0000-0000-000000000001"
             token_scopes: ["*"]
             subject_type: "gts.cf.core.security.subject_user.v1~"
-

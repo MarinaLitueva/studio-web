@@ -219,10 +219,7 @@ pub async fn expand_frontier<C: DBRunner>(
 ///
 /// A frontier node still comes back when it is genuinely adjacent to another
 /// frontier node, which is the correct answer and what the two-query hop does.
-fn far_endpoints(
-    frontier: &[i64],
-    outgoing: Option<bool>,
-) -> sea_orm::sea_query::SelectStatement {
+fn far_endpoints(frontier: &[i64], outgoing: Option<bool>) -> sea_orm::sea_query::SelectStatement {
     use sea_orm::sea_query::{Alias, Expr, ExprTrait, Query};
 
     let leg = |select: &str, matched: &str| {
@@ -284,33 +281,33 @@ pub async fn expand_frontier_cte<C: DBRunner>(
             .add(graph_edge::Column::TypeId.is_in(types.iter().copied()));
     }
 
-    let mut ids: Vec<i64> = graph_node::Entity::find()
-        .secure()
-        .scope_with(scope)
-        // The body is projected because a CTE referenced twice is materialised,
-        // and the edge table carries a jsonb payload the hop never reads.
-        .with_ctes()
-        .cte::<graph_edge::Entity>("scoped_edges", |q| {
-            q.select_only()
-                .column(graph_edge::Column::SrcNodeId)
-                .column(graph_edge::Column::DstNodeId)
-                .filter(incident)
-        })
-        // One `IN` over the union of both legs, not two `IN`s joined by `OR`:
-        // the `OR` form costs a sequential scan of `graph_node`
-        // (`dev/FINDINGS.md (F9)`).
-        .filter(
-            sea_orm::Condition::all()
-                .add(Expr::col(graph_node::Column::Id).in_subquery(far_endpoints(frontier, outgoing))),
-        )
-        .select_only()
-        .column(graph_node::Column::Id)
-        .all_as::<NodeId>(conn)
-        .await
-        .map_err(|e| DomainError::Storage(e.to_string()))?
-        .into_iter()
-        .map(|n| n.id)
-        .collect();
+    let mut ids: Vec<i64> =
+        graph_node::Entity::find()
+            .secure()
+            .scope_with(scope)
+            // The body is projected because a CTE referenced twice is materialised,
+            // and the edge table carries a jsonb payload the hop never reads.
+            .with_ctes()
+            .cte::<graph_edge::Entity>("scoped_edges", |q| {
+                q.select_only()
+                    .column(graph_edge::Column::SrcNodeId)
+                    .column(graph_edge::Column::DstNodeId)
+                    .filter(incident)
+            })
+            // One `IN` over the union of both legs, not two `IN`s joined by `OR`:
+            // the `OR` form costs a sequential scan of `graph_node`
+            // (`dev/FINDINGS.md (F9)`).
+            .filter(sea_orm::Condition::all().add(
+                Expr::col(graph_node::Column::Id).in_subquery(far_endpoints(frontier, outgoing)),
+            ))
+            .select_only()
+            .column(graph_node::Column::Id)
+            .all_as::<NodeId>(conn)
+            .await
+            .map_err(|e| DomainError::Storage(e.to_string()))?
+            .into_iter()
+            .map(|n| n.id)
+            .collect();
 
     ids.sort_unstable();
     Ok(ids)

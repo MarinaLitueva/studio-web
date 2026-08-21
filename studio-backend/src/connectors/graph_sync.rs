@@ -317,7 +317,11 @@ fn basename(path: &str) -> &str {
 /// A leading dot is not a separator: `.gitignore` is a name, not an extension.
 fn extension(name: &str) -> Option<&str> {
     let cut = name.rfind('.')?;
-    if cut == 0 { None } else { Some(&name[cut + 1..]) }
+    if cut == 0 {
+        None
+    } else {
+        Some(&name[cut + 1..])
+    }
 }
 
 #[cfg(test)]
@@ -326,7 +330,10 @@ mod tests {
 
     #[test]
     fn ancestors_are_every_proper_prefix() {
-        assert_eq!(ancestors("a/b/c.rs"), vec!["a".to_string(), "a/b".to_string()]);
+        assert_eq!(
+            ancestors("a/b/c.rs"),
+            vec!["a".to_string(), "a/b".to_string()]
+        );
         assert!(ancestors("README.md").is_empty());
     }
 

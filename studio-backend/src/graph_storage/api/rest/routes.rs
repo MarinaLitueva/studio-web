@@ -276,7 +276,11 @@ pub fn register_routes(
         .query_param("seeds", true, "Comma-separated seed node ids")
         .query_param_typed("depth", false, "Traversal depth", "integer")
         .query_param("direction", false, "out | in | both (default)")
-        .query_param("edge_types", false, "Comma-separated GTS edge types to follow")
+        .query_param(
+            "edge_types",
+            false,
+            "Comma-separated GTS edge types to follow",
+        )
         .handler(handlers::get_neighbours)
         .json_response_with_schema::<dto::NeighboursDto>(
             openapi,
@@ -303,7 +307,11 @@ pub fn register_routes(
         .query_param("seeds", true, "Comma-separated seed node ids")
         .query_param_typed("depth", false, "Traversal depth", "integer")
         .query_param("direction", false, "out | in | both (default)")
-        .query_param("edge_types", false, "Comma-separated GTS edge types to follow")
+        .query_param(
+            "edge_types",
+            false,
+            "Comma-separated GTS edge types to follow",
+        )
         .query_param_typed("include_payload", false, "Include attributes", "boolean")
         .handler(handlers::get_subgraph)
         .json_response_with_schema::<dto::SubgraphDto>(

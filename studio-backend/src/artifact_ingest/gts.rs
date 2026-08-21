@@ -5,7 +5,7 @@
 //! graph-store contract). Instance ids are deterministic (uuid5 of a stable
 //! key) so re-syncing the same entity upserts rather than duplicates.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use uuid::Uuid;
 
 use super::graph::{GtsEdge, GtsNode};
@@ -21,7 +21,13 @@ pub const FILE_TYPE: &str = "gts.cf.studio.artifact.file.v1~";
 pub const USER_TYPE: &str = "gts.cf.studio.artifact.user.v1~";
 
 /// Every artifact node type, for registering and enumerating.
-pub const ALL_NODE_TYPES: [&str; 5] = [REPO_TYPE, ISSUE_TYPE, PULL_REQUEST_TYPE, FILE_TYPE, USER_TYPE];
+pub const ALL_NODE_TYPES: [&str; 5] = [
+    REPO_TYPE,
+    ISSUE_TYPE,
+    PULL_REQUEST_TYPE,
+    FILE_TYPE,
+    USER_TYPE,
+];
 
 // ── Relation (edge) types ── namespace `rel`. Endpoints are node instance ids.
 /// issue / pull_request → repo.
@@ -34,7 +40,8 @@ pub const REL_AUTHORED_BY: &str = "gts.cf.studio.rel.authored_by.v1~";
 pub const REL_MODIFIES: &str = "gts.cf.studio.rel.modifies.v1~";
 
 /// Every relation type, for registering in the graph.
-pub const ALL_EDGE_TYPES: [&str; 4] = [REL_ARTIFACT_OF, REL_CONTAINS, REL_AUTHORED_BY, REL_MODIFIES];
+pub const ALL_EDGE_TYPES: [&str; 4] =
+    [REL_ARTIFACT_OF, REL_CONTAINS, REL_AUTHORED_BY, REL_MODIFIES];
 
 /// The type id the graph-storage gear stores this artifact type under. The gear
 /// keeps its own type table and its ids omit the `gts.` scheme token (its own

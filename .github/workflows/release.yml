@@ -56,11 +56,10 @@ jobs:
         run: cargo update
       - name: Build (release)
         working-directory: studio-backend
-        # --no-default-features drops the `llm` feature (mini-chat + oagw): the
-        # DMZ deploy ships no LLM key and no IDE sessions, and oagw's post_init
-        # would deadlock the first boot on a root tenant that account-management
-        # only seeds later (see the mini_chat/api_egress notes in Cargo.toml).
-        run: cargo build --release --no-default-features
+        # Keep LLM disabled, but compile graph-storage for the Kubernetes test
+        # profile. The matching graph-postgres image is built and verified in
+        # the images job below before either image is published.
+        run: cargo build --release --no-default-features --features graph
 
       - uses: actions/upload-artifact@v4
         with:
@@ -167,7 +166,7 @@ jobs:
             echo "list=edge $short" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build & push backend image
+      - name: Build backend image
         run: |
           set -euo pipefail
           args=()
@@ -175,9 +174,25 @@ jobs:
             args+=(-t "$IMAGE_PREFIX/studio-backend:$t")
           done
           docker build -f studio-backend/Dockerfile "${args[@]}" studio-backend
-          # --all-tags would also push tags this run did not build.
+
+      - name: Build graph PostgreSQL CloudNativePG operand
+        run: |
+          set -euo pipefail
+          args=()
+          for t in ${{ steps.tags.outputs.list }}; do
+            args+=(-t "$IMAGE_PREFIX/graph-postgres:$t")
+          done
+          docker build -f studio-backend/docker/graph-postgres/Dockerfile "${args[@]}" studio-backend/docker/graph-postgres
+
+      - name: Verify graph PostgreSQL CloudNativePG compatibility
+        run: bash studio-backend/docker/graph-postgres/verify-cnpg-compatibility.sh "$IMAGE_PREFIX/graph-postgres:sha-$(git rev-parse --short HEAD)"
+
+      - name: Push backend and graph PostgreSQL images
+        run: |
+          set -euo pipefail
           for t in ${{ steps.tags.outputs.list }}; do
             docker push "$IMAGE_PREFIX/studio-backend:$t"
+            docker push "$IMAGE_PREFIX/graph-postgres:$t"
           done
 
       - name: Build & push frontend image
@@ -246,6 +261,7 @@ jobs:
             echo "### Images published"
             for t in ${{ steps.tags.outputs.list }}; do
               echo "- \`$IMAGE_PREFIX/studio-backend:$t\`"
+              echo "- \`$IMAGE_PREFIX/graph-postgres:$t\`"
               echo "- \`$IMAGE_PREFIX/studio-frontend:$t\`"
               echo "- \`$IMAGE_PREFIX/studio-frontend-prototype:$t\`"
               echo "- \`$IMAGE_PREFIX/cf-studio-theia:$t\`"

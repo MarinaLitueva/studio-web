@@ -24,9 +24,9 @@ mod ai_providers;
 mod bitbucket;
 pub mod driver;
 mod github;
+mod gitlab;
 #[cfg(feature = "graph")]
 mod graph_sync;
-mod gitlab;
 mod gts;
 mod plugin;
 mod rest;

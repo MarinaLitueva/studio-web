@@ -1,0 +1,35 @@
+global:
+  hostname: dev.studio.constructorfabric.org
+  environmentName: dev
+  environmentType: dev
+
+backend:
+  image:
+    tag: "sha-REPLACE_ME"
+  replicas: 1
+  database:
+    existingSecret: studio-postgres-app
+    keys:
+      host: host
+      port: port
+      user: username
+      password: password
+      dbname: dbname
+  autoscaling:
+    enabled: false
+  sessions:
+    enabled: false
+
+frontend:
+  image:
+    tag: "sha-REPLACE_ME"
+  replicas: 1
+  autoscaling:
+    enabled: false
+
+ingress:
+  enabled: true
+  className: traefik
+
+imagePullSecrets:
+  - name: ghcr-pull

@@ -26,21 +26,22 @@ spec:
       containers:
         - name: backend
           image: "{{ .Values.backend.image.repository }}:{{ required "backend.image.tag is required (immutable, fixed at chart publication)" .Values.backend.image.tag }}"
+          securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}
           args: ["--config", "config/{{ .Values.backend.configProfile }}.yaml", "run"]
           ports: [{ name: http, containerPort: {{ .Values.backend.port }} }]
           env:
             - name: STUDIO_ENVIRONMENT
               value: {{ .Values.global.environmentName | quote }}
             - name: STUDIO_PG_HOST
-              valueFrom: { secretKeyRef: { name: {{ .Values.backend.database.existingSecret }}, key: host } }
+              valueFrom: { secretKeyRef: { name: {{ .Values.backend.database.existingSecret }}, key: {{ .Values.backend.database.keys.host }} } }
             - name: STUDIO_PG_PORT
-              valueFrom: { secretKeyRef: { name: {{ .Values.backend.database.existingSecret }}, key: port } }
+              valueFrom: { secretKeyRef: { name: {{ .Values.backend.database.existingSecret }}, key: {{ .Values.backend.database.keys.port }} } }
             - name: STUDIO_PG_USER
-              valueFrom: { secretKeyRef: { name: {{ .Values.backend.database.existingSecret }}, key: user } }
+              valueFrom: { secretKeyRef: { name: {{ .Values.backend.database.existingSecret }}, key: {{ .Values.backend.database.keys.user }} } }
             - name: STUDIO_PG_PASSWORD
-              valueFrom: { secretKeyRef: { name: {{ .Values.backend.database.existingSecret }}, key: password } }
+              valueFrom: { secretKeyRef: { name: {{ .Values.backend.database.existingSecret }}, key: {{ .Values.backend.database.keys.password }} } }
             - name: STUDIO_PG_DBNAME
-              valueFrom: { secretKeyRef: { name: {{ .Values.backend.database.existingSecret }}, key: dbname } }
+              valueFrom: { secretKeyRef: { name: {{ .Values.backend.database.existingSecret }}, key: {{ .Values.backend.database.keys.dbname }} } }
             - name: STUDIO_OIDC_ISSUER
               valueFrom: { secretKeyRef: { name: {{ .Values.backend.auth.existingSecret }}, key: issuer_url } }
             - name: STUDIO_OIDC_CLIENT_ID

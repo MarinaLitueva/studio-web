@@ -1,4 +1,4 @@
-# PostgreSQL 19 with pgvector — the graph-storage gear's own database.
+# PostgreSQL 19 beta 3 with pgvector — CloudNativePG operand for graph-storage.
 #
 # The gear cannot share `postgres` (16-alpine) with the rest of the assembly:
 # its migrations need `CREATE EXTENSION vector`, `CREATE PROPERTY GRAPH`
@@ -14,7 +14,12 @@
 #
 # PostgreSQL 19 is beta until roughly October 2026, so this server is
 # prototype-grade. Re-pin the base image to the GA tag when it is released.
-FROM postgres:19beta2 AS pgvector-build
+#
+# Use the official CloudNativePG operand base, pinned by its multi-architecture
+# digest. CloudNativePG replaces the image entrypoint with its instance manager;
+# a Docker Official Image is not the contract we want to depend on here.
+ARG CNPG_POSTGRES_IMAGE=ghcr.io/cloudnative-pg/postgresql:19beta3-standard-trixie@sha256:066b9e2245e5c354a57b53d71a4517bfe203aabbe7286778981b98e177ee79c3
+FROM ${CNPG_POSTGRES_IMAGE} AS pgvector-build
 
 ARG PGVECTOR_REF=5219575
 
@@ -30,7 +35,10 @@ RUN set -eux; \
     make install; \
     rm -rf /tmp/pgvector /var/lib/apt/lists/*
 
-FROM postgres:19beta2
+FROM ${CNPG_POSTGRES_IMAGE}
 
 COPY --from=pgvector-build /usr/share/postgresql/19/extension/vector* /usr/share/postgresql/19/extension/
 COPY --from=pgvector-build /usr/lib/postgresql/19/lib/vector.so /usr/lib/postgresql/19/lib/
+
+LABEL org.opencontainers.image.title="Constructor Studio graph PostgreSQL" \
+      org.opencontainers.image.description="CloudNativePG PostgreSQL 19 beta 3 operand with pinned pgvector"

@@ -113,7 +113,9 @@ pub async fn upsert_type<C: DBRunner>(
         type_uuid: Set(type_uuid),
         type_id: Set(type_id.to_owned()),
         kind: Set(kind.to_owned()),
-        json_schema: Set(json_schema.cloned().unwrap_or_else(|| serde_json::json!({}))),
+        json_schema: Set(json_schema
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({}))),
         created_at: Set(OffsetDateTime::now_utc()),
         ..Default::default()
     };
@@ -322,8 +324,7 @@ pub async fn upsert_edges<C: DBRunner>(
         .exec_with_returning(conn)
         .await;
 
-    Ok(tolerate_nothing_inserted(written)?
-        .map_or(0, |rows| rows.len() as u64))
+    Ok(tolerate_nothing_inserted(written)?.map_or(0, |rows| rows.len() as u64))
 }
 
 /// Bump the tenant's write counter and return its new value.
@@ -357,10 +358,7 @@ pub async fn bump_revision<C: DBRunner>(
                     graph_revision::Column::Revision,
                     Expr::col((Alias::new("graph_revision"), Alias::new("revision"))).add(1),
                 )
-                .value(
-                    graph_revision::Column::UpdatedAt,
-                    Expr::current_timestamp(),
-                )
+                .value(graph_revision::Column::UpdatedAt, Expr::current_timestamp())
                 .to_owned(),
         )
         .exec_with_returning(conn)

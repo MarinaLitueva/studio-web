@@ -214,8 +214,10 @@ impl GraphServices {
 
         match committed {
             Ok(result) => Ok(result),
-            Err(db_err) => Err(take_stashed(&stash)
-                .unwrap_or_else(|| DomainError::Storage(db_err.to_string()))),
+            Err(db_err) => {
+                Err(take_stashed(&stash)
+                    .unwrap_or_else(|| DomainError::Storage(db_err.to_string())))
+            }
         }
     }
 
@@ -435,8 +437,10 @@ impl GraphServices {
 
         match committed {
             Ok(result) => Ok(result),
-            Err(db_err) => Err(take_stashed(&stash)
-                .unwrap_or_else(|| DomainError::Storage(db_err.to_string()))),
+            Err(db_err) => {
+                Err(take_stashed(&stash)
+                    .unwrap_or_else(|| DomainError::Storage(db_err.to_string())))
+            }
         }
     }
 
@@ -669,7 +673,11 @@ impl GraphServices {
         ctx: &SecurityContext,
         query: &HybridQuery<'_>,
     ) -> Result<Vec<HybridHit>, DomainError> {
-        validate::check_embedding("query", query.query_vector, self.config.embedding_dimensions)?;
+        validate::check_embedding(
+            "query",
+            query.query_vector,
+            self.config.embedding_dimensions,
+        )?;
 
         let scope = Self::scope_of(ctx);
         let conn = self.db.conn().map_err(Self::conn_err)?;

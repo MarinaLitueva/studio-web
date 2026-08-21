@@ -77,7 +77,9 @@ fn build_graph_store(ctx: &GearCtx) -> Arc<dyn graph::GraphStore> {
             .get::<dyn crate::graph_storage::sdk::GraphStorageClientV1>()
         {
             Ok(client) => {
-                info!("studio-artifact-ingest: using the graph-storage gear as the artifact graph store");
+                info!(
+                    "studio-artifact-ingest: using the graph-storage gear as the artifact graph store"
+                );
                 return Arc::new(graph_backend::GraphStorageBackend::new(client));
             }
             Err(e) => warn!(

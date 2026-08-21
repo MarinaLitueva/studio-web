@@ -18,9 +18,9 @@ use toolkit_security::SecurityContext;
 use uuid::Uuid;
 
 use super::driver::{DriverIdentity, RemoteRepo};
-use super::service::{Connection, ConnectorService, NewConnection};
 #[cfg(feature = "graph")]
 use super::graph_sync::{SyncRequest, sync_repository};
+use super::service::{Connection, ConnectorService, NewConnection};
 #[cfg(feature = "graph")]
 use crate::graph_storage::sdk::GraphStorageClientV1;
 

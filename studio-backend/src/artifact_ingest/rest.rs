@@ -9,7 +9,7 @@ use axum::extract::{Path, Query};
 use axum::{Extension, Router};
 use serde_json::Value;
 use toolkit::api::canonical_prelude::*;
-use toolkit::api::operation_builder::{LicenseFeature, CORE_GLOBAL_BASE_LICENSE_FEATURE};
+use toolkit::api::operation_builder::{CORE_GLOBAL_BASE_LICENSE_FEATURE, LicenseFeature};
 use toolkit::api::{OpenApiRegistry, OperationBuilder};
 use toolkit_canonical_errors::resource_error;
 use toolkit_security::SecurityContext;

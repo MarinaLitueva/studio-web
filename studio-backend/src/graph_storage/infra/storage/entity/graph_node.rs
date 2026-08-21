@@ -1,8 +1,8 @@
 //! Graph nodes. Owned entities and managed-object references share this table;
 //! the distinction is carried by the GTS type, not by storage (ADR-0002).
 
-use sea_orm::entity::prelude::*;
 use sea_orm::entity::prelude::PgVector;
+use sea_orm::entity::prelude::*;
 use time::OffsetDateTime;
 use toolkit_db_macros::Scopable;
 use uuid::Uuid;

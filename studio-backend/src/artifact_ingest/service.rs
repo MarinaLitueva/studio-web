@@ -190,14 +190,16 @@ impl IngestService {
 
         // Link an issue/PR to its author: intern a user node and add an
         // authored_by edge. No-op when the author is unknown.
-        let author_edge =
-            |edges: &mut Vec<GtsEdge>, users: &mut HashMap<String, GtsNode>, artifact_id: &str, author: Option<&str>| {
-                if let Some(login) = author.map(str::trim).filter(|s| !s.is_empty()) {
-                    let u = gts::user_node(connector_id, provider, login);
-                    edges.push(gts::authored_by_edge(artifact_id, &u.instance_id));
-                    users.entry(u.instance_id.clone()).or_insert(u);
-                }
-            };
+        let author_edge = |edges: &mut Vec<GtsEdge>,
+                           users: &mut HashMap<String, GtsNode>,
+                           artifact_id: &str,
+                           author: Option<&str>| {
+            if let Some(login) = author.map(str::trim).filter(|s| !s.is_empty()) {
+                let u = gts::user_node(connector_id, provider, login);
+                edges.push(gts::authored_by_edge(artifact_id, &u.instance_id));
+                users.entry(u.instance_id.clone()).or_insert(u);
+            }
+        };
 
         let repo = gts::repo_node(connector_id, provider, repo_full_path);
         let repo_id = repo.instance_id.clone();
@@ -319,7 +321,8 @@ impl IngestService {
                         for f in list.into_iter().filter(|f| !f.is_dir).take(MAX_FILES) {
                             files += 1;
                             let path = f.path.clone();
-                            let file_id = gts::file_instance_id(connector_id, repo_full_path, &path);
+                            let file_id =
+                                gts::file_instance_id(connector_id, repo_full_path, &path);
                             edges.push(gts::contains_edge(&repo_id, &file_id));
                             file_paths.insert(path);
                             nodes.push(gts::file_node(&repo_id, connector_id, repo_full_path, f));

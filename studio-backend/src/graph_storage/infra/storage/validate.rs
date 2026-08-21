@@ -24,11 +24,7 @@ use crate::graph_storage::domain::error::DomainError;
 /// # Errors
 /// Returns [`DomainError::PayloadNotAnObject`] or
 /// [`DomainError::PayloadTooLarge`].
-pub fn check_shape_and_size(
-    key: &str,
-    payload: &Value,
-    max_bytes: u32,
-) -> Result<(), DomainError> {
+pub fn check_shape_and_size(key: &str, payload: &Value, max_bytes: u32) -> Result<(), DomainError> {
     if !payload.is_object() {
         return Err(DomainError::PayloadNotAnObject(key.to_owned()));
     }
@@ -58,11 +54,7 @@ pub fn check_shape_and_size(
 /// # Errors
 /// Returns [`DomainError::PayloadInvalid`] carrying the JSON pointer of the
 /// first violation, as DESIGN requires of payload validation errors.
-pub fn check_against_schema(
-    key: &str,
-    payload: &Value,
-    schema: &Value,
-) -> Result<(), DomainError> {
+pub fn check_against_schema(key: &str, payload: &Value, schema: &Value) -> Result<(), DomainError> {
     if schema.as_object().is_none_or(serde_json::Map::is_empty) {
         return Ok(());
     }
@@ -87,11 +79,7 @@ pub fn check_against_schema(
 ///
 /// # Errors
 /// Returns [`DomainError::EmbeddingDimensionMismatch`].
-pub fn check_embedding(
-    key: &str,
-    embedding: &[f32],
-    expected: u16,
-) -> Result<(), DomainError> {
+pub fn check_embedding(key: &str, embedding: &[f32], expected: u16) -> Result<(), DomainError> {
     if embedding.len() != expected as usize {
         return Err(DomainError::EmbeddingDimensionMismatch {
             node_key: key.to_owned(),

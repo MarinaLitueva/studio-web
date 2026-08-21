@@ -113,7 +113,12 @@ async fn analyze_purpose(
     body: Bytes,
 ) -> ApiResult<impl IntoResponse> {
     state
-        .forward(reqwest::Method::POST, "/v1/analyze/purpose", None, Some(body))
+        .forward(
+            reqwest::Method::POST,
+            "/v1/analyze/purpose",
+            None,
+            Some(body),
+        )
         .await
 }
 
@@ -226,7 +231,10 @@ pub fn register_routes(
         .authenticated()
         .require_license_features::<License>([])
         .handler(analyze_bloat)
-        .json_response(StatusCode::ACCEPTED, "Upstream TaskCreated (task_id, poll URL)")
+        .json_response(
+            StatusCode::ACCEPTED,
+            "Upstream TaskCreated (task_id, poll URL)",
+        )
         .error_401(openapi)
         .error_500(openapi)
         .register(router, openapi);
@@ -239,7 +247,10 @@ pub fn register_routes(
         .authenticated()
         .require_license_features::<License>([])
         .handler(analyze_purpose)
-        .json_response(StatusCode::ACCEPTED, "Upstream TaskCreated (task_id, poll URL)")
+        .json_response(
+            StatusCode::ACCEPTED,
+            "Upstream TaskCreated (task_id, poll URL)",
+        )
         .error_401(openapi)
         .error_500(openapi)
         .register(router, openapi);
@@ -252,7 +263,10 @@ pub fn register_routes(
         .authenticated()
         .require_license_features::<License>([])
         .handler(analyze_leak)
-        .json_response(StatusCode::ACCEPTED, "Upstream TaskCreated (task_id, poll URL)")
+        .json_response(
+            StatusCode::ACCEPTED,
+            "Upstream TaskCreated (task_id, poll URL)",
+        )
         .error_401(openapi)
         .error_500(openapi)
         .register(router, openapi);
@@ -265,7 +279,10 @@ pub fn register_routes(
         .authenticated()
         .require_license_features::<License>([])
         .handler(analyze_traceability)
-        .json_response(StatusCode::ACCEPTED, "Upstream TaskCreated (task_id, poll URL)")
+        .json_response(
+            StatusCode::ACCEPTED,
+            "Upstream TaskCreated (task_id, poll URL)",
+        )
         .error_401(openapi)
         .error_500(openapi)
         .register(router, openapi);
@@ -294,7 +311,10 @@ pub fn register_routes(
         .authenticated()
         .require_license_features::<License>([])
         .handler(list_tasks)
-        .json_response(StatusCode::OK, "Upstream task list, passed through verbatim")
+        .json_response(
+            StatusCode::OK,
+            "Upstream task list, passed through verbatim",
+        )
         .error_401(openapi)
         .error_500(openapi)
         .register(router, openapi);
@@ -322,11 +342,7 @@ pub fn register_routes(
         .authenticated()
         .require_license_features::<License>([])
         .handler(status)
-        .json_response_with_schema::<SpecQualityStatusDto>(
-            openapi,
-            StatusCode::OK,
-            "Wiring status",
-        )
+        .json_response_with_schema::<SpecQualityStatusDto>(openapi, StatusCode::OK, "Wiring status")
         .error_401(openapi)
         .error_500(openapi)
         .register(router, openapi);

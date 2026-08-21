@@ -378,7 +378,8 @@ pub fn register_routes(
             ))
             .summary("Reverse proxy to a Kubernetes IDE session")
             .tag("StudioSessions")
-            .anonymous().exposed();
+            .anonymous()
+            .exposed();
         router = if is_root {
             op.handler(super::proxy::ide_proxy_root)
                 .text_response(StatusCode::OK, "IDE session stream", "text/html")

@@ -73,10 +73,7 @@ CREATE TABLE IF NOT EXISTS studio_credstore_values (
                 }
             };
 
-            manager
-                .get_connection()
-                .execute_unprepared(sql)
-                .await?;
+            manager.get_connection().execute_unprepared(sql).await?;
             Ok(())
         }
 

@@ -18,6 +18,14 @@ backend:
   # (keys: host, port, user, password, dbname).
   database:
     existingSecret: "studio-postgres-app"
+    # Key mapping is configurable because CloudNativePG generates `username`,
+    # while the legacy manually-created Secret used `user`.
+    keys:
+      host: host
+      port: port
+      user: user
+      password: password
+      dbname: dbname
   # Platform IDP (OIDC issuer + client) — external, per-service Secret
   # (keys: issuer_url, client_id, client_secret).
   auth:
@@ -111,6 +119,13 @@ imagePullSecrets: []
 # one pod-wide uid would break whichever image doesn't own its files.
 podSecurityContext:
   runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
 
 # Self-hosted Keycloak (real SSO, INFRA-3767). Off by default — enable per
 # environment once (a) a cf-studio-keycloak image exists for the release tag,
