@@ -40,12 +40,10 @@ graph = [
 ]
 
 [dependencies]
-# gears-rust is consumed as a git dependency tracking the `main` BRANCH, not a
-# sibling checkout — so a build resolves the latest gears tip rather than a
-# frozen revision. Cargo.lock still records the exact commit last resolved; to
-# advance to the newest main, run `cargo update` (CI does this before every
-# build — see ci.yml / release.yml — so released binaries track head). A bare
-# clone still builds: cargo fetches the branch and writes the lock.
+# gears-rust is declared against its `main` branch, while Cargo.lock records the
+# exact reviewed commit used by CI and releases. Normal builds use `--locked`.
+# Advance gears deliberately with `cargo update`, review/test the result, and
+# commit the updated Cargo.lock; never re-resolve dependencies during a release.
 mimalloc = "0.1"
 anyhow = "1"
 tokio = { version = "1", features = ["full"] }

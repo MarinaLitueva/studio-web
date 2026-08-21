@@ -37,8 +37,8 @@ jobs:
     # runner and the runtime base TOGETHER.
     runs-on: ubuntu-24.04
     steps:
-      # The gears revision is pinned in Cargo.toml, so a tag rebuilt next
-      # week resolves the same sources as today.
+      # Cargo.lock pins the exact gears-rust revision, so rebuilding the same
+      # commit resolves the same Rust sources.
       - uses: actions/checkout@v4
 
       - name: System dependencies
@@ -49,17 +49,12 @@ jobs:
         with:
           workspaces: studio-backend
 
-      # Track the latest gears-rust main: re-resolve git deps to head and
-      # rewrite the lock, then build without --locked so it is accepted.
-      - name: Update dependencies (latest gears-rust main)
-        working-directory: studio-backend
-        run: cargo update
       - name: Build (release)
         working-directory: studio-backend
         # Keep LLM disabled, but compile graph-storage for the Kubernetes test
         # profile. The matching graph-postgres image is built and verified in
         # the images job below before either image is published.
-        run: cargo build --release --no-default-features --features graph
+        run: cargo build --locked --release --no-default-features --features graph
 
       - uses: actions/upload-artifact@v4
         with:
