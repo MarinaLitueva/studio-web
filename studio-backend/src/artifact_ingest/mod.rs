@@ -99,10 +99,10 @@ fn resolve_dir(env: &str) -> Option<PathBuf> {
     if raw.is_empty() {
         return None;
     }
-    if let Some(rest) = raw.strip_prefix("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            return Some(PathBuf::from(home).join(rest));
-        }
+    if let Some(rest) = raw.strip_prefix("~/")
+        && let Ok(home) = std::env::var("HOME")
+    {
+        return Some(PathBuf::from(home).join(rest));
     }
     Some(PathBuf::from(raw))
 }

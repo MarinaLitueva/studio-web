@@ -444,7 +444,7 @@ impl IngestService {
             return None;
         }
         if dir
-            .split(|c| c == '/' || c == '\\')
+            .split(['/', '\\'])
             .any(|seg| seg.is_empty() || seg == "..")
         {
             return None;

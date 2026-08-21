@@ -295,13 +295,14 @@ pub fn walk(dir: &Path) -> anyhow::Result<Vec<WalkedFile>> {
             let size = meta.len();
 
             let mut text = None;
-            if is_text_path(&path) && size <= MAX_TEXT_BYTES && text_budget >= size {
-                if let Ok(bytes) = std::fs::read(&path) {
-                    if let Ok(s) = String::from_utf8(bytes) {
-                        text_budget = text_budget.saturating_sub(size);
-                        text = Some(s);
-                    }
-                }
+            if is_text_path(&path)
+                && size <= MAX_TEXT_BYTES
+                && text_budget >= size
+                && let Ok(bytes) = std::fs::read(&path)
+                && let Ok(s) = String::from_utf8(bytes)
+            {
+                text_budget = text_budget.saturating_sub(size);
+                text = Some(s);
             }
             out.push(WalkedFile {
                 path: rel_str,
