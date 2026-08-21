@@ -1,10 +1,6 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import {
-  FRONTX_SHARED_PROPERTY_LANGUAGE,
-  FRONTX_SHARED_PROPERTY_THEME,
-} from '@gears-frontx/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createMfeBridgeFixture } from '../../../__test-utils__/createMfeBridgeFixture';
 
 type BridgeFixture = ReturnType<typeof createMfeBridgeFixture>;
@@ -12,15 +8,6 @@ type TestBridge = BridgeFixture['bridge'];
 type TestApp = { id: string };
 
 const superMountSpy = vi.fn();
-const {
-  getServiceMock,
-  useApiQueryMock,
-  useScreenTranslationsMock,
-} = vi.hoisted(() => ({
-  getServiceMock: vi.fn(),
-  useApiQueryMock: vi.fn(),
-  useScreenTranslationsMock: vi.fn(),
-}));
 
 vi.mock('@gears-frontx/react', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@gears-frontx/react')>();
@@ -33,77 +20,46 @@ vi.mock('@gears-frontx/react', async (importOriginal) => {
         superMountSpy(container, bridge);
       }
     },
-    apiRegistry: {
-      getService: getServiceMock,
-    },
-    useApiQuery: useApiQueryMock,
   };
 });
 
 vi.mock('./init', () => ({
-  mfeApp: { id: 'blank-mfe-app' },
+  mfeApp: { id: 'projects-mfe-app' },
 }));
 
-vi.mock('./api/_BlankApiService', () => ({
-  _BlankApiService: class MockBlankApiService {
-    static {
-      void 0;
-    }
-  },
+// The root's own behaviour (bridge properties, store-driven view) is not this
+// test's subject: here it stands in for "whatever the lifecycle renders".
+vi.mock('./ProjectsRoot', () => ({
+  ProjectsRoot: ({ bridge }: { bridge: TestBridge }) => (
+    <div data-testid="projects-root">{bridge.instanceId}</div>
+  ),
 }));
 
-vi.mock('./shared/useScreenTranslations', () => ({
-  useScreenTranslations: useScreenTranslationsMock,
-}));
-
-describe('blank-mfe lifecycle', () => {
-  beforeEach(() => {
-    getServiceMock.mockReturnValue({ getStatus: { type: 'status' } });
-    useScreenTranslationsMock.mockReturnValue({ t: (key: string) => key, loading: false });
-    useApiQueryMock.mockReturnValue({
-      data: {
-        message: 'Blank MFE query example is active.',
-        generatedAt: '2026-03-23T12:00:00.000Z',
-        capabilities: ['query-key-factory'],
-      },
-      isLoading: false,
-      isError: false,
-      error: null,
-    });
-  });
-
+describe('projects-mfe lifecycle', () => {
   afterEach(() => {
     vi.clearAllMocks();
   });
 
   it('binds the shared MFE app to the lifecycle instance', async () => {
     const module = await import('./lifecycle');
-    const lifecycle = module.default;
 
-    expect(Reflect.get(lifecycle, 'app')).toEqual({ id: 'blank-mfe-app' } satisfies TestApp);
+    expect(Reflect.get(module.default, 'app')).toEqual({
+      id: 'projects-mfe-app',
+    } satisfies TestApp);
   });
 
-  it('renders the real home screen with the provided bridge', async () => {
+  it('renders the projects root with the provided bridge', async () => {
     const module = await import('./lifecycle');
-    const lifecycle = module.default;
-    const renderContent = Reflect.get(lifecycle, 'renderContent');
+    const renderContent = Reflect.get(module.default, 'renderContent');
     const { bridge } = createMfeBridgeFixture({
-      domainId: 'blank-domain',
-      instanceId: 'blank-instance',
-      initialProperties: {
-        [FRONTX_SHARED_PROPERTY_THEME]: 'blank-theme',
-        [FRONTX_SHARED_PROPERTY_LANGUAGE]: 'en',
-      },
+      domainId: 'projects-domain',
+      instanceId: 'projects-instance',
     });
 
     expect(typeof renderContent).toBe('function');
     render(<>{renderContent(bridge) as React.ReactNode}</>);
 
-    // The key-echoing translation mock makes the placeholder's i18n keys
-    // directly assertable.
-    expect(await screen.findByText('title')).toBeTruthy();
-    expect(screen.getByText('description')).toBeTruthy();
-    expect(screen.getByText('coming_soon')).toBeTruthy();
+    expect(screen.getByTestId('projects-root').textContent).toBe('projects-instance');
   });
 
   it('inherits base mount behavior from ThemeAwareReactLifecycle', async () => {
@@ -113,8 +69,8 @@ describe('blank-mfe lifecycle', () => {
     };
     const container = document.createElement('div');
     const { bridge } = createMfeBridgeFixture({
-      domainId: 'blank-domain',
-      instanceId: 'blank-instance',
+      domainId: 'projects-domain',
+      instanceId: 'projects-instance',
     });
 
     lifecycle.mount(container, bridge);

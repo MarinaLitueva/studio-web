@@ -211,6 +211,7 @@ export {
 
   // Auth
   auth,
+  authShared,
   frontxApiTransport,
 
   // API

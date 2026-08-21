@@ -33,6 +33,8 @@ import {
 // `registerExtension` runs after the type-system register succeeds.
 import { validateContract } from '@gears-frontx/mfes';
 import extensionOverlaySchemaJson from './schemas/extension_overlay.v1.json';
+import sharedPropertyContextProjectSchemaJson from './schemas/shared_property_context_project.v1.json';
+import { STUDIO_SHARED_PROPERTY_CONTEXT_PROJECT } from './contextActions';
 
 /**
  * The GTS id grammar, as far as this test needs it: every `~`-separated segment
@@ -79,6 +81,7 @@ gtsPlugin.registerSchema(themeSchema);
 gtsPlugin.registerSchema(languageSchema);
 gtsPlugin.registerSchema(extensionScreenSchema);
 gtsPlugin.registerSchema(extensionOverlaySchemaJson as JSONSchema);
+gtsPlugin.registerSchema(sharedPropertyContextProjectSchemaJson as JSONSchema);
 
 describe('generated MFE manifest', () => {
   it('was generated — an empty aggregate means `npm run generate:mfe-manifests` was skipped', () => {
@@ -95,6 +98,22 @@ describe('generated MFE manifest', () => {
       ...(config.extensions ?? []).map((extension) => extension.id),
     ]);
     expect(ids.filter((id) => !isWellFormedGtsId(id))).toEqual([]);
+  });
+
+  it('gives every declared property and action a well-formed GTS id', () => {
+    // The same rule, on the ids an entry REFERS to — and this side fails later
+    // and louder: a malformed property id registers fine, then throws inside
+    // `updateSharedProperty` during `bootstrapMFE`, leaving no screen slot at
+    // all. Which is how a four-part `…context.project.v1~` leaf got written once.
+    const referenced = manifests.flatMap((config) =>
+      config.entries.flatMap((entry) => [
+        ...(entry.requiredProperties ?? []),
+        ...(entry.optionalProperties ?? []),
+        ...(entry.actions ?? []),
+        ...(entry.domainActions ?? []),
+      ])
+    );
+    expect(referenced.filter((id) => !isWellFormedGtsId(id))).toEqual([]);
   });
 
   it('registers every extension with the type system', () => {
@@ -139,6 +158,43 @@ describe('generated MFE manifest', () => {
         (ext) => ext.domain === screenDomain.id && ext.presentation?.route === '/search'
       );
       expect(asScreen).toBeUndefined();
+    });
+  });
+
+  describe('selected-project property', () => {
+    /**
+     * What `updateSharedProperty` validates: it appends a runtime segment to the
+     * property id and registers the result as an instance, so a rejected value
+     * throws at the publisher rather than at the subscriber.
+     */
+    const publish = (value: unknown): (() => void) => () =>
+      gtsPlugin.register({
+        id: `${STUDIO_SHARED_PROPERTY_CONTEXT_PROJECT}frontx.mfes.comm.runtime.v1`,
+        value,
+      } as never);
+
+    it('is declared by projects-mfe, which is what makes the switcher able to steer it', () => {
+      const entries = manifests.flatMap((config) => config.entries);
+      const declaring = entries.filter((entry) =>
+        (entry.requiredProperties ?? []).includes(STUDIO_SHARED_PROPERTY_CONTEXT_PROJECT)
+      );
+      expect(declaring.map((entry) => entry.id)).toEqual([
+        expect.stringContaining('constructor_studio.projects.mfe.main'),
+      ]);
+    });
+
+    it('admits a tenant id', () => {
+      expect(publish('9f0c1a2b-0000-0000-0000-0000000000aa')).not.toThrow();
+    });
+
+    it('admits null — organization scope is a published value, not an absent one', () => {
+      // bootstrapMFE seeds exactly this; forbidding it kills the slot at startup.
+      expect(publish(null)).not.toThrow();
+    });
+
+    it('rejects a value that is neither, so a wrong publish fails at the publisher', () => {
+      expect(publish(42)).toThrow();
+      expect(publish('')).toThrow();
     });
   });
 

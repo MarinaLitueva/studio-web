@@ -12,6 +12,8 @@ import { mfeBootstrapSlice } from '@/app/slices/mfeBootstrapSlice';
 import { appContextSlice } from '@/app/slices/appContextSlice';
 import { keycloakOidcProvider } from '@/app/auth/keycloakOidcProvider';
 import extensionOverlaySchemaJson from '@/app/mfe/schemas/extension_overlay.v1.json';
+import actionContextPublishSchemaJson from '@/app/mfe/schemas/action_context_publish.v1.json';
+import sharedPropertyContextProjectSchemaJson from '@/app/mfe/schemas/shared_property_context_project.v1.json';
 import App from './App';
 
 // Import all themes
@@ -35,6 +37,14 @@ gtsPlugin.registerSchema(extensionScreenSchema);
 // throws, bootstrapMFE rejects, and MfeScreenContainer never renders the screen
 // slot: the drawer still lists its items while every click mounts into nothing.
 gtsPlugin.registerSchema(extensionOverlaySchemaJson as JSONSchema);
+// The context-slot action an MFE executes against the screen domain. Same rule
+// as above: GTS refuses to route an action instance whose type has no schema.
+gtsPlugin.registerSchema(actionContextPublishSchemaJson as JSONSchema);
+// The shell -> MFE half of the same slot. `sharedProperties` on a domain and
+// `requiredProperties` on an entry both carry an `x-gts-ref` that checks the type
+// is IN THE REGISTRY, not merely that the string looks right, so an unregistered
+// id fails registration and takes bootstrapMFE with it.
+gtsPlugin.registerSchema(sharedPropertyContextProjectSchemaJson as JSONSchema);
 
 // Register accounts service (application-level service for user info)
 apiRegistry.register(AccountsApiService);
@@ -53,6 +63,16 @@ const app = createFrontXApp({
   // all MFEs, one deduplicated refresh-and-retry after a 401.
   auth: { provider: keycloakOidcProvider },
 });
+
+// Mock API off from the first paint. The framework's `mock()` plugin (part of
+// the full preset) turns mock mode ON by default on localhost, and the accounts
+// mock map answers `/me` with a tenant id that exists nowhere
+// (`…0000000000aa`). Since MFEs share the host's QueryClient
+// (`queryCacheShared()`), that fake identity leaks into every MFE that reads
+// `/me` — projects-mfe then asks account-management for the children of a
+// tenant AM has never heard of and gets a 404. The FrontX Studio panel can
+// still switch mocks back on.
+app.actions.toggleMockMode(false);
 
 // Register app-level slices and effects (identity flows through app.auth)
 registerSlice(mfeBootstrapSlice);
