@@ -1,9 +1,10 @@
 # Deploying studio-web to Kubernetes
 
-The chart lives in `deploy/helm/studio-web` (app repo — versioned together
-with the code it deploys). Environment value files live with the deploy
-pipeline (`constructorfabric/studio-web-ci`, Pattern B);
-`helm/values-dmz.example.yaml` documents the contract.
+The chart and environment values live in this repository so application and
+deployment changes can be reviewed together. `.github/workflows/deploy.yml`
+performs a manually approved dev or test deployment; no separate infra
+repository or Argo CD installation is used. `helm/values-dmz.example.yaml`
+documents the generic configuration contract.
 
 ## Images
 
@@ -49,3 +50,19 @@ helm upgrade --install studio-web deploy/helm/studio-web \
 Prerequisites: the three Secrets from `values-dmz.example.yaml`, an OIDC
 realm (issuer must serve real TLS), and a Postgres with a CREATEDB-capable
 app user. Per-gear databases are NOT auto-provisioned: `auto_provision` only creates SQLite directories, so the databases come from the initdb list in k8s/postgres.yaml, which runs once on an empty volume — add one by hand if you introduce a gear later.
+
+## GitHub deployment
+
+Create GitHub Environments named `dev` and `test`. In each Environment add a
+secret named `KUBE_CONFIG_B64` containing the base64-encoded kubeconfig for
+that namespace's `studio-deployer` ServiceAccount. Never use the administrator
+kubeconfig. Add required reviewers when repository access is hardened.
+
+Run the **Deploy** workflow from the `main` branch and provide an immutable
+`sha-<commit>` tag already published by the Release workflow. The deploy job:
+
+1. rejects tags that are not commits on `main` and rejects cluster-admin credentials;
+2. verifies the three application images and required namespace Secrets;
+3. lints and server-side dry-runs the rendered chart;
+4. performs a Helm upgrade with automatic rollback and waits for readiness;
+5. verifies deployed image tags, HTTPS health and the environment OIDC issuer.
