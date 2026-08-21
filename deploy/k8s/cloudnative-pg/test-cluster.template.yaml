@@ -27,8 +27,13 @@ spec:
     major: 19
   primaryUpdateStrategy: unsupervised
   enableSuperuserAccess: false
-  imagePullSecrets:
-    - name: ghcr-pull
+  managed:
+    roles:
+      - name: keycloak
+        ensure: present
+        login: true
+        passwordSecret:
+          name: keycloak-postgres-app
   bootstrap:
     initdb:
       database: studio
@@ -48,7 +53,7 @@ spec:
         - CREATE DATABASE studio_credstore_values OWNER studio
         - CREATE DATABASE graph_storage OWNER studio
   storage:
-    storageClass: cinder-default
+    storageClass: cinder-postgres
     size: 20Gi
   resources:
     requests:
@@ -65,6 +70,19 @@ spec:
 # studio-test has default-deny ingress. Replication and application traffic are
 # same-namespace and already allowed; the operator additionally needs the
 # authenticated instance-manager status endpoint introduced in CNPG 1.30.
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: keycloak
+  namespace: studio-test
+spec:
+  name: keycloak
+  owner: keycloak
+  cluster:
+    name: studio-postgres
+  encoding: UTF8
+  databaseReclaimPolicy: retain
+---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

@@ -1,5 +1,5 @@
 global:
-  hostname: dev.studio.constructorfabric.org
+  hostname: studio-dev.cfabric.org
   environmentName: dev
   environmentType: dev
 
@@ -19,6 +19,10 @@ backend:
     enabled: false
   sessions:
     enabled: false
+  configOverride:
+    existingConfigMap: studio-web-backend-config
+  idpAdmin:
+    baseUrl: "https://studio-dev.cfabric.org/auth"
 
 frontend:
   image:
@@ -27,9 +31,14 @@ frontend:
   autoscaling:
     enabled: false
 
+keycloak:
+  enabled: true
+  replicas: 1
+  hostname: studio-dev.cfabric.org
+  relativePath: /auth
+  image:
+    tag: "sha-REPLACE_ME"
+
 ingress:
   enabled: true
   className: traefik
-
-imagePullSecrets:
-  - name: ghcr-pull

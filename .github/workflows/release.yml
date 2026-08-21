@@ -235,10 +235,9 @@ jobs:
           for t in ${{ steps.tags.outputs.list }}; do
             docker push "$IMAGE_PREFIX/cf-studio-theia:$t"
           done
-      # Custom Keycloak (real SSO, INFRA-3767). Self-contained: optimized build
-      # + the studio realm baked for --import-realm; social-provider secrets are
-      # NOT baked (resolved at runtime from the files-plaintext vault). Pulled
-      # in-cluster via the Harbor GHCR proxy, gated by Helm keycloak.enabled.
+      # Custom Keycloak runtime (real SSO, INFRA-3767). The public image is an
+      # optimized runtime only: environment realms and all credentials are
+      # mounted from namespace-local Secrets by Helm.
       - name: Build & push Keycloak image
         # Skipped where the keycloak/ build context is absent (the concept
         # branch has no keycloak/ dir — that work lives on the keycloak branch):

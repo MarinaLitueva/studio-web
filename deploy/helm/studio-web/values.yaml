@@ -14,6 +14,10 @@ backend:
   replicas: 1
   port: 8090
   configProfile: "k8s"
+  # Optional ConfigMap override for testing a corrected profile with an already
+  # published immutable image. The ConfigMap key must match configProfile.
+  configOverride:
+    existingConfigMap: ""
   # Postgres is operator-managed; connection comes ONLY from this Secret
   # (keys: host, port, user, password, dbname).
   database:
@@ -36,12 +40,6 @@ backend:
   # pod restart], s2s_client_secret [optional], idp_admin_secret [optional]).
   appSecrets:
     existingSecret: "studio-web-app"
-  # Interim token auth (INFRA-3767): while no OIDC realm exists, the k8s
-  # profile runs static-authn and needs a Secret with key `admin_token`.
-  # The k8s profile REQUIRES the variable, so leaving this empty fails the
-  # boot naming STUDIO_ADMIN_TOKEN. Drop when a real IdP takes over.
-  devAuth:
-    existingSecret: "studio-web-dev-auth"
   # LLM egress endpoint (non-secret half; the key lives in appSecrets).
   # Any OpenAI-compatible provider; defaults = Groq free tier.
   llm:
@@ -136,18 +134,30 @@ containerSecurityContext:
 # cluster-specific-bundles, same reason as the backend kube-api egress.
 keycloak:
   enabled: false
+  replicas: 1
+  relativePath: "/auth"
   image:
     # Matches release.yml: ghcr.io/<repo>/cf-studio-keycloak. The common values
     # override rewrites this to the Harbor GHCR proxy (kyverno admits Harbor only).
     repository: ghcr.io/constructorfabric/studio-web/cf-studio-keycloak
     tag: ""                # REQUIRED when enabled: the v* release tag
   # Public issuer hostname (needs DNS + TLS). Empty disables the IdP ingress.
-  hostname: ""             # e.g. idp.dev.dmz.cnstr.me
-  # PGO-generated Secret for the keycloak DB user (host/port/dbname/user/password).
+  hostname: ""             # same public hostname as Studio; Keycloak uses /auth
+  # Existing Secret for the Keycloak role/database in the shared Studio
+  # PostgreSQL cluster (host/port/dbname/username/password).
   db:
-    existingSecret: "db-pguser-u-keycloak"
+    existingSecret: "keycloak-postgres-app"
+    keys:
+      host: host
+      port: port
+      database: dbname
+      username: username
+      password: password
   # Bootstrap (master realm) admin — sealed Secret with keys username/password.
   adminSecret: "studio-web-keycloak-admin"
+  # Complete environment-specific realm JSON. The public image contains no
+  # realm; this Secret is required and must contain key `realm-studio.json`.
+  realmSecret: "studio-web-keycloak-realm"
   # files-plaintext vault Secret (social client id/secret), mounted read-only at
   # /opt/keycloak/data/vault; keys are studio_<provider>-client-id/secret.
   vaultSecret: "studio-web-keycloak-vault"
@@ -158,3 +168,5 @@ keycloak:
   resources:
     requests: { cpu: 200m, memory: 512Mi }
     limits: { cpu: "1", memory: 1Gi }
+  podDisruptionBudget:
+    enabled: true

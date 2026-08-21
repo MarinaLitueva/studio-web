@@ -26,8 +26,13 @@ spec:
     major: 19
   primaryUpdateStrategy: unsupervised
   enableSuperuserAccess: false
-  imagePullSecrets:
-    - name: ghcr-pull
+  managed:
+    roles:
+      - name: keycloak
+        ensure: present
+        login: true
+        passwordSecret:
+          name: keycloak-postgres-app
   bootstrap:
     initdb:
       database: studio
@@ -44,7 +49,7 @@ spec:
         - CREATE DATABASE studio_credstore_values OWNER studio
         - CREATE DATABASE graph_storage OWNER studio
   storage:
-    storageClass: cinder-default
+    storageClass: cinder-postgres
     size: 10Gi
   resources:
     requests:
@@ -55,6 +60,19 @@ spec:
       memory: 2Gi
   monitoring:
     enablePodMonitor: false
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: keycloak
+  namespace: studio-dev
+spec:
+  name: keycloak
+  owner: keycloak
+  cluster:
+    name: studio-postgres
+  encoding: UTF8
+  databaseReclaimPolicy: retain
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
