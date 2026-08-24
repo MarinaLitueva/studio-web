@@ -181,43 +181,68 @@ impl ConnectorDriver for GitHubDriver {
         search: Option<&str>,
         limit: u32,
     ) -> anyhow::Result<Vec<RemoteRepo>> {
-        // /user/repos has no server-side search, so the filter is applied
-        // locally over the most recently touched page.
-        let url = format!(
-            "{}/user/repos?sort=updated&per_page={}",
-            auth.root(),
-            limit.clamp(1, 100)
-        );
-        let res = self.request(&url, auth).send().await?;
-        let status = res.status();
-        if !status.is_success() {
-            let body = res.text().await.unwrap_or_default();
-            anyhow::bail!(
-                "GitHub {status}: {}",
-                body.chars().take(200).collect::<String>()
-            );
-        }
-        let repos: Vec<GitHubRepo> = res.json().await?;
+        // `/user/repos` has no server-side repo search, so we page through the
+        // account's repositories (100 per request, GitHub's max) and filter
+        // locally. With a search we must scan every page; without one the
+        // `sort=updated` order means the first `limit` rows are already the
+        // answer, so we stop as soon as we hold them. `MAX_PAGES` bounds the
+        // walk for accounts with very many repos (we log and return what we got).
+        const PER_PAGE: u32 = 100;
+        const MAX_PAGES: u32 = 20;
         let needle = search
             .map(|s| s.trim().to_lowercase())
             .filter(|s| !s.is_empty());
-        Ok(repos
-            .into_iter()
-            .filter(|r| {
-                needle
-                    .as_ref()
-                    .is_none_or(|n| r.full_name.to_lowercase().contains(n))
-            })
-            .map(|r| RemoteRepo {
-                id: r.id.to_string(),
-                name: r.name,
-                full_path: r.full_name,
-                clone_url: r.clone_url,
-                default_branch: r.default_branch,
-                description: r.description,
-                visibility: Some(if r.private { "private" } else { "public" }.to_string()),
-            })
-            .collect())
+        let want = limit.max(1) as usize;
+        let mut out: Vec<RemoteRepo> = Vec::new();
+        for page in 1..=MAX_PAGES {
+            let url = format!(
+                "{}/user/repos?sort=updated&per_page={PER_PAGE}&page={page}",
+                auth.root(),
+            );
+            let res = self.request(&url, auth).send().await?;
+            let status = res.status();
+            if !status.is_success() {
+                let body = res.text().await.unwrap_or_default();
+                anyhow::bail!(
+                    "GitHub {status}: {}",
+                    body.chars().take(200).collect::<String>()
+                );
+            }
+            let repos: Vec<GitHubRepo> = res.json().await?;
+            let full_page = repos.len() == PER_PAGE as usize;
+            out.extend(
+                repos
+                    .into_iter()
+                    .filter(|r| {
+                        needle
+                            .as_ref()
+                            .is_none_or(|n| r.full_name.to_lowercase().contains(n))
+                    })
+                    .map(|r| RemoteRepo {
+                        id: r.id.to_string(),
+                        name: r.name,
+                        full_path: r.full_name,
+                        clone_url: r.clone_url,
+                        default_branch: r.default_branch,
+                        description: r.description,
+                        visibility: Some(if r.private { "private" } else { "public" }.to_string()),
+                    }),
+            );
+            // Stop at the last page, or (no search) once we already hold the
+            // most-recent `limit` repositories.
+            if !full_page || (needle.is_none() && out.len() >= want) {
+                break;
+            }
+            if page == MAX_PAGES {
+                tracing::warn!(
+                    max_pages = MAX_PAGES,
+                    "github: repository listing hit the {}-repo scan cap; returning what was scanned",
+                    MAX_PAGES * PER_PAGE
+                );
+            }
+        }
+        out.truncate(want);
+        Ok(out)
     }
 
     async fn list_issues(
