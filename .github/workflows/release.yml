@@ -4,12 +4,12 @@ name: Release
 #   * a `v*` tag  — the real release: images tagged with the version + `latest`
 #     and a GitHub Release with the artifacts. Deployment is a separate,
 #     manually approved workflow in deploy.yml.
-#   * a push to main — images only, tagged `edge` and `sha-<short>`, so there is
+#   * a push to main — images only, tagged `edge` and `sha-<full-commit>`, so there is
 #     something to pull between releases (studio-session already expects an
 #     `:edge` tag for the Theia image; this gives the stack the same habit).
-#   * manual — the reason `workflow_dispatch` is here at all: without it the
-#     Actions page for this workflow has no "Run workflow" button, so a rebuild
-#     of an unchanged tree meant pushing an empty commit or a throwaway tag.
+#   * manual — publish an immutable snapshot for the selected branch commit.
+#     A feature branch NEVER moves `edge` or `latest`, and its sha tag may be
+#     deployed only to dev (enforced independently by deploy.yml).
 on:
   push:
     tags: ["v*"]
@@ -22,15 +22,68 @@ on:
         default: false
 
 permissions:
-  contents: write   # GitHub Release
-  packages: write   # GHCR push
+  contents: read
+
+concurrency:
+  # Serialize releases for one ref. Main snapshots may supersede an older
+  # build; version tags are never cancelled.
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 env:
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ghcr.io/${{ github.repository }}
 
 jobs:
+  require-ci:
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Require successful CI for this exact commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 1200))
+
+          while (( SECONDS < deadline )); do
+            runs="$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow CI \
+              --commit "$GITHUB_SHA" \
+              --limit 10 \
+              --json status,conclusion,url)"
+
+            if jq -e 'any(.[]; .status == "completed" and .conclusion == "success")' \
+              <<<"$runs" >/dev/null; then
+              echo "Successful CI found for $GITHUB_SHA"
+              exit 0
+            fi
+
+            if jq -e 'any(.[]; .status != "completed")' <<<"$runs" >/dev/null; then
+              echo "CI for $GITHUB_SHA is still running; waiting..."
+              sleep 15
+              continue
+            fi
+
+            if jq -e 'length > 0' <<<"$runs" >/dev/null; then
+              echo "CI completed without success for $GITHUB_SHA" >&2
+              jq -r '.[] | "\(.status) \(.conclusion // "-") \(.url)"' <<<"$runs" >&2
+              exit 1
+            fi
+
+            echo "CI run for $GITHUB_SHA is not visible yet; waiting..."
+            sleep 10
+          done
+
+          echo "Timed out waiting for successful CI for $GITHUB_SHA" >&2
+          exit 1
+
   backend-binary:
+    needs: require-ci
     # Pinned, not `-latest`: the binary links the builder's glibc, and the
     # runtime image (Dockerfile, debian:trixie-slim, glibc 2.41) must be at
     # least as new. `ubuntu-latest` moving to a newer glibc than trixie would
@@ -65,6 +118,7 @@ jobs:
   # Builds the FrontX-based studio-frontend/ — the deployed portal since it
   # replaced studio-frontend-prototype/ (now a playground with its own image).
   frontend-dist:
+    needs: require-ci
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -90,6 +144,7 @@ jobs:
   # compose on :8081. It is tested and built only here, at release time —
   # ci.yml deliberately does not gate on it.
   prototype-dist:
+    needs: require-ci
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -112,6 +167,9 @@ jobs:
   images:
     needs: [backend-binary, frontend-dist, prototype-dist]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -146,75 +204,68 @@ jobs:
           lower=$(printf '%s' "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           echo "IMAGE_PREFIX=ghcr.io/$lower" >> "$GITHUB_ENV"
 
-      # A tag release gets the version and `latest`; anything else gets `edge`
-      # and an immutable `sha-` tag. `latest` is deliberately NOT moved by a
-      # main push: something has to keep meaning "the last release".
+      # Every build first publishes the full immutable commit SHA. Mutable or
+      # human-readable tags are promoted only after ALL images have built and
+      # the graph PostgreSQL compatibility check has passed.
       - name: Work out the image tags
         id: tags
         run: |
           set -euo pipefail
-          short="sha-$(git rev-parse --short HEAD)"
+          immutable="sha-$GITHUB_SHA"
           if [ "${{ github.ref_type }}" = "tag" ]; then
-            echo "list=${{ github.ref_name }} latest $short" >> "$GITHUB_OUTPUT"
-          elif [ "${{ inputs.publish_latest }}" = "true" ]; then
-            echo "list=edge latest $short" >> "$GITHUB_OUTPUT"
+            promotions="${{ github.ref_name }} latest"
+          elif [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            if [ "${{ inputs.publish_latest }}" = "true" ]; then
+              promotions="edge latest"
+            else
+              promotions="edge"
+            fi
           else
-            echo "list=edge $short" >> "$GITHUB_OUTPUT"
+            if [ "${{ inputs.publish_latest }}" = "true" ]; then
+              echo "A feature branch cannot move latest" >&2
+              exit 1
+            fi
+            promotions=""
           fi
+          echo "immutable=$immutable" >> "$GITHUB_OUTPUT"
+          echo "promotions=$promotions" >> "$GITHUB_OUTPUT"
 
       - name: Build backend image
         run: |
           set -euo pipefail
-          args=()
-          for t in ${{ steps.tags.outputs.list }}; do
-            args+=(-t "$IMAGE_PREFIX/studio-backend:$t")
-          done
-          docker build -f studio-backend/Dockerfile "${args[@]}" studio-backend
+          tag="${{ steps.tags.outputs.immutable }}"
+          docker build -f studio-backend/Dockerfile -t "$IMAGE_PREFIX/studio-backend:$tag" studio-backend
 
       - name: Build graph PostgreSQL CloudNativePG operand
         run: |
           set -euo pipefail
-          args=()
-          for t in ${{ steps.tags.outputs.list }}; do
-            args+=(-t "$IMAGE_PREFIX/graph-postgres:$t")
-          done
-          docker build -f studio-backend/docker/graph-postgres/Dockerfile "${args[@]}" studio-backend/docker/graph-postgres
+          tag="${{ steps.tags.outputs.immutable }}"
+          docker build -f studio-backend/docker/graph-postgres/Dockerfile -t "$IMAGE_PREFIX/graph-postgres:$tag" studio-backend/docker/graph-postgres
 
       - name: Verify graph PostgreSQL CloudNativePG compatibility
-        run: bash studio-backend/docker/graph-postgres/verify-cnpg-compatibility.sh "$IMAGE_PREFIX/graph-postgres:sha-$(git rev-parse --short HEAD)"
+        run: bash studio-backend/docker/graph-postgres/verify-cnpg-compatibility.sh "$IMAGE_PREFIX/graph-postgres:${{ steps.tags.outputs.immutable }}"
 
-      - name: Push backend and graph PostgreSQL images
+      - name: Push immutable backend and graph PostgreSQL images
         run: |
           set -euo pipefail
-          for t in ${{ steps.tags.outputs.list }}; do
-            docker push "$IMAGE_PREFIX/studio-backend:$t"
-            docker push "$IMAGE_PREFIX/graph-postgres:$t"
-          done
+          tag="${{ steps.tags.outputs.immutable }}"
+          docker push "$IMAGE_PREFIX/studio-backend:$tag"
+          docker push "$IMAGE_PREFIX/graph-postgres:$tag"
 
       - name: Build & push frontend image
         run: |
           set -euo pipefail
-          args=()
-          for t in ${{ steps.tags.outputs.list }}; do
-            args+=(-t "$IMAGE_PREFIX/studio-frontend:$t")
-          done
-          docker build -f studio-frontend/Dockerfile "${args[@]}" studio-frontend
-          for t in ${{ steps.tags.outputs.list }}; do
-            docker push "$IMAGE_PREFIX/studio-frontend:$t"
-          done
+          tag="${{ steps.tags.outputs.immutable }}"
+          docker build -f studio-frontend/Dockerfile -t "$IMAGE_PREFIX/studio-frontend:$tag" studio-frontend
+          docker push "$IMAGE_PREFIX/studio-frontend:$tag"
 
       # Same nginx runtime recipe as the main frontend, its own dist and name.
       - name: Build & push frontend prototype image
         run: |
           set -euo pipefail
-          args=()
-          for t in ${{ steps.tags.outputs.list }}; do
-            args+=(-t "$IMAGE_PREFIX/studio-frontend-prototype:$t")
-          done
-          docker build -f studio-frontend-prototype/Dockerfile "${args[@]}" studio-frontend-prototype
-          for t in ${{ steps.tags.outputs.list }}; do
-            docker push "$IMAGE_PREFIX/studio-frontend-prototype:$t"
-          done
+          tag="${{ steps.tags.outputs.immutable }}"
+          docker build -f studio-frontend-prototype/Dockerfile -t "$IMAGE_PREFIX/studio-frontend-prototype:$tag" studio-frontend-prototype
+          docker push "$IMAGE_PREFIX/studio-frontend-prototype:$tag"
 
       # The per-workspace Theia IDE session image (moved in from fabric-poc).
       # Self-contained multi-stage build from theia/ — no artifact to download,
@@ -223,38 +274,43 @@ jobs:
       - name: Build & push Theia session image
         run: |
           set -euo pipefail
-          args=()
-          for t in ${{ steps.tags.outputs.list }}; do
-            args+=(-t "$IMAGE_PREFIX/cf-studio-theia:$t")
-          done
-          docker build -f theia/Dockerfile "${args[@]}" theia
-          for t in ${{ steps.tags.outputs.list }}; do
-            docker push "$IMAGE_PREFIX/cf-studio-theia:$t"
-          done
+          tag="${{ steps.tags.outputs.immutable }}"
+          docker build -f theia/Dockerfile -t "$IMAGE_PREFIX/cf-studio-theia:$tag" theia
+          docker push "$IMAGE_PREFIX/cf-studio-theia:$tag"
       # Custom Keycloak runtime (real SSO, INFRA-3767). The public image is an
       # optimized runtime only: environment realms and all credentials are
       # mounted from namespace-local Secrets by Helm.
       - name: Build & push Keycloak image
-        # Skipped where the keycloak/ build context is absent (the concept
-        # branch has no keycloak/ dir — that work lives on the keycloak branch):
-        # main still builds it, branches without it skip instead of failing the
-        # whole image job. Re-enables itself automatically once keycloak/ lands.
-        if: hashFiles('keycloak/Dockerfile') != ''
         run: |
           set -euo pipefail
-          args=()
-          for t in ${{ steps.tags.outputs.list }}; do
-            args+=(-t "$IMAGE_PREFIX/cf-studio-keycloak:$t")
-          done
-          docker build -f keycloak/Dockerfile "${args[@]}" keycloak
-          for t in ${{ steps.tags.outputs.list }}; do
-            docker push "$IMAGE_PREFIX/cf-studio-keycloak:$t"
+          tag="${{ steps.tags.outputs.immutable }}"
+          docker build -f keycloak/Dockerfile -t "$IMAGE_PREFIX/cf-studio-keycloak:$tag" keycloak
+          docker push "$IMAGE_PREFIX/cf-studio-keycloak:$tag"
+
+      - name: Promote the complete image set
+        if: steps.tags.outputs.promotions != ''
+        run: |
+          set -euo pipefail
+          immutable="${{ steps.tags.outputs.immutable }}"
+          images=(
+            studio-backend
+            graph-postgres
+            studio-frontend
+            studio-frontend-prototype
+            cf-studio-theia
+            cf-studio-keycloak
+          )
+          for promotion in ${{ steps.tags.outputs.promotions }}; do
+            for image in "${images[@]}"; do
+              docker tag "$IMAGE_PREFIX/$image:$immutable" "$IMAGE_PREFIX/$image:$promotion"
+              docker push "$IMAGE_PREFIX/$image:$promotion"
+            done
           done
       - name: Summary
         run: |
           {
             echo "### Images published"
-            for t in ${{ steps.tags.outputs.list }}; do
+            for t in ${{ steps.tags.outputs.immutable }} ${{ steps.tags.outputs.promotions }}; do
               echo "- \`$IMAGE_PREFIX/studio-backend:$t\`"
               echo "- \`$IMAGE_PREFIX/graph-postgres:$t\`"
               echo "- \`$IMAGE_PREFIX/studio-frontend:$t\`"
@@ -265,10 +321,12 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   github-release:
-    needs: [backend-binary, frontend-dist]
+    needs: [backend-binary, frontend-dist, images]
     # A main push publishes images, not releases.
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:

@@ -2,7 +2,10 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # Internal feature branches need an exact-SHA CI result before their
+    # snapshot images may be published for dev. Tags reuse the CI result of
+    # the commit they point at, so only branch pushes are selected here.
+    branches: ["**"]
   pull_request:
 
 concurrency:

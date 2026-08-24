@@ -53,15 +53,23 @@ app user. Per-gear databases are NOT auto-provisioned: `auto_provision` only cre
 
 ## GitHub deployment
 
+All routine dev and test deployments are performed only by the GitHub Actions
+**Deploy** workflow. Direct local `helm` or `kubectl` mutations are reserved for
+documented break-glass recovery; after recovery, reconcile the same state
+through GitHub so the deployment history remains authoritative.
+
 Create GitHub Environments named `dev` and `test`. In each Environment add a
 secret named `KUBE_CONFIG_B64` containing the base64-encoded kubeconfig for
 that namespace's `studio-deployer` ServiceAccount. Never use the administrator
 kubeconfig. Add required reviewers when repository access is hardened.
 
-Run the **Deploy** workflow from the `main` branch and provide an immutable
-`sha-<commit>` tag already published by the Release workflow. The deploy job:
+Run the **Deploy** workflow from the `main` branch. A full `sha-<commit>`
+snapshot built from any internal branch may be deployed only to `dev`. A
+versioned `v*` release tag pointing to a commit on `main` may be deployed to
+`dev` or `test`. Production will be added only after its namespace and values
+exist. The deploy job:
 
-1. rejects tags that are not commits on `main` and rejects cluster-admin credentials;
+1. enforces the snapshot-to-dev and release-to-environment promotion policy and rejects cluster-admin credentials;
 2. verifies the three application images and required namespace Secrets;
 3. lints and server-side dry-runs the rendered chart;
 4. performs a Helm upgrade with automatic rollback and waits for readiness;
