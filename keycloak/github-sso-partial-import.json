@@ -1,0 +1,34 @@
+{
+  "identityProviders": [
+    {
+      "alias": "github",
+      "providerId": "constructor-github",
+      "enabled": true,
+      "trustEmail": true,
+      "storeToken": false,
+      "addReadTokenRoleOnCreate": false,
+      "linkOnly": false,
+      "firstBrokerLoginFlowAlias": "first broker login",
+      "config": {
+        "clientId": "${vault.github-client-id}",
+        "clientSecret": "${vault.github-client-secret}",
+        "defaultScope": "user:email read:org",
+        "organization": "constructorfabric",
+        "syncMode": "IMPORT",
+        "useJwksUrl": "true"
+      }
+    }
+  ],
+  "identityProviderMappers": [
+    {
+      "name": "github-tenant-id",
+      "identityProviderAlias": "github",
+      "identityProviderMapper": "hardcoded-attribute-idp-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "attribute": "tenant_id",
+        "attribute.value": "00000000-0000-0000-0000-000000000002"
+      }
+    }
+  ]
+}

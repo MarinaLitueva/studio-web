@@ -145,7 +145,7 @@
     {
       "alias": "google",
       "providerId": "google",
-      "enabled": true,
+      "enabled": false,
       "trustEmail": true,
       "storeToken": false,
       "addReadTokenRoleOnCreate": false,
@@ -160,7 +160,7 @@
     },
     {
       "alias": "github",
-      "providerId": "github",
+      "providerId": "constructor-github",
       "enabled": true,
       "trustEmail": true,
       "storeToken": false,
@@ -170,6 +170,8 @@
       "config": {
         "clientId": "${vault.github-client-id}",
         "clientSecret": "${vault.github-client-secret}",
+        "defaultScope": "user:email read:org",
+        "organization": "constructorfabric",
         "syncMode": "IMPORT",
         "useJwksUrl": "true"
       }
@@ -177,7 +179,7 @@
     {
       "alias": "microsoft",
       "providerId": "microsoft",
-      "enabled": true,
+      "enabled": false,
       "trustEmail": true,
       "storeToken": false,
       "addReadTokenRoleOnCreate": false,
