@@ -2,16 +2,23 @@
 
 The chart and environment values live in this repository so application and
 deployment changes can be reviewed together. `.github/workflows/deploy.yml`
-performs a manually approved dev or test deployment; no separate infra
-repository or Argo CD installation is used. `helm/values-dmz.example.yaml`
-documents the generic configuration contract.
+deploys backend and frontend services, while
+`.github/workflows/deploy-infra.yml` deploys graph PostgreSQL and Keycloak.
+Both are manually initiated and gated by GitHub Environments; no separate
+infrastructure repository or Argo CD installation is used. The complete tag
+and promotion contract is documented in [`PIPELINES.md`](PIPELINES.md).
 
 ## Images
 
-Published by GitHub Actions on a `v*` tag (`.github/workflows/release.yml`):
+Service images are published by the **Build Images** workflow on a `v*` tag:
 
 - `ghcr.io/constructorfabric/studio-web/studio-backend:<tag>`
 - `ghcr.io/constructorfabric/studio-web/studio-frontend:<tag>`
+
+Infrastructure images are published only on an `infra-v*` tag:
+
+- `ghcr.io/constructorfabric/studio-web/graph-postgres:<tag>`
+- `ghcr.io/constructorfabric/studio-web/cf-studio-keycloak:<tag>`
 
 Both run non-root (backend: `studio` system user; frontend:
 nginx-unprivileged, uid 101, port 8080). Chart requires explicit immutable
@@ -54,23 +61,26 @@ app user. Per-gear databases are NOT auto-provisioned: `auto_provision` only cre
 ## GitHub deployment
 
 All routine dev and test deployments are performed only by the GitHub Actions
-**Deploy** workflow. Direct local `helm` or `kubectl` mutations are reserved for
-documented break-glass recovery; after recovery, reconcile the same state
-through GitHub so the deployment history remains authoritative.
+**Deploy Services** and **Deploy Infra** workflows. Direct local `helm` or
+`kubectl` mutations are reserved for documented break-glass recovery; after
+recovery, reconcile the same state through GitHub so the deployment history
+remains authoritative.
 
 Create GitHub Environments named `dev` and `test`. In each Environment add a
 secret named `KUBE_CONFIG_B64` containing the base64-encoded kubeconfig for
 that namespace's `studio-deployer` ServiceAccount. Never use the administrator
 kubeconfig. Add required reviewers when repository access is hardened.
 
-Run the **Deploy** workflow from the `main` branch. A full `sha-<commit>`
-snapshot built from any internal branch may be deployed only to `dev`. A
-versioned `v*` release tag pointing to a commit on `main` may be deployed to
-`dev` or `test`. Production will be added only after its namespace and values
-exist. The deploy job:
+Run **Deploy Services** from `main` and select `backend`, `frontend`, or `all`.
+A full `sha-<commit>` snapshot built from any internal branch may be deployed
+only to `dev`. A versioned `v*` release tag pointing to a commit on `main` may
+be deployed to `dev` or `test`. Run **Deploy Infra** only with a published
+`infra-v*` release. Production will be added only after its namespace and
+values exist. The workflows:
 
-1. enforces the snapshot-to-dev and release-to-environment promotion policy and rejects cluster-admin credentials;
-2. verifies the three application images and required namespace Secrets;
-3. lints and server-side dry-runs the rendered chart;
-4. performs a Helm upgrade with automatic rollback and waits for readiness;
-5. verifies deployed image tags, HTTPS health and the environment OIDC issuer.
+1. enforce the snapshot-to-dev and release-to-environment promotion policy and reject cluster-admin credentials;
+2. verify the selected images and required namespace Secrets;
+3. lint and server-side dry-run the rendered changes;
+4. perform a Helm upgrade with automatic rollback and wait for readiness;
+5. verify deployed image tags, PostgreSQL health where applicable, HTTPS health
+   and the environment OIDC issuer.

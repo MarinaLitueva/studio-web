@@ -140,7 +140,7 @@ keycloak:
     # Matches release.yml: ghcr.io/<repo>/cf-studio-keycloak. The common values
     # override rewrites this to the Harbor GHCR proxy (kyverno admits Harbor only).
     repository: ghcr.io/constructorfabric/studio-web/cf-studio-keycloak
-    tag: ""                # REQUIRED when enabled: the v* release tag
+    tag: ""                # REQUIRED when enabled: the infra-v* release tag
   # Public issuer hostname (needs DNS + TLS). Empty disables the IdP ingress.
   hostname: ""             # same public hostname as Studio; Keycloak uses /auth
   # Existing Secret for the Keycloak role/database in the shared Studio

@@ -188,18 +188,29 @@ stays untouched.
 
 ## CI/CD (GitHub Actions)
 
-- **`ci.yml`** — on push/PR, path-filtered: backend (fmt, clippy `-D warnings`, build, test, `--list-gears` smoke) and frontend (`studio-frontend/`: build, test). The backend job checks out `constructorfabric/gears-rust` next to the repo — path dependencies expect `../../gears-rust`; add a `GEARS_RUST_TOKEN` secret if that repo is private. DCO is enforced — commit with `-s`.
-- **`release.yml`** — on tag `v*`: release binary + frontend dist → GitHub Release; Docker images → `ghcr.io/constructorfabric/studio-web/studio-{backend,frontend,frontend-prototype}`; then a `deploy` job gated by the `production` environment.
-- **Theia IDE image** — built in `fabric-poc` (`theia-image.yml`): `edge` on main pushes touching `poc/theia/**`, `vX.Y.Z` on `theia-v*` tags.
+- **`ci.yml` / Test** — on push/PR, path-filtered: backend (fmt,
+  clippy `-D warnings`, locked build, tests, and `--list-gears` smoke) and
+  frontend (`studio-frontend/`: build and tests).
+- **`release.yml` / Build Images** — service tags `v*` publish backend,
+  frontend, prototype, and Theia images; infrastructure tags `infra-v*`
+  publish graph PostgreSQL and Keycloak images. Every publication requires Test
+  success for the exact commit.
+- **`deploy.yml` / Deploy Services** — manually deploys backend, frontend, or
+  both. Branch snapshots are dev-only; `v*` releases may target any configured
+  application environment.
+- **`deploy-infra.yml` / Deploy Infra** — manually reconciles graph PostgreSQL
+  and Keycloak from a published `infra-v*` release.
 
-Release: `git tag v0.1.0 && git push origin v0.1.0`.
+Service release: `git tag v0.1.0 && git push origin v0.1.0`.
+
+Infrastructure release: `git tag infra-v0.1.0 && git push origin infra-v0.1.0`.
 
 ## Deploying to Kubernetes
 
-Chart in `deploy/helm/studio-web` (rendered/linted against the dmz values),
-environment values + pipeline in GitLab `constructorfabric/studio-web-ci`
-(Pattern B: clone the mirror → Trivy → mirror images to Harbor → helm).
-The Secret contract and prerequisites live in
-`deploy/helm/values-dmz.example.yaml` and `deploy/README.md`. Cluster v1
+The current compatibility chart is in `deploy/helm/studio-web`. Environment
+values and GitHub Actions deployment workflows live in this repository; there
+is no GitLab or Argo CD deployment dependency. The pipeline contract, Secret
+contract, and prerequisites live in `deploy/PIPELINES.md`,
+`deploy/helm/values-dmz.example.yaml`, and `deploy/README.md`. Cluster v1
 runs with IDE sessions disabled (`studio-session.enabled=false` in
 `config/k8s.yaml`) until the per-session Pod driver lands (ADR-0003).
