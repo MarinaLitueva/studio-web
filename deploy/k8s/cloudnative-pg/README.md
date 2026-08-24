@@ -6,15 +6,17 @@ production data.
 
 ## Ordering
 
-1. Merge or push the release workflow changes and wait for the immutable
-   `ghcr.io/constructorfabric/studio-web/graph-postgres:sha-<commit>` image.
-2. Confirm that all three release images are anonymously readable from GHCR.
+1. Create an `infra-v*` tag on a tested commit from `main` and wait for the
+   **Build Images** workflow to publish the infrastructure release.
+2. Confirm that the graph PostgreSQL and Keycloak release images are readable
+   from GHCR.
    Public image visibility does not grant Kubernetes deploy access; deployments
    remain controlled by cluster RBAC.
 3. Install the pinned CloudNativePG operator version documented in the cluster
    runbook and wait for its controller deployment.
-4. Render `dev-cluster.template.yaml` and/or `test-cluster.template.yaml` with
-   the immutable image reference and apply each to its matching namespace.
+4. Run **Deploy Infra** with the published `infra-v*` tag. It renders the
+   matching template with the versioned image reference and applies it to the
+   selected namespace.
 5. Wait for `cluster/studio-postgres` to report `Cluster in healthy state`.
 6. Verify that Secret `studio-postgres-app` exists. CloudNativePG creates it;
    both Helm environment values map the username key to `username`.

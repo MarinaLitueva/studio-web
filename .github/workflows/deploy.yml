@@ -1,4 +1,4 @@
-name: Deploy
+name: Deploy Services
 
 on:
   workflow_dispatch:
@@ -10,8 +10,17 @@ on:
         options:
           - dev
           - test
+      component:
+        description: Service component to deploy
+        type: choice
+        required: true
+        default: all
+        options:
+          - all
+          - backend
+          - frontend
       image_tag:
-        description: Immutable release tag (for example sha-83839de)
+        description: Full sha-<commit> snapshot or v* release tag
         type: string
         required: true
 
@@ -19,7 +28,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: deploy-${{ inputs.environment }}
+  group: deploy-services-${{ inputs.environment }}
   cancel-in-progress: false
 
 env:
@@ -30,14 +39,14 @@ env:
 
 jobs:
   deploy:
-    name: Deploy ${{ inputs.image_tag }} to ${{ inputs.environment }}
+    name: Deploy ${{ inputs.component }} ${{ inputs.image_tag }} to ${{ inputs.environment }}
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     environment:
       name: ${{ inputs.environment }}
       url: ${{ steps.target.outputs.url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -46,15 +55,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ ! "$IMAGE_TAG" =~ ^sha-[0-9a-f]{7,40}$ ]]; then
-            echo "image_tag must match sha-<7-to-40-lowercase-hex>" >&2
-            exit 1
-          fi
-
-          commit="${IMAGE_TAG#sha-}"
-          resolved="$(git rev-parse --verify "${commit}^{commit}")"
-          if ! git merge-base --is-ancestor "$resolved" origin/main; then
-            echo "$IMAGE_TAG is not a commit on origin/main" >&2
+          if [[ "$IMAGE_TAG" =~ ^v[0-9][0-9A-Za-z._-]*$ ]]; then
+            resolved="$(git rev-parse --verify "refs/tags/${IMAGE_TAG}^{commit}")"
+            if ! git merge-base --is-ancestor "$resolved" origin/main; then
+              echo "Release tag $IMAGE_TAG does not point to a commit on main" >&2
+              exit 1
+            fi
+            source_kind=release
+          elif [[ "$IMAGE_TAG" =~ ^sha-[0-9a-f]{7,40}$ ]]; then
+            commit="${IMAGE_TAG#sha-}"
+            resolved="$(git rev-parse --verify "${commit}^{commit}")"
+            source_kind=snapshot
+            if [ "${{ inputs.environment }}" != "dev" ]; then
+              echo "Branch/main snapshots may be deployed only to dev; use a v* release tag for ${{ inputs.environment }}" >&2
+              exit 1
+            fi
+          else
+            echo "image_tag must be sha-<commit> or a v* release tag" >&2
             exit 1
           fi
 
@@ -65,6 +82,8 @@ jobs:
           esac
           echo "host=$host" >> "$GITHUB_OUTPUT"
           echo "url=https://$host" >> "$GITHUB_OUTPUT"
+          echo "source_kind=$source_kind" >> "$GITHUB_OUTPUT"
+          echo "source_commit=$resolved" >> "$GITHUB_OUTPUT"
 
       - uses: azure/setup-kubectl@v4
         with:
@@ -93,12 +112,41 @@ jobs:
           fi
 
       - name: Verify images and namespace prerequisites
+        id: versions
         shell: bash
         run: |
           set -euo pipefail
-          for image in studio-backend studio-frontend cf-studio-keycloak; do
-            docker manifest inspect "$IMAGE_PREFIX/$image:$IMAGE_TAG" >/dev/null
-          done
+
+          current_tag() {
+            local component="$1"
+            local image
+            image="$(kubectl get deployment "studio-studio-web-$component" \
+              -n "$NAMESPACE" \
+              -o jsonpath='{.spec.template.spec.containers[0].image}')"
+            printf '%s' "${image##*:}"
+          }
+
+          backend_tag="$(current_tag backend)"
+          frontend_tag="$(current_tag frontend)"
+          keycloak_tag="$(current_tag keycloak)"
+
+          case "${{ inputs.component }}" in
+            all)
+              backend_tag="$IMAGE_TAG"
+              frontend_tag="$IMAGE_TAG"
+              ;;
+            backend) backend_tag="$IMAGE_TAG" ;;
+            frontend) frontend_tag="$IMAGE_TAG" ;;
+            *) echo "Unsupported component" >&2; exit 1 ;;
+          esac
+
+          docker manifest inspect "$IMAGE_PREFIX/studio-backend:$backend_tag" >/dev/null
+          docker manifest inspect "$IMAGE_PREFIX/studio-frontend:$frontend_tag" >/dev/null
+          docker manifest inspect "$IMAGE_PREFIX/cf-studio-keycloak:$keycloak_tag" >/dev/null
+
+          echo "backend_tag=$backend_tag" >> "$GITHUB_OUTPUT"
+          echo "frontend_tag=$frontend_tag" >> "$GITHUB_OUTPUT"
+          echo "keycloak_tag=$keycloak_tag" >> "$GITHUB_OUTPUT"
 
           for secret in \
             studio-postgres-app \
@@ -117,9 +165,9 @@ jobs:
           values="deploy/helm/values-${{ inputs.environment }}.example.yaml"
           common_args=(
             -f "$values"
-            --set-string "backend.image.tag=$IMAGE_TAG"
-            --set-string "frontend.image.tag=$IMAGE_TAG"
-            --set-string "keycloak.image.tag=$IMAGE_TAG"
+            --set-string "backend.image.tag=${{ steps.versions.outputs.backend_tag }}"
+            --set-string "frontend.image.tag=${{ steps.versions.outputs.frontend_tag }}"
+            --set-string "keycloak.image.tag=${{ steps.versions.outputs.keycloak_tag }}"
           )
 
           helm lint deploy/helm/studio-web "${common_args[@]}"
@@ -134,9 +182,9 @@ jobs:
           helm upgrade --install studio deploy/helm/studio-web \
             -n "$NAMESPACE" \
             -f "deploy/helm/values-${{ inputs.environment }}.example.yaml" \
-            --set-string "backend.image.tag=$IMAGE_TAG" \
-            --set-string "frontend.image.tag=$IMAGE_TAG" \
-            --set-string "keycloak.image.tag=$IMAGE_TAG" \
+            --set-string "backend.image.tag=${{ steps.versions.outputs.backend_tag }}" \
+            --set-string "frontend.image.tag=${{ steps.versions.outputs.frontend_tag }}" \
+            --set-string "keycloak.image.tag=${{ steps.versions.outputs.keycloak_tag }}" \
             --force-conflicts \
             --rollback-on-failure \
             --wait \
@@ -149,7 +197,13 @@ jobs:
           set -euo pipefail
           host="${{ steps.target.outputs.host }}"
 
-          for component in backend frontend keycloak; do
+          case "${{ inputs.component }}" in
+            all) components=(backend frontend) ;;
+            backend) components=(backend) ;;
+            frontend) components=(frontend) ;;
+          esac
+
+          for component in "${components[@]}"; do
             deployment="studio-studio-web-$component"
             kubectl rollout status "deployment/$deployment" -n "$NAMESPACE" --timeout=3m
             images="$(kubectl get "deployment/$deployment" -n "$NAMESPACE" -o jsonpath='{.spec.template.spec.containers[*].image}')"
