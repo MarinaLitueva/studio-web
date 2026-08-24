@@ -13,7 +13,8 @@
  * in this file: it states its own size in its own stylesheet.
  *
  * Placement stays the shell's single decision, not a per-extension knob:
- * overlays open from the top so the product looks like one product.
+ * overlays are centred in the viewport, so the product looks like one product.
+ * (They used to open from the top — `items-start` plus a 7rem top margin.)
  *
  * TODO: replace this component with ui-kit's Dialog after adding changes
  * ui-kit's Dialog cannot host the slot as shipped: `DialogContent` forwards only
@@ -24,6 +25,7 @@
  */
 
 import React, { useCallback, useEffect } from 'react';
+import { X } from 'lucide-react';
 import {
   useFrontX,
   useMountedExtensions,
@@ -68,22 +70,21 @@ export const OverlayDialog: React.FC = () => {
 
   return (
     <div
-      className={visible ? 'fixed inset-0 z-modal flex items-start justify-center' : 'hidden'}
+      className={visible ? 'fixed inset-0 z-modal flex items-center justify-center' : 'hidden'}
       aria-hidden={!visible}
     >
       <button
         type="button"
-        aria-label={label ? `Close ${label}` : 'Close'}
+        tabIndex={-1}
+        aria-hidden="true"
         onClick={() => void close()}
         className="absolute inset-0 cursor-default bg-[rgb(15_18_24_/_0.48)]"
       />
-      {/* Size comes from the content; the caps are the frame's, so a short
-          viewport scrolls the card's own content instead of the page. */}
       <div
         role="dialog"
         aria-modal="true"
         aria-label={label}
-        className="relative mt-28 flex h-fit w-fit max-h-[calc(100vh-8rem)] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-lg"
+        className="relative flex h-fit w-fit max-h-[calc(100vh-8rem)] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-lg"
       >
         {app.mfeRegistry && (
           <ExtensionDomainSlot
@@ -92,6 +93,15 @@ export const OverlayDialog: React.FC = () => {
             className="min-h-0 overflow-y-auto"
           />
         )}
+        <button
+          type="button"
+          aria-label={label ? `Close ${label}` : 'Close'}
+          title="Close"
+          onClick={() => void close()}
+          className="absolute right-4 top-4 grid size-7 place-items-center rounded-full bg-muted text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <X className="size-4" strokeWidth={1.75} aria-hidden="true" />
+        </button>
       </div>
     </div>
   );

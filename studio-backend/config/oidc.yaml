@@ -14,28 +14,37 @@ database:
   # docker/initdb/01-create-databases.sql, which runs once on an empty volume.
   auto_provision: true
   servers:
+    # Variant B, as in docker.yaml: ONE Postgres instance for the whole
+    # assembly — the `graph-postgres` service (PostgreSQL 19 + pgvector), which
+    # hosts every gear database as well as graph_storage. The former
+    # postgres:16 service ("studio-backend-pg") that used to answer on 5432 was
+    # removed from docker-compose.yml; pointing here at 5432 leaves the backend
+    # depending on a container compose no longer knows how to start.
+    #
+    # 5433 rather than 5432 because this profile runs the backend on the HOST:
+    # the container listens on 5432 and compose publishes it as
+    # 127.0.0.1:5433. In-network profiles use `graph-postgres:5432` instead.
     pg_main:
       engine: "postgres"
       host: "127.0.0.1"
-      port: 5432
+      port: 5433
       user: "studio"
-      password: "${STUDIO_PG_PASSWORD}"
+      password: "${STUDIO_PG_PASSWORD:-studio}"
       dbname: "studio"            # admin/default db; gears override per-gear below
       pool:
         max_conns: 10
         acquire_timeout: "30s"
 
-    # PostgreSQL 19 + pgvector, used by graph-storage and nothing else. That
-    # gear's migrations need `CREATE EXTENSION vector`, `CREATE PROPERTY GRAPH`
-    # (SQL/PGQ, PostgreSQL 19+) and an HNSW index, none of which the server
-    # above provides. Routing one gear here keeps every other gear on the
-    # stable engine — see the `graph-postgres` service in docker-compose.yml.
+    # Same physical instance as pg_main; the graph-storage gear keeps its own
+    # `server: pg_graph` and its `graph_storage` database, where the vector /
+    # PROPERTY GRAPH / HNSW migrations run. The credentials are pg_main's: the
+    # instance is created with POSTGRES_USER=studio and has no `graph` role.
     pg_graph:
       engine: "postgres"
       host: "127.0.0.1"
       port: 5433
-      user: "graph"
-      password: "${STUDIO_GRAPH_PG_PASSWORD:-graph}"
+      user: "studio"
+      password: "${STUDIO_PG_PASSWORD:-studio}"
       dbname: "graph_storage"
       pool:
         max_conns: 10
@@ -156,6 +165,24 @@ gears:
           x-gts-traits:
             allowed_parent_types: ["gts.cf.core.am.tenant_type.v1~cf.studio.tenant.organization.v1~"]
             idp_provisioning: false
+        # Studio project tenant: a project is its own codebase context (sources,
+        # IDE session, artifact graph, spec-quality) — all of which are already
+        # tenant-scoped, so the id of this tenant is what the session/ingest/
+        # settings paths key on.
+        #
+        # Two allowed parents, not one. The portal's New project wizard has no
+        # workspace field (ADR-0010) and creates under the organization the
+        # session is in; workspace stays allowed so the Org → Workspace →
+        # Project shape remains available and already-seeded trees keep working.
+        - "$id": "gts://gts.cf.core.am.tenant_type.v1~cf.studio.tenant.project.v1~"
+          "$schema": "http://json-schema.org/draft-07/schema#"
+          description: "Studio project tenant (a codebase context inside an organization or a workspace)"
+          type: "object"
+          x-gts-traits:
+            allowed_parent_types:
+              - "gts.cf.core.am.tenant_type.v1~cf.studio.tenant.organization.v1~"
+              - "gts.cf.core.am.tenant_type.v1~cf.studio.tenant.workspace.v1~"
+            idp_provisioning: false
         # Connector driver contract. Each driver plugin registers a
         # PluginV1 instance derived from this type, so `GET
         # /studio-connector/v1/providers` is really "what is in the
@@ -186,6 +213,16 @@ gears:
           # client-side until the base schema is relaxed upstream.
           "$schema": "http://json-schema.org/draft-07/schema#"
           description: "Studio workspace settings (free-form until gears issue #4)"
+          type: "object"
+          x-gts-traits:
+            inheritance_policy: "override_only"
+        - "$id": "gts://gts.cf.core.am.tenant_metadata.v1~cf.studio.project.config.v1~"
+          # Project attributes on the project tenant: {mode, stages[], status,
+          # source}. Free-form for the same gears issue #4 reason as the settings
+          # above; shape enforced client-side. Per-tenant (not inherited) —
+          # a project must not read its parent's attributes as its own.
+          "$schema": "http://json-schema.org/draft-07/schema#"
+          description: "Studio project attributes (mode, stages, status, source) — free-form until gears issue #4"
           type: "object"
           x-gts-traits:
             inheritance_policy: "override_only"

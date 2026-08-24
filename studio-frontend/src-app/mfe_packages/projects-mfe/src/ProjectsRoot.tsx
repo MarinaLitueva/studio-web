@@ -1,75 +1,30 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import type { ChildMfeBridge } from '@gears-frontx/react';
-import {
-  FRONTX_SHARED_PROPERTY_THEME,
-  FRONTX_SHARED_PROPERTY_LANGUAGE,
-  SUPPORTED_LANGUAGES,
-  useAppDispatch,
-  useAppSelector,
-  useFrontX,
-  type Language,
-} from '@gears-frontx/react';
+import { useAppDispatch, useAppSelector } from '@gears-frontx/react';
 import { BridgeProvider } from './shared/bridge';
+import { useHostChrome } from './shared/useHostChrome';
 import { ProjectListScreen } from './screens/project-list/ProjectListScreen';
 import { ProjectScreen } from './screens/project/ProjectScreen';
 import { NAV_SLICE_KEY, closeProject, openProject } from './slices/navSlice';
+import { STUDIO_SHARED_PROPERTY_CONTEXT_PROJECT } from './shared/hostProperties';
 import styles from './ProjectsRoot.module.css';
-
-const RTL_LANGUAGES = ['ar', 'he', 'fa', 'ur'];
-
-/** Restated, not imported: the shell's modules are behind the realm boundary. */
-const STUDIO_SHARED_PROPERTY_CONTEXT_PROJECT =
-  'gts.frontx.mfes.comm.shared_property.v1~constructor_studio.context.project.selected.v1~';
-
-/**
- * A host theme is a full palette, not a light/dark bit, so it bridges to the
- * kit's two scopes by explicit enumeration. `dracula` therefore lands in the
- * kit's dark greys, not Dracula's purples — a stated residual limitation.
- * The screen root always carries data-theme so the kit's
- * prefers-color-scheme fallback cannot leak through.
- */
-const DARK_HOST_THEMES = ['dark', 'dracula', 'dracula-large'];
-
-function toKitTheme(hostTheme: string): 'dark' | 'light' {
-  return DARK_HOST_THEMES.includes(hostTheme) ? 'dark' : 'light';
-}
-
-function readBridgeProperty(bridge: ChildMfeBridge, property: string, fallback: string): string {
-  const current = bridge.getProperty(property);
-  return current && typeof current.value === 'string' ? current.value : fallback;
-}
 
 interface ProjectsRootProps {
   bridge: ChildMfeBridge;
 }
 
 /**
- * The one mounted root of this MFE: it owns the bridge plumbing (theme,
- * language, text direction) and nothing else. Which screen shows is
- * `projects/nav`, not a route — the shell has no router, and ADR-0008 puts the
- * project's own rail inside this frame.
+ * This MFE's screen-domain root. Not its only root any more: the New project
+ * wizard is a second extension of the same MFE in the shell's overlay domain,
+ * with its own bridge and its own shadow root (`NewProjectWizard`). The chrome
+ * both of them need lives in `useHostChrome`; what stays here is the half that
+ * is the screen's alone — the shell's project selection.
+ *
+ * Which screen shows is `projects/nav`, not a route — the shell has no router,
+ * and ADR-0008 puts the project's own rail inside this frame.
  */
 export const ProjectsRoot: React.FC<ProjectsRootProps> = ({ bridge }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  // Initial value read directly from the bridge's lazy useState initializer (runs once,
-  // synchronously, during the first render) instead of via setState in a mount effect.
-  const [theme, setTheme] = useState<string>(() =>
-    readBridgeProperty(bridge, FRONTX_SHARED_PROPERTY_THEME, 'default')
-  );
-  const [language, setLanguage] = useState<string>(() =>
-    readBridgeProperty(bridge, FRONTX_SHARED_PROPERTY_LANGUAGE, 'en')
-  );
-  // If the host swaps the bridge instance, re-read its current properties during
-  // render ("adjusting state during render") — the subscription below only
-  // delivers future changes.
-  const [prevBridge, setPrevBridge] = useState(bridge);
-  if (prevBridge !== bridge) {
-    setPrevBridge(bridge);
-    setTheme(readBridgeProperty(bridge, FRONTX_SHARED_PROPERTY_THEME, 'default'));
-    setLanguage(readBridgeProperty(bridge, FRONTX_SHARED_PROPERTY_LANGUAGE, 'en'));
-  }
-
-  const app = useFrontX();
+  const { containerRef, dataTheme } = useHostChrome(bridge);
   const dispatch = useAppDispatch();
   const projectId = useAppSelector((state) => state[NAV_SLICE_KEY].projectId);
 
@@ -105,47 +60,8 @@ export const ProjectsRoot: React.FC<ProjectsRootProps> = ({ bridge }) => {
     );
   }, [bridge, dispatch]);
 
-  useEffect(() => {
-    const themeUnsubscribe = bridge.subscribeToProperty(
-      FRONTX_SHARED_PROPERTY_THEME,
-      (property) => {
-        if (typeof property.value === 'string') setTheme(property.value);
-      }
-    );
-
-    const languageUnsubscribe = bridge.subscribeToProperty(
-      FRONTX_SHARED_PROPERTY_LANGUAGE,
-      (property) => {
-        if (typeof property.value === 'string') setLanguage(property.value);
-      }
-    );
-
-    return () => {
-      themeUnsubscribe();
-      languageUnsubscribe();
-    };
-  }, [bridge]);
-
-  // This realm has its OWN i18nRegistry (the host's is behind the module
-  // boundary), and it is what `useFormatters()` reads for locale. Nothing feeds
-  // it but us — without this, dates would always format as English.
-  useEffect(() => {
-    const supported = SUPPORTED_LANGUAGES.some((entry) => entry.code === language);
-    if (supported) void app.i18nRegistry?.setLanguage(language as Language);
-  }, [app, language]);
-
-  // Keep the Shadow DOM host's text direction in sync with the active language.
-  // An effect keyed by `language` also covers the initial language, which never
-  // fires a callback.
-  useEffect(() => {
-    const rootNode = containerRef.current?.getRootNode();
-    if (rootNode && 'host' in rootNode) {
-      (rootNode.host as HTMLElement).dir = RTL_LANGUAGES.includes(language) ? 'rtl' : 'ltr';
-    }
-  }, [language]);
-
   return (
-    <div ref={containerRef} className={styles.root} data-theme={toKitTheme(theme)}>
+    <div ref={containerRef} className={styles.root} data-theme={dataTheme}>
       <BridgeProvider bridge={bridge}>
         {projectId ? (
           <ProjectScreen bridge={bridge} projectId={projectId} />

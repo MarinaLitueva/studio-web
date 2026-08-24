@@ -126,9 +126,13 @@ export function statusTone(status: ReturnType<typeof projectStatus>): StatusTone
   }
 }
 
-/** The second line under a project's name: whatever the config actually carries. */
 export function projectSubtitle(config: ProjectConfig | null): string | null {
-  return config?.brief?.trim() || config?.source_git_url || null;
+  return (
+    config?.brief?.trim() ||
+    config?.source_git_url ||
+    config?.sources?.[0]?.clone_url ||
+    null
+  );
 }
 
 /**

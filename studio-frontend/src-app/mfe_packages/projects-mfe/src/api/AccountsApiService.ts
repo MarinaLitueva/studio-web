@@ -18,6 +18,13 @@
 import { BaseApiService, RestEndpointProtocol, RestProtocol } from '@gears-frontx/react';
 import type { Me, MetadataEntry, Page, ProjectConfig, TenantDto, User } from './types';
 
+/** `POST /tenants`. AM accepts these three fields on create. */
+export interface CreateTenantBody {
+  name: string;
+  parent_id: string;
+  tenant_type: string;
+}
+
 export const ACCOUNTS_API_BASE_URL = '/cf/account-management/v1';
 
 /** AM's own ceiling (`listing.max_top`), so one page is usually enough. */
@@ -28,6 +35,14 @@ export interface ChildrenParams {
   tenantType?: string;
   limit?: number;
   cursor?: string;
+}
+
+/**
+ * Parameters of the one page the tree reads per node — and therefore the cache
+ * key the wizard has to invalidate for a created project to appear in the list.
+ */
+export function childrenPageParams(tenantId: string): ChildrenParams {
+  return { tenantId, limit: CHILDREN_PAGE_LIMIT };
 }
 
 function childrenPath({ tenantId, tenantType, limit, cursor }: ChildrenParams): string {
@@ -67,4 +82,16 @@ export class AccountsApiService extends BaseApiService {
     MetadataEntry<ProjectConfig>,
     { tenantId: string; metadataType: string }
   >(({ tenantId, metadataType }) => `/tenants/${tenantId}/metadata/${metadataType}`);
+
+  readonly createTenant = this.protocol(RestEndpointProtocol).mutation<
+    TenantDto,
+    CreateTenantBody
+  >('POST', '/tenants');
+
+  projectConfigWrite(tenantId: string, metadataType: string) {
+    return this.protocol(RestEndpointProtocol).mutation<unknown, ProjectConfig>(
+      'PUT',
+      `/tenants/${tenantId}/metadata/${metadataType}`
+    );
+  }
 }

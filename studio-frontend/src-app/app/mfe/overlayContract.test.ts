@@ -34,6 +34,8 @@ import {
 import { validateContract } from '@gears-frontx/mfes';
 import extensionOverlaySchemaJson from './schemas/extension_overlay.v1.json';
 import sharedPropertyContextProjectSchemaJson from './schemas/shared_property_context_project.v1.json';
+import sharedPropertyContextOrganizationSchemaJson from './schemas/shared_property_context_organization.v1.json';
+import sharedPropertySessionProfileSchemaJson from './schemas/shared_property_session_user_profile.v1.json';
 import { STUDIO_SHARED_PROPERTY_CONTEXT_PROJECT } from './contextActions';
 
 /**
@@ -82,6 +84,8 @@ gtsPlugin.registerSchema(languageSchema);
 gtsPlugin.registerSchema(extensionScreenSchema);
 gtsPlugin.registerSchema(extensionOverlaySchemaJson as JSONSchema);
 gtsPlugin.registerSchema(sharedPropertyContextProjectSchemaJson as JSONSchema);
+gtsPlugin.registerSchema(sharedPropertyContextOrganizationSchemaJson as JSONSchema);
+gtsPlugin.registerSchema(sharedPropertySessionProfileSchemaJson as JSONSchema);
 
 describe('generated MFE manifest', () => {
   it('was generated — an empty aggregate means `npm run generate:mfe-manifests` was skipped', () => {

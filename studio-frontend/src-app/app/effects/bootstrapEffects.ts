@@ -8,6 +8,8 @@
  */
 
 import { eventBus, setUser, setHeaderLoading, apiRegistry, type FrontXApp } from '@gears-frontx/react';
+import { publishSessionProfile } from '@/app/mfe/sharedContext';
+import { setSessionProfile, type SessionProfile } from '@/app/slices/appSessionSlice';
 import { AccountsApiService } from '@/app/api';
 import { setMfeBootstrapStatus } from '@/app/slices/mfeBootstrapSlice';
 
@@ -59,7 +61,15 @@ export function registerBootstrapEffects(app: FrontXApp): void {
         claimString(claims, 'name') ??
         claimString(claims, 'preferred_username') ??
         (me?.subject_id ? `${me.subject_id.slice(0, 8)}…` : undefined);
-      dispatch(setUser({ displayName, email: claimString(claims, 'email') }));
+      const email = claimString(claims, 'email');
+      dispatch(setUser({ displayName, email }));
+      if (me?.subject_id) {
+        const profile: SessionProfile = { id: me.subject_id };
+        if (displayName) profile.displayName = displayName;
+        if (email) profile.email = email;
+        dispatch(setSessionProfile(profile));
+        publishSessionProfile(app);
+      }
     } catch (error) {
       // Log the message only: an AxiosError carries the request config,
       // Authorization header included — the raw object would print the token.

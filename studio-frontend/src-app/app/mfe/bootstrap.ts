@@ -44,9 +44,12 @@ import type {
 
 import {
   STUDIO_ACTION_CONTEXT_PUBLISH,
+  STUDIO_SHARED_PROPERTY_CONTEXT_ORGANIZATION,
   STUDIO_SHARED_PROPERTY_CONTEXT_PROJECT,
+  STUDIO_SHARED_PROPERTY_SESSION_PROFILE,
   createContextPublishHandler,
 } from '@/app/mfe/contextActions';
+import { publishStudioContext } from '@/app/mfe/sharedContext';
 
 const MFE_MANIFESTS_URL = '/generated-mfe-manifests.json';
 
@@ -337,6 +340,22 @@ export async function bootstrapMFE(app: FrontXApp): Promise<void> {
     sharedProperties: [
       ...screenDomain.sharedProperties,
       STUDIO_SHARED_PROPERTY_CONTEXT_PROJECT,
+      STUDIO_SHARED_PROPERTY_CONTEXT_ORGANIZATION,
+      STUDIO_SHARED_PROPERTY_SESSION_PROFILE,
+    ],
+  };
+  /*
+   * The overlay domain carries the studio context too, and it has to be stated
+   * here: the framework's `overlayDomain` declares theme and language only, and
+   * a domain that does not declare a property cannot deliver it — an entry
+   * asking for one fails registration instead.
+   */
+  const studioOverlayDomain: ExtensionDomain = {
+    ...overlayDomain,
+    sharedProperties: [
+      ...overlayDomain.sharedProperties,
+      STUDIO_SHARED_PROPERTY_CONTEXT_ORGANIZATION,
+      STUDIO_SHARED_PROPERTY_SESSION_PROFILE,
     ],
   };
   registry.registerDomain(studioScreenDomain, new ScreenDomainFactory(registry));
@@ -344,7 +363,7 @@ export async function bootstrapMFE(app: FrontXApp): Promise<void> {
   // Framed domains: the extension states its own footprint, the shell only clamps it.
   registry.registerDomain(popupDomain, new OptionalDomainFactory(registry, popupDomain.id, false));
   registry.registerDomain(
-    overlayDomain,
+    studioOverlayDomain,
     new OptionalDomainFactory(registry, overlayDomain.id, false),
   );
 
@@ -352,11 +371,7 @@ export async function bootstrapMFE(app: FrontXApp): Promise<void> {
   registry.updateSharedProperty(FRONTX_SHARED_PROPERTY_THEME, currentThemeId);
   const derivedLanguage = app.i18nRegistry.getLanguage();
   registry.updateSharedProperty(FRONTX_SHARED_PROPERTY_LANGUAGE, derivedLanguage ?? 'en');
-  // Seeded rather than left absent: a declared-but-never-published property
-  // reads back as `undefined`, which an MFE cannot tell apart from a shell that
-  // does not speak this protocol. Must follow registerDomain — a publish that
-  // matches no domain is silently dropped.
-  registry.updateSharedProperty(STUDIO_SHARED_PROPERTY_CONTEXT_PROJECT, null);
+  publishStudioContext(app);
 
   console.info(`[MFE Bootstrap] Fetching MFE manifests from ${MFE_MANIFESTS_URL}`);
   const response = await fetch(MFE_MANIFESTS_URL);

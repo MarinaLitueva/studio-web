@@ -20,7 +20,10 @@ import {
   type FrontXApp,
 } from '@gears-frontx/react';
 import { AccountsApiService, TENANT_TYPES, type Tenant } from '@/app/api';
-import { STUDIO_SHARED_PROPERTY_CONTEXT_PROJECT } from '@/app/mfe/contextActions';
+import {
+  publishSelectedOrganization,
+  publishSelectedProject,
+} from '@/app/mfe/sharedContext';
 import {
   setContextLoading,
   setContextOrganizations,
@@ -38,20 +41,6 @@ function isOrganization(tenant: Tenant): boolean {
 
 function toEntity(tenant: Tenant): ContextEntity {
   return { id: tenant.id, name: tenant.name };
-}
-
-/**
- * Tells the mounted MFEs which project is in scope — `null` for the organization.
- */
-function publishSelectedProject(app: FrontXApp, projectId: string | null): void {
-  try {
-    app.mfeRegistry?.updateSharedProperty(STUDIO_SHARED_PROPERTY_CONTEXT_PROJECT, projectId);
-  } catch (error) {
-    console.warn(
-      'Failed to publish the selected project to MFEs:',
-      error instanceof Error ? error.message : String(error)
-    );
-  }
 }
 
 /**
@@ -73,10 +62,6 @@ export function registerAppContextEffects(app: FrontXApp): void {
       if (!homeTenantId) return;
 
       const home = await accounts.tenant({ tenantId: homeTenantId }).fetch();
-
-      // Children are requested even when the home tenant is not itself an
-      // organization: that is the shape where the user sits above the
-      // organization level and the switcher is the only way down.
       let children: Tenant[] = [];
       try {
         children = (await accounts.tenantChildren({ tenantId: homeTenantId }).fetch())?.items ?? [];
@@ -92,9 +77,8 @@ export function registerAppContextEffects(app: FrontXApp): void {
       );
       const current = items.find((item) => item.id === home.id) ?? items[0] ?? null;
       dispatch(setContextOrganizations({ current, items }));
+      publishSelectedOrganization(app);
     } catch (error) {
-      // Message only: an AxiosError carries the request config, Authorization
-      // header included — the raw object would print the token.
       console.warn(
         'Failed to resolve organizations:',
         error instanceof Error ? error.message : String(error)
@@ -106,19 +90,15 @@ export function registerAppContextEffects(app: FrontXApp): void {
 
   eventBus.on('app/context/org/changed', ({ orgId }) => {
     dispatch(setContextOrg(orgId));
-    // `setContextOrg` drops the project but emits no `project/closed`, so this is
-    // the only place an MFE can learn its open project left scope.
-    //
-    // TODO: publish the organization too, so the tree stops resolving its own.
-    // Blocked on behaviour, not plumbing — see shared/projectTree.tsx.
-    publishSelectedProject(app, null);
+    publishSelectedOrganization(app);
+    publishSelectedProject(app);
   });
 
   //  Published by whoever owns projects (projects-mfe)
 
   eventBus.on('app/context/project/opened', ({ id, name }) => {
     dispatch(openContextProject({ id, name }));
-    publishSelectedProject(app, id);
+    publishSelectedProject(app);
   });
 
   eventBus.on('app/context/projects', ({ items }) => {
@@ -127,18 +107,15 @@ export function registerAppContextEffects(app: FrontXApp): void {
 
   eventBus.on('app/context/project/closed', () => {
     dispatch(closeContextProject());
-    publishSelectedProject(app, null);
+    publishSelectedProject(app);
   });
 
-  // A pick inside the slot. Resolved against the offered list first, so an
-  // unknown id leaves the top bar and the frame alike untouched rather than
-  // moving one of them.
   eventBus.on('app/context/project/changed', ({ projectId }) => {
     const state = app.store.getState() as Record<string, unknown>;
     const context = state['app/context'] as { projects?: ContextEntity[] } | undefined;
     const picked = context?.projects?.find((project) => project.id === projectId);
     if (!picked) return;
     dispatch(openContextProject(picked));
-    publishSelectedProject(app, picked.id);
+    publishSelectedProject(app);
   });
 }

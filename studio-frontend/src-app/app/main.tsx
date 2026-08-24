@@ -10,10 +10,13 @@ import { registerBootstrapEffects } from '@/app/effects/bootstrapEffects'; // Re
 import { registerAppContextEffects } from '@/app/effects/appContextEffects'; // Top-bar context slot
 import { mfeBootstrapSlice } from '@/app/slices/mfeBootstrapSlice';
 import { appContextSlice } from '@/app/slices/appContextSlice';
+import { appSessionSlice } from '@/app/slices/appSessionSlice';
 import { keycloakOidcProvider } from '@/app/auth/keycloakOidcProvider';
 import extensionOverlaySchemaJson from '@/app/mfe/schemas/extension_overlay.v1.json';
 import actionContextPublishSchemaJson from '@/app/mfe/schemas/action_context_publish.v1.json';
 import sharedPropertyContextProjectSchemaJson from '@/app/mfe/schemas/shared_property_context_project.v1.json';
+import sharedPropertyContextOrganizationSchemaJson from '@/app/mfe/schemas/shared_property_context_organization.v1.json';
+import sharedPropertySessionProfileSchemaJson from '@/app/mfe/schemas/shared_property_session_user_profile.v1.json';
 import App from './App';
 
 // Import all themes
@@ -45,6 +48,11 @@ gtsPlugin.registerSchema(actionContextPublishSchemaJson as JSONSchema);
 // is IN THE REGISTRY, not merely that the string looks right, so an unregistered
 // id fails registration and takes bootstrapMFE with it.
 gtsPlugin.registerSchema(sharedPropertyContextProjectSchemaJson as JSONSchema);
+// The other two halves of the same channel: which organization the session is
+// working in, and who is signed in. Both are the shell's to know and every MFE's
+// to be told — see mfe/contextActions.ts for what they replace.
+gtsPlugin.registerSchema(sharedPropertyContextOrganizationSchemaJson as JSONSchema);
+gtsPlugin.registerSchema(sharedPropertySessionProfileSchemaJson as JSONSchema);
 
 // Register accounts service (application-level service for user info)
 apiRegistry.register(AccountsApiService);
@@ -77,6 +85,7 @@ app.actions.toggleMockMode(false);
 // Register app-level slices and effects (identity flows through app.auth)
 registerSlice(mfeBootstrapSlice);
 registerSlice(appContextSlice);
+registerSlice(appSessionSlice);
 registerBootstrapEffects(app);
 registerAppContextEffects(app);
 
