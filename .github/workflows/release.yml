@@ -1,8 +1,9 @@
 name: Release
 
 # Three ways in:
-#   * a `v*` tag  — the real release: images tagged with the version + `latest`,
-#     a GitHub Release with the artifacts, and the deploy gate.
+#   * a `v*` tag  — the real release: images tagged with the version + `latest`
+#     and a GitHub Release with the artifacts. Deployment is a separate,
+#     manually approved workflow in deploy.yml.
 #   * a push to main — images only, tagged `edge` and `sha-<short>`, so there is
 #     something to pull between releases (studio-session already expects an
 #     `:edge` tag for the Theia image; this gives the stack the same habit).
@@ -283,19 +284,3 @@ jobs:
           files: |
             artifacts/studio-backend-linux-x86_64.tar.gz
             artifacts/studio-frontend-dist.tar.gz
-
-  deploy:
-    needs: [images]
-    if: github.ref_type == 'tag'
-    runs-on: ubuntu-latest
-    environment: production   # add reviewers in repo Settings -> Environments for a manual gate
-    steps:
-      - name: Deploy
-        run: |
-          echo "Images published:"
-          echo "  $IMAGE_PREFIX/studio-backend:${{ github.ref_name }}"
-          echo "  $IMAGE_PREFIX/studio-frontend:${{ github.ref_name }}"
-          echo "  $IMAGE_PREFIX/studio-frontend-prototype:${{ github.ref_name }}"
-          echo "TODO: wire the real target, e.g.:"
-          echo "  - kubectl set image / helm upgrade (k8s)"
-          echo "  - ssh + docker compose pull && up -d (single host)"

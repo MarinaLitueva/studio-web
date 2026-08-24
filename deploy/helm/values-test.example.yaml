@@ -20,7 +20,7 @@ backend:
   sessions:
     enabled: false
   configOverride:
-    existingConfigMap: studio-web-backend-config
+    existingConfigMap: ""
   idpAdmin:
     baseUrl: "https://studio-test.cfabric.org/auth"
 
