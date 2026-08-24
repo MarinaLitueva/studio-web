@@ -19,8 +19,8 @@ jobs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           # studio-frontend-prototype/ is deliberately NOT filtered: the
@@ -44,7 +44,7 @@ jobs:
     steps:
       # gears-rust is a git dependency pinned in Cargo.toml — no second
       # checkout, and no second place to keep the revision in sync.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: System dependencies
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler cmake
@@ -78,8 +78,8 @@ jobs:
       run:
         working-directory: studio-frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
@@ -93,7 +93,7 @@ jobs:
         run: npm run build
       - name: Test
         run: npm test
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: studio-frontend-dist
           path: studio-frontend/dist

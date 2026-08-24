@@ -93,7 +93,7 @@ jobs:
     steps:
       # Cargo.lock pins the exact gears-rust revision, so rebuilding the same
       # commit resolves the same Rust sources.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: System dependencies
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler cmake
@@ -110,7 +110,7 @@ jobs:
         # the images job below before either image is published.
         run: cargo build --locked --release --no-default-features --features graph
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: studio-backend-linux-x86_64
           path: studio-backend/target/release/studio-backend
@@ -124,8 +124,8 @@ jobs:
       run:
         working-directory: studio-frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
@@ -135,7 +135,7 @@ jobs:
       # their dist/ entries, which only the build produces (same as ci.yml).
       - run: npm run build
       - run: npm test
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: studio-frontend-dist
           path: studio-frontend/dist
@@ -150,8 +150,8 @@ jobs:
       run:
         working-directory: studio-frontend-prototype
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -159,7 +159,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: studio-frontend-prototype-dist
           path: studio-frontend-prototype/dist
@@ -171,16 +171,16 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v7
         with:
           name: studio-backend-linux-x86_64
           path: studio-backend/.release/
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: studio-frontend-dist
           path: studio-frontend/dist
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: studio-frontend-prototype-dist
           path: studio-frontend-prototype/dist
@@ -328,7 +328,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           path: artifacts
       - name: Pack artifacts
