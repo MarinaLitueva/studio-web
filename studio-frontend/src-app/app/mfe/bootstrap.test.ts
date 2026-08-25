@@ -22,18 +22,23 @@ const mockApp = {
   mfeRegistry: mockMfeRegistry,
   themeRegistry: { getCurrent: () => undefined },
   i18nRegistry: { getLanguage: () => null },
+  // bootstrapMFE publishes the studio context from the store once the domains
+  // are registered (see mfe/sharedContext.ts). An empty state is the honest
+  // fixture for a cold start: nothing has resolved, so all three publish `null`.
+  store: { getState: () => ({}) },
 };
 
 vi.mock('@gears-frontx/react', async (importOriginal) => {
   const real = await importOriginal<Record<string, never>>();
   return {
     ...real,
-    // bootstrapMFE spreads both of these onto its own declaration, so the stub
-    // has to carry them or the spread throws.
+    // bootstrapMFE spreads the screen AND the overlay domain onto declarations
+    // of its own — adding the studio context properties to each — so both stubs
+    // have to carry the fields it spreads or the spread throws.
     screenDomain: { id: 'screen-domain', actions: [], sharedProperties: [] },
     sidebarDomain: { id: 'sidebar-domain' },
     popupDomain: { id: 'popup-domain' },
-    overlayDomain: { id: 'overlay-domain' },
+    overlayDomain: { id: 'overlay-domain', actions: [], sharedProperties: [] },
   };
 });
 

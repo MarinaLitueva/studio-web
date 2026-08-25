@@ -17,9 +17,11 @@ import {
 const SCREENSET = 'projects';
 const LIST_SCREEN = 'list';
 const PROJECT_SCREEN = 'project';
+const CREATE_SCREEN = 'create';
 
 export const PROJECT_LIST_NAMESPACE = `screen.${SCREENSET}.${LIST_SCREEN}`;
 export const PROJECT_NAMESPACE = `screen.${SCREENSET}.${PROJECT_SCREEN}`;
+export const PROJECT_CREATE_NAMESPACE = `screen.${SCREENSET}.${CREATE_SCREEN}`;
 
 type JsonModule = { default: Record<string, string> };
 type ModuleMap = Record<string, () => Promise<JsonModule>>;
@@ -27,6 +29,7 @@ type ModuleMap = Record<string, () => Promise<JsonModule>>;
 
 const listModules = import.meta.glob('./screens/project-list/i18n/*.json') as ModuleMap;
 const projectModules = import.meta.glob('./screens/project/i18n/*.json') as ModuleMap;
+const createModules = import.meta.glob('./screens/project-create/i18n/*.json') as ModuleMap;
 
 /**
  * A language with no file resolves to an empty dictionary rather than to
@@ -43,6 +46,7 @@ function loadFrom(modules: ModuleMap, directory: string) {
 
 const loadListTranslations = loadFrom(listModules, './screens/project-list/i18n');
 const loadProjectTranslations = loadFrom(projectModules, './screens/project/i18n');
+const loadCreateTranslations = loadFrom(createModules, './screens/project-create/i18n');
 
 /** Loads the list screen's dictionary. One call, in `ProjectListScreen`. */
 export function useProjectListScreenTranslations(): UseScreenTranslationsReturn {
@@ -52,6 +56,16 @@ export function useProjectListScreenTranslations(): UseScreenTranslationsReturn 
 /** Loads the project screen's dictionary. One call, in `ProjectScreen`. */
 export function useProjectScreenTranslations(): UseScreenTranslationsReturn {
   return useScreenTranslations(SCREENSET, PROJECT_SCREEN, loadProjectTranslations);
+}
+
+/**
+ * Loads the New project wizard's dictionary. One call, in `NewProjectWizard`.
+ * The wizard is a second mounted root with its own shadow root, but the i18n
+ * registry is the MFE app's and `init.ts` builds that once for any entry — so
+ * this is the same registry the screens use, not a second one.
+ */
+export function useProjectCreateScreenTranslations(): UseScreenTranslationsReturn {
+  return useScreenTranslations(SCREENSET, CREATE_SCREEN, loadCreateTranslations);
 }
 
 export type ScreenText = (
@@ -71,3 +85,4 @@ function createText(namespace: string): () => ScreenText {
 
 export const useProjectListText = createText(PROJECT_LIST_NAMESPACE);
 export const useProjectText = createText(PROJECT_NAMESPACE);
+export const useProjectCreateText = createText(PROJECT_CREATE_NAMESPACE);

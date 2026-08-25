@@ -42,21 +42,36 @@ export interface Page<T> {
 /**
  * The free-form object under PROJECT_CONFIG_TYPE. The backend declares the
  * metadata type as a bare object ("shape enforced client-side"), so this
- * interface IS the contract, and the prototype is its only writer today — so it
- * mirrors `ProjectConfig` in studio-frontend-prototype/src/api.ts field for
- * field. Do not add fields nothing writes: a `description` used to live here for
+ * interface IS the contract.
+ *
+ * It used to mirror `ProjectConfig` in studio-frontend-prototype/src/api.ts
+ * field for field, the prototype being its only writer. The New project wizard
+ * is the second writer now and adds one field the prototype does not know,
+ * `owner_id` — a reader must treat it as optional, which it already is.
+ *
+ * Still do not add fields nothing writes: a `description` used to live here for
  * a second line in the mockups, and it could only ever render empty.
  */
 export type ProjectMode = 'greenfield' | 'modernize';
 export type ProjectStatus = 'draft' | 'active' | 'archived';
 
+/**
+ * One repository a project was seeded from.
+ */
+export interface ProjectSource {
+  connection_id: string;
+  full_path: string;
+  clone_url: string;
+}
+
 export interface ProjectConfig {
   mode?: ProjectMode;
   stages?: string[];
   status?: ProjectStatus;
-  /** Seed source: a git url, a brief, or (not modelled here yet) a file id. */
+  sources?: ProjectSource[];
   source_git_url?: string;
   brief?: string;
+  owner_id?: string;
 }
 
 /** `GET /metadata/{type}` envelope. */

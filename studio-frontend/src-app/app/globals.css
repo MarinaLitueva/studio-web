@@ -11,6 +11,25 @@
  * back to system-ui with nothing in the console. */
 @import '@fontsource-variable/inter';
 
+/* The mono face, and the *static* package on purpose — it registers the family
+ * as 'JetBrains Mono', which is exactly the name ui-kit's `--font-mono` already
+ * says. So this line is the whole job: no token to restate, in the themes or in
+ * any MFE. The `-variable` package would register 'JetBrains Mono Variable' and
+ * drag the Inter rename dance into thirteen more places for a variable weight
+ * the design does not use.
+ *
+ * One weight, 400 — the design's `System Micro` role is JetBrains Mono Regular
+ * and nothing else asks for mono. The root `400.css` (not `latin-400.css`)
+ * declares six @font-face rules with `unicode-range`, so the browser downloads
+ * only the subsets actually on screen: 21 KB for a latin UI, cyrillic added
+ * only once cyrillic text appears. Picking the latin file alone would render
+ * translated labels in two different mono faces at once.
+ *
+ * @font-face is document-scoped and DOES reach into every shadow root, which is
+ * why no MFE imports a font of its own. Only the variable would not cross — and
+ * here it does not have to. */
+@import '@fontsource/jetbrains-mono/400.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

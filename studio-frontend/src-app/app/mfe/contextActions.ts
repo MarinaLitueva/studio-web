@@ -39,6 +39,20 @@ export const STUDIO_ACTION_CONTEXT_PUBLISH =
 export const STUDIO_SHARED_PROPERTY_CONTEXT_PROJECT =
   'gts.frontx.mfes.comm.shared_property.v1~constructor_studio.context.project.selected.v1~';
 
+/**
+ * The organization the session is working in, as `{id, name}` or `null`.
+ */
+export const STUDIO_SHARED_PROPERTY_CONTEXT_ORGANIZATION =
+  'gts.frontx.mfes.comm.shared_property.v1~constructor_studio.context.organization.selected.v1~';
+
+/**
+ * Who is signed in, for display: `{id, displayName?, email?}` or `null`.
+ * Display only. Every authorization decision stays with the backend, which
+ * verifies the signature.
+ */
+export const STUDIO_SHARED_PROPERTY_SESSION_PROFILE =
+  'gts.frontx.mfes.comm.shared_property.v1~constructor_studio.session.user.profile.v1~';
+
 interface ContextEntityPayload {
   id: string;
   name: string;

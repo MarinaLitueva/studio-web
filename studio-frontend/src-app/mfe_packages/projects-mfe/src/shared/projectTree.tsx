@@ -8,9 +8,15 @@ import React, {
   type ReactNode,
 } from 'react';
 import { apiRegistry, useApiQuery } from '@gears-frontx/react';
-import { AccountsApiService, CHILDREN_PAGE_LIMIT } from '../api/AccountsApiService';
-import { TENANT_TYPES, type Page, type TenantDto } from '../api/types';
-import { isOrganization, isProject, sortForTree } from '../model/project';
+import {
+  AccountsApiService,
+  CHILDREN_PAGE_LIMIT,
+  childrenPageParams,
+} from '../api/AccountsApiService';
+import { type Page, type TenantDto } from '../api/types';
+import { isProject, sortForTree } from '../model/project';
+import { OrganizationProvider, useOrganization, type OrganizationRef } from './organization';
+import { useBridge } from './bridge';
 
 /**
  * The organization's tenant tree, fetched one node at a time.
@@ -58,7 +64,7 @@ export interface TreeRow {
 }
 
 export interface ProjectTree {
-  org: TenantDto | null;
+  org: OrganizationRef | null;
   /** Depth-first, expansion honoured: exactly the rows a table should draw. */
   rows: TreeRow[];
   /**
@@ -190,7 +196,7 @@ function useChildrenPage(
 ): { isLoading: boolean; isError: boolean } {
   const accounts = apiRegistry.getService(AccountsApiService);
   const { data, isLoading, isError } = useApiQuery(
-    accounts.children({ tenantId: parentId, limit: CHILDREN_PAGE_LIMIT })
+    accounts.children(childrenPageParams(parentId))
   );
 
   useEffect(() => {
@@ -211,7 +217,7 @@ const NodeChildren: React.FC<{
   return null;
 };
 
-const WithOrg: React.FC<{ org: TenantDto; children: ReactNode }> = ({ org, children }) => {
+const WithOrg: React.FC<{ org: OrganizationRef; children: ReactNode }> = ({ org, children }) => {
   const [childrenByParent, loaded] = useReducer(childrenReducer, {});
   const [expandedOverrides, toggleExpanded] = useReducer(expandedReducer, {});
 
@@ -277,90 +283,34 @@ const WithOrg: React.FC<{ org: TenantDto; children: ReactNode }> = ({ org, child
 };
 
 /**
- * The home tenant is not an organization (locally it is the platform root), so
- * fall back to its first organization child — the same derivation the shell uses
- * for the top bar. Mounted only in that case, so the common one costs no request.
+ * The tree exists only once an organization does. The answer comes from the
+ * shell as a shared property (`shared/organization`) — the wizard needs the same
+ * answer and runs in a different module graph, so neither root can hand it to
+ * the other, but both can be told.
  */
-const OrgFromHome: React.FC<{ homeTenantId: string; children: ReactNode }> = ({
-  homeTenantId,
-  children,
-}) => {
-  const accounts = apiRegistry.getService(AccountsApiService);
-  const { data, isLoading, isError } = useApiQuery(
-    accounts.children({
-      tenantId: homeTenantId,
-      tenantType: TENANT_TYPES.organization,
-      limit: CHILDREN_PAGE_LIMIT,
-    })
-  );
+const TreeForOrganization: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const { org, loading, failed } = useOrganization();
 
-  const org = data?.items[0];
-  if (org) return <WithOrg org={org}>{children}</WithOrg>;
-
-  return (
-    <TreeContext.Provider value={{ ...EMPTY, loading: isLoading, failed: isError }}>
-      {children}
-    </TreeContext.Provider>
-  );
-};
-
-/**
- * Resolves which organization to show.
- *
- * TODO: follow the top bar's organization switcher. The plumbing is settled — a
- * second shared property alongside the project one, since the shell's
- * `app/context` slice lives in the host's realm and cannot be read. The
- * behaviour is not:
- *
- * - which organization counts as selected. The shell offers the home tenant plus
- *   its organization children; this file takes the home tenant if it is an
- *   organization and otherwise its FIRST organization child. Those disagree as
- *   soon as a user has more than one.
- * - what a switch does to the tree in memory. `childrenByParent` and
- *   `expandedOverrides` are keyed by tenant id, so they are unreachable rather
- *   than wrong — but their React Query pages stay cached, and re-entering an
- *   organization probably should not show a tree assembled before the switch.
- *
- * Until then the slot can name an organization whose projects are not the ones
- * listed; the shell publishes a null project on every organization change, so at
- * least the frame falls back to this list. Matching TODO in the shell's
- * `app/effects/appContextEffects.ts`.
- */
-const ResolveOrg: React.FC<{ homeTenantId: string; children: ReactNode }> = ({
-  homeTenantId,
-  children,
-}) => {
-  const accounts = apiRegistry.getService(AccountsApiService);
-  const { data: home, isLoading, isError } = useApiQuery(
-    accounts.tenant({ tenantId: homeTenantId })
-  );
-
-  if (home) {
-    return isOrganization(home) ? (
-      <WithOrg org={home}>{children}</WithOrg>
-    ) : (
-      <OrgFromHome homeTenantId={homeTenantId}>{children}</OrgFromHome>
-    );
-  }
-
-  return (
-    <TreeContext.Provider value={{ ...EMPTY, loading: isLoading, failed: isError }}>
-      {children}
-    </TreeContext.Provider>
-  );
-};
-
-export const ProjectTreeProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const accounts = apiRegistry.getService(AccountsApiService);
-  const { data: me, isLoading, isError } = useApiQuery(accounts.me);
-  const homeTenantId = me?.subject_tenant_id;
-
-  if (!homeTenantId) {
+  if (!org) {
     return (
-      <TreeContext.Provider value={{ ...EMPTY, loading: isLoading, failed: isError }}>
+      <TreeContext.Provider value={{ ...EMPTY, loading, failed }}>
         {children}
       </TreeContext.Provider>
     );
   }
-  return <ResolveOrg homeTenantId={homeTenantId}>{children}</ResolveOrg>;
+  return <WithOrg org={org}>{children}</WithOrg>;
+};
+
+/**
+ * The bridge comes from context here: this screen is rendered inside
+ * `ProjectsRoot`'s `BridgeProvider`. The wizard, whose organization provider
+ * sits above its own bridge provider, passes it as a prop instead.
+ */
+export const ProjectTreeProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const bridge = useBridge();
+  return (
+    <OrganizationProvider bridge={bridge}>
+      <TreeForOrganization>{children}</TreeForOrganization>
+    </OrganizationProvider>
+  );
 };
