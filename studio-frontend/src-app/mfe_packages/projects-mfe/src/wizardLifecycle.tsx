@@ -17,13 +17,8 @@ class ProjectCreateLifecycle extends ThemeAwareReactLifecycle {
     super(mfeApp);
   }
 
-  protected initializeStyles(container: Element | ShadowRoot): void {
-    super.initializeStyles(container);
-    if (container instanceof ShadowRoot) {
-      const style = document.createElement('style');
-      style.textContent = anchorKitThemeOnShadowHost(kitTheme);
-      container.appendChild(style);
-    }
+  protected additionalStyles(): string[] {
+    return [...super.additionalStyles(), anchorKitThemeOnShadowHost(kitTheme)];
   }
 
   protected renderContent(bridge: ChildMfeBridge): React.ReactNode {

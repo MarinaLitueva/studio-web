@@ -13,7 +13,7 @@ import {
 } from '@gears-frontx/react';
 import type { ChildMfeBridge } from '@gears-frontx/react';
 import { useAppDispatch, useAppSelector } from '@gears-frontx/react';
-import { Button } from '@gears-frontx/ui-kit';
+import { Button, Skeleton } from '@gears-frontx/ui-kit';
 import { BridgeProvider } from '../../shared/bridge';
 import { useHostChrome } from '../../shared/useHostChrome';
 import { useProjectCreateScreenTranslations, useProjectCreateText } from '../../i18n';
@@ -111,10 +111,14 @@ const WizardBody: React.FC<NewProjectWizardProps> = ({ bridge }) => {
   return (
     <div ref={containerRef} className={styles.wizard} data-theme={dataTheme}>
       <BridgeProvider bridge={bridge}>
-        <h2 className={styles.title}>{isLoaded ? t(step.titleKey) : ''}</h2>
+        {isLoaded ? (
+          <h2 className={styles.title}>{t(step.titleKey)}</h2>
+        ) : (
+          <Skeleton className={styles.titleSkeleton} />
+        )}
 
         <div className={styles.body}>
-          <Body />
+          {isLoaded ? <Body /> : <Skeleton className={styles.bodySkeleton} />}
         </div>
 
         {(error || (final && !orgId && !orgLoading)) && (

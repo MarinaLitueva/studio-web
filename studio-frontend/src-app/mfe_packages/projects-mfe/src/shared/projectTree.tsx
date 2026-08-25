@@ -264,10 +264,19 @@ const WithOrg: React.FC<{ org: OrganizationRef; children: ReactNode }> = ({ org,
       toggle,
       // Only the organization's own page gates the screen; a node still in
       // flight shows as a row without children rather than as a spinner.
-      loading: isLoading,
+      //
+      // `isLoading` alone is not that gate. The page reaches `rows` through the
+      // reducer, dispatched from an effect, so there is one commit where the
+      // query has settled but `childrenByParent` is still empty — and the list
+      // screen reads that commit as "this organization has no projects" and
+      // paints its empty state for a frame before the table replaces it.
+      // Waiting for the org's own key closes the gap without claiming to wait
+      // for anything else: a genuinely empty organization records an empty page
+      // under that key, so it still resolves to the empty state, just once.
+      loading: isLoading || (!isError && childrenByParent[org.id] === undefined),
       failed: isError,
     }),
-    [org, rows, searchRows, siblingProjects, toggle, isLoading, isError]
+    [org, rows, searchRows, siblingProjects, toggle, isLoading, isError, childrenByParent]
   );
 
   return (

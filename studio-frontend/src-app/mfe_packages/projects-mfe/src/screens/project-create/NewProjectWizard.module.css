@@ -28,12 +28,23 @@
   font-weight: 600;
 }
 
+.titleSkeleton {
+  margin: 0 0 var(--space-5);
+  height: var(--text-body-line-height);
+  width: 14ch;
+}
+
 .body {
   display: flex;
   flex: 1;
   min-height: 0;
   flex-direction: column;
   gap: var(--space-5);
+}
+
+.bodySkeleton {
+  flex: 1;
+  min-height: 0;
 }
 
 .goal {
@@ -307,6 +318,7 @@
 }
 
 .owner {
+  --owner-avatar-size: 1.875rem;
   display: flex;
   align-items: center;
   gap: 0.625rem;
@@ -322,14 +334,44 @@
   align-items: center;
   justify-content: center;
   flex: none;
-  width: 1.875rem;
-  height: 1.875rem;
+  width: var(--owner-avatar-size);
+  height: var(--owner-avatar-size);
   border-radius: 50%;
   background: var(--primary);
   color: var(--primary-foreground);
   font-size: 0.6875rem;
   font-weight: 600;
   letter-spacing: 0.02em;
+}
+
+/*
+ * The owner row's placeholders. The row itself is now drawn in both states, so
+ * its height is produced by one box rather than appearing from nothing — the
+ * subject is a shared property the bridge usually replays before the first
+ * render, but the shell publishes it from an effect, so an overlay opened early
+ * saw `null` and the three-line row materialised under the label, shoving the
+ * starting-point cards down.
+ *
+ * Each placeholder is sized by the metrics of the text it stands in for. Both
+ * text rows inherit the wizard's body line-height — the email's smaller
+ * font-size does not shrink its line box, because the token is a length — so
+ * both take the same token. Widths are cosmetic.
+ */
+.ownerAvatarSkeleton {
+  flex: none;
+  width: var(--owner-avatar-size);
+  height: var(--owner-avatar-size);
+  border-radius: 50%;
+}
+
+.ownerNameSkeleton {
+  height: var(--text-body-line-height);
+  width: 9ch;
+}
+
+.ownerEmailSkeleton {
+  height: var(--text-body-line-height);
+  width: 13ch;
 }
 
 .ownerText {

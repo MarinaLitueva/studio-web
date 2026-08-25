@@ -10,6 +10,7 @@ import {
   Label,
   RadioGroup,
   RadioGroupItem,
+  Skeleton,
   Textarea,
 } from '@gears-frontx/ui-kit';
 import { useAppDispatch, useAppSelector } from '@gears-frontx/react';
@@ -33,7 +34,7 @@ function fullName(user: User): string {
 }
 
 const UserRow: React.FC<{ user: User }> = ({ user }) => (
-  <span className={styles.owner}>
+  <>
     <span className={styles.ownerAvatar} aria-hidden="true">
       {initials(user)}
     </span>
@@ -41,10 +42,22 @@ const UserRow: React.FC<{ user: User }> = ({ user }) => (
       <span className={styles.ownerName}>{fullName(user)}</span>
       {user.email ? <span className={styles.ownerEmail}>{user.email}</span> : null}
     </span>
-  </span>
+  </>
 );
 
 UserRow.displayName = 'UserRow';
+
+const UserRowPlaceholder: React.FC = () => (
+  <>
+    <Skeleton className={styles.ownerAvatarSkeleton} />
+    <span className={styles.ownerText}>
+      <Skeleton className={styles.ownerNameSkeleton} />
+      <Skeleton className={styles.ownerEmailSkeleton} />
+    </span>
+  </>
+);
+
+UserRowPlaceholder.displayName = 'UserRowPlaceholder';
 
 const MODES: readonly { value: ProjectMode; icon: React.ReactNode; titleKey: string; hintKey: string }[] = [
   {
@@ -72,7 +85,9 @@ const OwnerField: React.FC = () => {
   return (
     <div className={styles.field}>
       <span className={styles.fieldLabel}>{t('field_owner')}</span>
-      {me ? <UserRow user={me} /> : null}
+      <span className={styles.owner}>
+        {me ? <UserRow user={me} /> : <UserRowPlaceholder />}
+      </span>
     </div>
   );
 };
