@@ -108,6 +108,7 @@
  */
 .table {
   width: 100%;
+  table-layout: fixed;
 }
 
 .table.table {
@@ -205,8 +206,31 @@
   border: 0;
 }
 
+/*
+ * Shares of the row, adding to 100 — change one and pick whose share it takes.
+ * Percentages because the frame is a shell panel of unknown width; Project is
+ * widest for the names and the indent, the rest fit their header, which is
+ * wider than the value under it.
+ */
 .colProject {
+  width: 34%;
   text-align: start;
+}
+
+.colStatus {
+  width: 13%;
+}
+
+.colIssues {
+  width: 11%;
+}
+
+.colMovement {
+  width: 15%;
+}
+
+.colOwner {
+  width: 15%;
 }
 
 .colStatus,
@@ -218,6 +242,7 @@
 }
 
 .colUpdated {
+  width: 12%;
   text-align: end;
   white-space: nowrap;
 }
@@ -250,6 +275,11 @@
 .pendingSkeleton {
   height: var(--text-body-line-height, 1.25rem);
   width: 40%;
+}
+
+.cellSkeleton {
+  height: var(--text-body-line-height, 1.25rem);
+  width: 4.5rem;
 }
 
 .chevron {
@@ -300,6 +330,9 @@
   font-size: var(--text-body-size);
   line-height: var(--text-body-line-height);
   font-weight: var(--text-label-weight);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .subtitle,
@@ -324,8 +357,12 @@
 }
 
 .ownerName {
+  display: block;
   font-size: var(--text-label-size);
   line-height: var(--text-label-line-height);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rowsSkeleton {

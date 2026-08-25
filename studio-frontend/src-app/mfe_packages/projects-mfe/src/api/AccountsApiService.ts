@@ -11,8 +11,9 @@
  * 2. It is cursor-paginated and clamped to 200 rows per page
  *    (`listing.max_top`), so a node with more children needs the cursor.
  * 3. Project attributes are tenant metadata, one GET per project, with no bulk
- *    read of any kind. That is why the list screen does not read them at all
- *    (it would be one request per row) and the project screen does.
+ *    read of any kind. Both screens need them, so the list costs one request
+ *    per *visible project row* — bounded by what is expanded, and left on the
+ *    host's cache defaults (30s fresh, refetch on focus) for now.
  */
 
 import { BaseApiService, RestEndpointProtocol, RestProtocol } from '@gears-frontx/react';
@@ -72,12 +73,12 @@ export class AccountsApiService extends BaseApiService {
     childrenPath
   );
 
+  /** Read once per screen, for the organization: it names every owner in it. */
   readonly tenantUsers = this.protocol(RestEndpointProtocol).queryWith<
     Page<User>,
     { tenantId: string }
   >(({ tenantId }) => `/tenants/${tenantId}/users`);
 
-  /** 404 means "never set" — see shared/notFound.ts for the read side. */
   readonly projectConfig = this.protocol(RestEndpointProtocol).queryWith<
     MetadataEntry<ProjectConfig>,
     { tenantId: string; metadataType: string }

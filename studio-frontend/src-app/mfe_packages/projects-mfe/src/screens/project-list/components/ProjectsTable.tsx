@@ -15,7 +15,9 @@ import { useBridge } from '../../../shared/bridge';
 import { isProject, isWorkspace } from '../../../model/project';
 import { useProjectTree, type TreeRow } from '../../../shared/projectTree';
 import { useProjectListText } from '../../../i18n';
-import { StatusInline } from './StatusInline';
+import { NoData } from './NoData';
+import { OwnerInline } from './OwnerInline';
+import { ProjectStatusInline, StatusInline } from './StatusInline';
 import styles from '../ProjectListScreen.module.css';
 
 /** Keep in step with the header below — the skeleton row spans them all. */
@@ -34,13 +36,6 @@ interface ProjectsTableProps {
  * rotation and the disabled-leaf state from scratch. What stays projects-specific
  * is only which tenant types are leaves.
  */
-
-/** Muted placeholder for a column the mockups have and no endpoint serves. */
-const NoData: React.FC<{ label: string }> = ({ label }) => (
-  <span className={styles.noData} title={label}>
-    —
-  </span>
-);
 
 /** A project is a leaf that opens; anything above it is a container. */
 const TenantGlyph: React.FC<{ project: boolean }> = ({ project }) => (
@@ -63,9 +58,14 @@ const Chevron: React.FC<{ expandable: boolean; expanded: boolean }> = ({
 );
 
 /**
- * One row of the tree. It reads nothing of its own: everything drawn here comes
- * from the tenant page its parent already fetched. A project opens on click, a
- * node with children toggles.
+ * One row of the tree, drawn from the tenant page its parent fetched — except
+ * Status and Owner, which for a project row come from that project's metadata.
+ *
+ * The branch sits inside those two cells because a hook cannot be conditional:
+ * only project rows read, and both cells share one query key, so it is one
+ * request per visible project. A collapsed branch costs nothing.
+ *
+ * A project opens on click, a node with children toggles.
  */
 const Row: React.FC<{
   row: TreeRow;
@@ -113,7 +113,8 @@ const Row: React.FC<{
         </button>
       </TableCell>
       <TableCell className={styles.colStatus}>
-        <StatusInline tenant={tenant} />
+        {/* A project's status is metadata; a container has only its lifecycle. */}
+        {project ? <ProjectStatusInline tenant={tenant} /> : <StatusInline tenant={tenant} />}
       </TableCell>
       <TableCell className={styles.colIssues}>
         {/* Findings/Signals have no portfolio rollup — see `issueSummary`. */}
@@ -123,10 +124,9 @@ const Row: React.FC<{
         <NoData label={t('no_data')} />
       </TableCell>
       <TableCell className={styles.colOwner}>
-        {/* AM tenants carry no owner — a project's `created_by` did not survive
-            the gear's retirement, and `/tenants/{id}/users` is one request per
-            row. Kept as a column: the mockup has it and the source is coming. */}
-        <NoData label={t('no_owner')} />
+        {/* Owner is a project's own attribute: the tenant carries none, and a
+            workspace has no owner to carry. */}
+        {project ? <OwnerInline tenant={tenant} /> : <NoData label={t('no_owner')} />}
       </TableCell>
       <TableCell className={styles.colUpdated}>
         <span className={styles.updated}>{formatRelative(tenant.updated_at)}</span>

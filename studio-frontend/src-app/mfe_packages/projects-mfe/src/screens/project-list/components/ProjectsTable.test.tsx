@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { FrontXProvider, createFrontXApp, i18nRegistry } from '@gears-frontx/react';
 import { createMfeBridgeFixture } from '../../../../../../__test-utils__/createMfeBridgeFixture';
 import { BridgeProvider } from '../../../shared/bridge';
@@ -15,6 +15,22 @@ import type { TreeRow } from '../../../shared/projectTree';
  * different causes — a wrong `tenant_type` on the wire, or this code — and this
  * test rules out the second one for good.
  */
+
+const CONFIG = { status: 'draft' as const, owner_id: 'user-1' };
+
+vi.mock('../../../shared/useProjectConfig', () => ({
+  useProjectConfig: () => ({ config: CONFIG, loading: false, unset: false, failed: false }),
+}));
+
+vi.mock('../../../shared/users', async () => {
+  const actual = await vi.importActual<typeof import('../../../shared/users')>(
+    '../../../shared/users'
+  );
+  return {
+    ...actual,
+    useUsers: () => new Map([['user-1', { id: 'user-1', username: 'ada', display_name: 'Ada L.' }]]),
+  };
+});
 
 function tenant(id: string, tenantType: string, childCount = 0): TenantDto {
   return {
@@ -75,6 +91,16 @@ describe('ProjectsTable rows', () => {
 
     const state = app.store.getState() as Record<string, { projectId: string | null }>;
     expect(state['projects/nav'].projectId).toBe('proj');
+  });
+
+  it('draws a project row from its metadata and a container row from the tenant', async () => {
+    await mount([row(PROJECT), row(FULL_WORKSPACE)]);
+
+    // The project's own status, not the tenant lifecycle every tenant reports.
+    expect(screen.getByText(en.status_draft)).toBeTruthy();
+    expect(screen.getByText(en.status_active)).toBeTruthy();
+    // The owner id resolved against the organization's users.
+    expect(screen.getByText('Ada L.')).toBeTruthy();
   });
 
   it('toggles a workspace that has children, and disables one that has none', async () => {

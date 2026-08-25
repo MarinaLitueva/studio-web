@@ -33,6 +33,12 @@ function fullName(user: User): string {
   return user.display_name?.trim() || user.username;
 }
 
+/**
+ * The owner, as the mockup draws them: initials, name, address. `initials` is a
+ * stand-in for the kit's Avatar, which does not exist yet — when it lands, this
+ * and the list's Owner cell (`OwnerInline`) both drop their local version
+ * instead of growing a second copy of the hue hash (`TeamSection` says so too).
+ */
 const UserRow: React.FC<{ user: User }> = ({ user }) => (
   <>
     <span className={styles.ownerAvatar} aria-hidden="true">
