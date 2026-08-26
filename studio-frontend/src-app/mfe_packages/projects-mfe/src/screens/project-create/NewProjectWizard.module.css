@@ -378,6 +378,7 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: calc(2 * var(--text-body-line-height));
 }
 
 

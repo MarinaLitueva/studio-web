@@ -195,15 +195,25 @@ function useChildrenPage(
   onLoaded: (parentId: string, items: TenantDto[]) => void
 ): { isLoading: boolean; isError: boolean } {
   const accounts = apiRegistry.getService(AccountsApiService);
-  const { data, isLoading, isError } = useApiQuery(
+  const { data, isPending, isLoading, isError } = useApiQuery(
     accounts.children(childrenPageParams(parentId))
   );
 
+  // Dispatches on settle, not on a truthy body: `WithOrg` gates its screen on
+  // the org's own key appearing in the reducer, and a success that returned no
+  // body (`RestProtocol` hands back `response.data` verbatim) would otherwise
+  // leave that key undefined with nothing left in flight — a spinner with no
+  // end. Recording the empty page keeps the two in agreement.
+  //
+  // The gate is `isPending`, not `isLoading`. `isLoading` is
+  // `isPending && isFetching`, so an offline request — pending, `fetchStatus`
+  // 'paused' — reads as settled and would record an empty page, turning the
+  // spinner into a permanent "no projects".
   useEffect(() => {
-    if (!data) return;
-    warnIfTruncated(parentId, data);
-    onLoaded(parentId, data.items);
-  }, [data, onLoaded, parentId]);
+    if (isPending || isError) return;
+    if (data) warnIfTruncated(parentId, data);
+    onLoaded(parentId, data?.items ?? []);
+  }, [data, isError, isPending, onLoaded, parentId]);
 
   return { isLoading, isError };
 }

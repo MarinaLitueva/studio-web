@@ -35,6 +35,7 @@ export type { FrontXConfig, FrontXApp };
 export interface ApiQueryResult<TData, TError = Error> {
   data: TData | undefined;
   error: TError | null;
+  isPending: boolean;
   isLoading: boolean;
   isFetching: boolean;
   isError: boolean;

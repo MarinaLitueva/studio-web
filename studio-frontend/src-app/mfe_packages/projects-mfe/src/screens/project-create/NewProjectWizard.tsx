@@ -4,7 +4,7 @@
  */
 
 // @cpt-dod:cpt-studiofrontend-dod-project-create-steps:p1
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   apiRegistry,
   eventBus,
@@ -50,7 +50,7 @@ interface NewProjectWizardProps {
 
 const WizardBody: React.FC<NewProjectWizardProps> = ({ bridge }) => {
   const { containerRef, dataTheme } = useHostChrome(bridge);
-  const { isLoaded } = useProjectCreateScreenTranslations();
+  const { isLoaded, error: translationsFailed } = useProjectCreateScreenTranslations();
   const t = useProjectCreateText();
   const dispatch = useAppDispatch();
 
@@ -73,6 +73,13 @@ const WizardBody: React.FC<NewProjectWizardProps> = ({ bridge }) => {
     if (currentUserId && !draft.ownerId) dispatch(editDraft({ ownerId: currentUserId }));
   }, [currentUserId, draft.ownerId, dispatch]);
 
+
+  /**
+   * The skeleton is for the first load and nothing else.
+   */
+  const everLoaded = useRef(false);
+  everLoaded.current ||= isLoaded;
+  const showSkeleton = !everLoaded.current && !translationsFailed;
 
   const step = stepFor(draft, stepKey);
   const back = prevStep(draft, step.key);
@@ -111,19 +118,29 @@ const WizardBody: React.FC<NewProjectWizardProps> = ({ bridge }) => {
   return (
     <div ref={containerRef} className={styles.wizard} data-theme={dataTheme}>
       <BridgeProvider bridge={bridge}>
-        {isLoaded ? (
-          <h2 className={styles.title}>{t(step.titleKey)}</h2>
-        ) : (
+        {showSkeleton ? (
           <Skeleton className={styles.titleSkeleton} />
+        ) : (
+          <h2 className={styles.title}>{t(step.titleKey)}</h2>
         )}
 
         <div className={styles.body}>
-          {isLoaded ? <Body /> : <Skeleton className={styles.bodySkeleton} />}
+          {showSkeleton ? <Skeleton className={styles.bodySkeleton} /> : <Body />}
         </div>
 
-        {(error || (final && !orgId && !orgLoading)) && (
+        {(translationsFailed || error || (final && !orgId && !orgLoading)) && (
           <p className={styles.error} role="alert">
-            {error ?? t('error_no_org')}
+            {/*
+             * Last resort for exactly one case: the dictionary that would
+             * translate this message is the one that failed to arrive, so `t`
+             * would render the key. It takes priority over the other two for the
+             * same reason. Unlike `ProjectListScreen`, which has nothing to show
+             * but the message and replaces its content with it, the wizard keeps
+             * the form mounted — raw keys on the labels beat no wizard at all.
+             */}
+            {translationsFailed
+              ? 'Could not load this screen.'
+              : (error ?? t('error_no_org'))}
           </p>
         )}
 

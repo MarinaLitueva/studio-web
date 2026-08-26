@@ -12,9 +12,11 @@ import { FrontXProvider } from '../FrontXProvider';
 import { hasFrontXQueryClientActivator, resolveFrontXQueryClient } from '../queryClient';
 import {
   constructedSheetsSupported,
-  hostDocumentStyles,
-  remoteEntryStyles,
+  prewarmShadowStyles,
+  remoteStylesheetHrefs,
   sheetFromText,
+  supersedeLink,
+  warmShadowStyles,
 } from './shadowStyles';
 
 interface ProviderMountOptions {
@@ -96,6 +98,11 @@ const BASE_RESETS = `
       }
     `;
 
+/** Per-subclass CSS, supplied at construction rather than by overriding a hook. */
+export interface ThemeAwareReactLifecycleOptions {
+  readonly additionalStyles?: readonly string[];
+}
+
 /**
  * Abstract base class for React-based MFE lifecycle implementations.
  *
@@ -118,14 +125,21 @@ const BASE_RESETS = `
  * measurements behind this, and for the `<style>`/`<link>` fallback used where
  * constructed sheets do not exist (jsdom, hence every vitest run).
  *
- * `mount` therefore returns a promise when it has sheets to fetch —
- * `MfeEntryLifecycle` declares `void | Promise<void>` and `DefaultMountManager`
- * awaits it, and the mounter attaches the container only after that promise
- * settles, which is exactly the window those fetches need. It is deliberately
- * NOT an `async` method: contract validation has to keep throwing at the call
- * site rather than one tick later as a rejection, and the fallback path (no
- * shadow root, or no constructed sheets — i.e. every jsdom test) stays entirely
- * synchronous.
+ * `mount` is synchronous, and there is no window to speak of: the sheets are
+ * fetched at bootstrap by `prewarmShadowStyles` and read back synchronously
+ * here. That is deliberate rather than incidental. `DefaultMountManager` holds
+ * `mountState: 'mounting'` across an awaited `mount` while its
+ * `unmountExtension` early-returns on anything but `'mounted'`, and
+ * `DefaultExtensionMounter` records the extension only after that await, so an
+ * awaited `mount` puts the extension in a state no teardown path can see. An
+ * awaiting `mount` is legal by the `MfeEntryLifecycle` contract and simply
+ * unsafe against this runtime, so this one does not await at all.
+ *
+ * When the cache is cold — a click that beats the bootstrap fetch — this takes
+ * the DOM-node fallback for that one mount and warms the cache on the way out,
+ * rather than adopting a partial set. Partial adoption is the one thing that
+ * would be worse than the flash: a `<link>` left in the root ranks before every
+ * adopted sheet. See `shadowStyles.ts`.
  *
  * Theme CSS variables are delivered via CSS inheritance from `:root` (Shadow
  * DOM) or via MountManager injection (iframe). MFE lifecycles do NOT need to
@@ -138,33 +152,48 @@ const BASE_RESETS = `
 export abstract class ThemeAwareReactLifecycle implements MfeEntryLifecycle<ChildMfeBridge> {
   private root: Root | null = null;
 
-  private mountGeneration = 0;
-
-  constructor(private readonly app: FrontXApp) { }
+  constructor(
+    private readonly app: FrontXApp,
+    private readonly options?: ThemeAwareReactLifecycleOptions
+  ) { }
 
   mount(
     container: Element | ShadowRoot,
     bridge: ChildMfeBridge,
     mountContext?: MfeMountContext
-  ): void | Promise<void> {
-    // First, and synchronously: a mount that cannot succeed must say so at the
-    // call site, before any stylesheet work is started on its behalf.
+  ): void {
+    // First: a mount that cannot succeed must say so at the call site, before
+    // any stylesheet work is done on its behalf.
     const providerMountOptions = resolveProviderMountOptions(this.app, bridge, mountContext);
-    const generation = ++this.mountGeneration;
 
     if (container instanceof ShadowRoot && constructedSheetsSupported()) {
-      return this.adoptStyles(container).then(() => {
-        if (generation !== this.mountGeneration) return;
+      const warm = warmShadowStyles(container);
+      if (warm) {
+        container.adoptedStyleSheets = [
+          ...warm.sheets,
+          sheetFromText(BASE_RESETS),
+          ...this.additionalStyles().map((css) => sheetFromText(css)),
+        ];
+        // The handler's own `<link>`s carry the same bytes as `warm.sheets`;
+        // left applying, they would be parsed a second time per mount.
+        for (const link of warm.supersededLinks) supersedeLink(link);
+        for (const link of warm.crossOriginLinks) {
+          container.appendChild(link.cloneNode(true));
+        }
         this.renderRoot(container, bridge, providerMountOptions);
-      });
+        return;
+      }
+      // Cold cache. Warm it for the next mount and take the DOM-node path for
+      // this one — the old behaviour, not a partial adoption.
+      prewarmShadowStyles(remoteStylesheetHrefs(container));
     }
 
     if (container instanceof ShadowRoot) {
       this.adoptHostStylesIntoShadowRoot(container);
       this.appendStyleElement(container, BASE_RESETS);
-      // Shadow-only, same as the guard each subclass used to carry: what
-      // `additionalStyles()` returns is `:host`-anchored, so in a plain element
-      // it would be a `<style>` node whose every rule is inert.
+      // Shadow-only: what `additionalStyles()` returns is `:host`-anchored, so
+      // in a plain element it would be a `<style>` node whose every rule is
+      // inert.
       for (const css of this.additionalStyles()) {
         this.appendStyleElement(container, css);
       }
@@ -175,7 +204,6 @@ export abstract class ThemeAwareReactLifecycle implements MfeEntryLifecycle<Chil
   }
 
   unmount(_container: Element | ShadowRoot): void {
-    this.mountGeneration += 1;
     if (this.root) {
       this.root.unmount();
       this.root = null;
@@ -196,32 +224,6 @@ export abstract class ThemeAwareReactLifecycle implements MfeEntryLifecycle<Chil
         {this.renderContent(bridge)}
       </MountRuntimeAwareProvider>
     );
-  }
-
-  /**
-   * Resolve and adopt all four style sources. Anything that could not be fetched
-   * keeps the old `<link>` path — late styles beat missing styles.
-   */
-  private async adoptStyles(shadowRoot: ShadowRoot): Promise<void> {
-    const [remote, host] = await Promise.all([
-      remoteEntryStyles(shadowRoot),
-      hostDocumentStyles(),
-    ]);
-
-    shadowRoot.adoptedStyleSheets = [
-      ...remote.sheets,
-      ...host.sheets,
-      sheetFromText(BASE_RESETS),
-      ...this.additionalStyles().map((css) => sheetFromText(css)),
-    ];
-
-    for (const link of [...remote.unresolvedLinks, ...host.unresolvedLinks]) {
-      // A remote link that failed to resolve is still in place; only the host's
-      // needs cloning in.
-      if (link.parentNode !== shadowRoot) {
-        shadowRoot.appendChild(link.cloneNode(true));
-      }
-    }
   }
 
   private appendStyleElement(container: Element | ShadowRoot, css: string): void {
@@ -252,20 +254,26 @@ export abstract class ThemeAwareReactLifecycle implements MfeEntryLifecycle<Chil
   }
 
   /**
-   * Hook for subclasses to contribute CSS not covered by the host stylesheet
-   * (e.g. a re-anchored ui-kit theme, MFE-specific `@font-face` rules).
+   * CSS not covered by the host stylesheet (e.g. a re-anchored ui-kit theme,
+   * MFE-specific `@font-face` rules).
    *
-   * Returns CSS **text** rather than appending elements, because the base class
-   * has to own placement: these are the last sheets in the cascade, and only the
-   * base class knows whether they become adopted sheets or `<style>` nodes.
+   * Normally supplied as `options.additionalStyles` at construction rather than
+   * overridden: every MFE in this repo contributes the same one sheet, and seven
+   * identical overrides had to be edited in lockstep whenever the base class
+   * moved. It stays a method so a subclass whose CSS depends on instance state
+   * still has somewhere to put that.
+   *
+   * CSS **text**, not elements, because the base class has to own placement:
+   * these are the last sheets in the cascade, and only it knows whether they
+   * become adopted sheets or `<style>` nodes.
    *
    * Applied only when the container is a ShadowRoot, since re-anchoring to
-   * `:host` is the reason this hook exists. A custom handler that mounts into a
-   * plain element gets `BASE_RESETS` and the host document's own cascade, and
-   * needs neither.
+   * `:host` is the reason this exists. A custom handler that mounts into a plain
+   * element gets `BASE_RESETS` and the host document's own cascade, and needs
+   * neither.
    */
-  protected additionalStyles(): string[] {
-    return [];
+  protected additionalStyles(): readonly string[] {
+    return this.options?.additionalStyles ?? [];
   }
 
   /**

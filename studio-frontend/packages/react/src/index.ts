@@ -64,6 +64,8 @@ export {
   MfeProvider,
   useMfeBridge,
   ThemeAwareReactLifecycle,
+  anchorKitThemeOnShadowHost,
+  prewarmShadowStyles,
   useSharedProperty,
   useHostAction,
   useDomainExtensions,
@@ -76,6 +78,7 @@ export type {
   MfeContextValue,
   MfeProviderProps,
   ExtensionDomainSlotProps,
+  ThemeAwareReactLifecycleOptions,
 } from './mfe';
 
 // ============================================================================

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { anchorKitThemeOnShadowHost } from './anchorKitThemeOnShadowHost';
+import { anchorKitThemeOnShadowHost } from '../anchorKitThemeOnShadowHost';
 
 describe('anchorKitThemeOnShadowHost', () => {
   it('re-anchors a bare :root block on :host', () => {
