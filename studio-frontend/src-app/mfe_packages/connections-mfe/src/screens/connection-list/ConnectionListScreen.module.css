@@ -1,0 +1,203 @@
+/*
+ * Sizes and colours come from ui-kit tokens (theme.css) and its text roles —
+ * never px off the mockup. The two literals are the table's column widths,
+ * which no token can express.
+ */
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  min-height: 100%;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.controls {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--text-display-size);
+  line-height: var(--text-display-line-height);
+  font-weight: var(--text-display-weight);
+  letter-spacing: var(--text-display-tracking);
+}
+
+.titleSkeleton {
+  width: 8rem;
+  height: var(--text-display-line-height);
+}
+
+.search {
+  width: 13rem;
+  height: var(--control-height-sm);
+  border-radius: var(--radius-sm);
+}
+
+.card {
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-elevated);
+  color: var(--card-foreground);
+  overflow: hidden;
+}
+
+.table {
+  width: 100%;
+}
+
+.table.table {
+  border-spacing: 0;
+}
+
+.table.table tr > :is(th, td) {
+  border-block-start: 0;
+  border-inline: 0;
+  border-radius: 0;
+}
+
+.table.table tbody tr:last-child > :is(th, td) {
+  border-block-end: 0;
+}
+
+.table.table tbody tr > td {
+  padding-block: var(--space-4);
+}
+
+.table.table thead th + th {
+  position: relative;
+}
+
+.table.table thead th + th::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  inline-size: var(--border-width);
+  block-size: var(--icon-size-sm);
+  background: var(--border);
+}
+
+.table th {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-size);
+  line-height: var(--text-mono-line-height);
+  font-weight: var(--text-mono-weight);
+  letter-spacing: var(--text-mono-tracking);
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.colConnection {
+  text-align: start;
+}
+
+.colStatus,
+.colAvailable,
+.colProjects,
+.colLastSync {
+  text-align: start;
+  white-space: nowrap;
+}
+
+.colActions {
+  text-align: end;
+  white-space: nowrap;
+}
+
+.nameCell {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0;
+}
+
+.rowGlyph {
+  display: inline-flex;
+  flex: none;
+  color: var(--muted-foreground);
+}
+
+.rowGlyph svg {
+  inline-size: var(--icon-size-md);
+  block-size: var(--icon-size-md);
+}
+
+.nameText {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: calc(var(--text-body-line-height) + 2px + var(--text-meta-line-height));
+}
+
+.name {
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+  font-weight: var(--text-label-weight);
+}
+
+.subtitle,
+.updated,
+.noData {
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line-height);
+  color: var(--muted-foreground);
+}
+
+.subtitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 28rem;
+}
+
+.rowsSkeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.rowSkeleton {
+  height: var(--space-6);
+}
+
+.state {
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+}
+
+.stateTitle {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+}
+
+.stateHint {
+  margin: 0;
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line-height);
+  color: var(--muted-foreground);
+}
+
+.footer {
+  padding: var(--space-3) var(--space-4);
+  border-top: var(--border-width) solid var(--border);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line-height);
+  color: var(--muted-foreground);
+}

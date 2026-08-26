@@ -28,11 +28,12 @@ name = "StudioFrontend"
 slug = "studiofrontend"
 kit = "sdlc"
 children = []
-# Only the projects MFE is in scope. The rest of the repository carries FrontX
+# Only the MFEs this repository wrote are in scope. The rest carries FrontX
 # markers whose artifacts live elsewhere (see the ignore block above), so
 # widening this would measure coverage against specs this repository does not own.
 codebase = [
   { path = "src-app/mfe_packages/projects-mfe/src", extensions = [".ts", ".tsx"] },
+  { path = "src-app/mfe_packages/connections-mfe/src", extensions = [".ts", ".tsx"] },
 ]
 
 # Artifacts this repository owns live under docs/sdlc/. Deliberately narrow:

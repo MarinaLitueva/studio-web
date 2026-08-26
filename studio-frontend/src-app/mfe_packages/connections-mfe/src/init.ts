@@ -1,37 +1,45 @@
 /**
- * MFE Bootstrap — executed once when any entry first loads.
- * Creates the minimal FrontX app, registers slices, effects, and API services.
- * Cache/runtime note:
- * - The host app owns the shared runtime via queryCache().
- * - Child apps join that shared QueryClient via queryCacheShared().
- * - Do not add queryCache(), createFrontXApp(), or QueryClientProvider here.
+ * MFE Bootstrap — executed once per loaded entry, NOT once per MFE.
+ *
+ * This MFE exposes two entries (`./lifecycle` and `./dialogLifecycle`), and
+ * `MfeHandlerMF.loadExposedModuleIsolated` gives each one its own blob-URL
+ * module graph. So this module is evaluated twice and there are TWO of
+ * everything it creates: two apps, two stores, two event buses, two api
+ * registries. What crosses between them is only what the framework hands over
+ * through `globalThis` — the QueryClient and the host session.
+ *
+ * `authShared()` is what makes requests from here authenticated at all.
+ * `i18n()` is what makes `useFormatters()` resolve. The framework's `mock()`
+ * plugin is deliberately absent: its toggle is driven from the host's dev panel
+ * over the host's eventBus, which does not cross the realm boundary.
  */
 // @cpt-dod:cpt-frontx-dod-mfe-isolation-internal-dataflow:p1
-// @cpt-dod:cpt-frontx-dod-unit-test-generation-and-agent-verification-blank-mfe-tests:p1
 // @cpt-flow:cpt-frontx-flow-mfe-isolation-mfe-bootstrap:p1
 
 import {
   createFrontX,
   registerSlice,
   apiRegistry,
+  authShared,
   effects,
-  mock,
+  i18n,
   queryCacheShared,
 } from '@gears-frontx/react';
-import { homeSlice } from './slices/homeSlice';
-import { initHomeEffects } from './effects/homeEffects';
-import { _BlankApiService } from './api/_BlankApiService';
+import { connectSlice } from './slices/connectSlice';
+import { initConnectEffects } from './effects/connectEffects';
+import { ConnectorsApiService } from './api/ConnectorsApiService';
 
-// Register API services BEFORE build — mock plugin syncs during build(),
-// so services must already be present for mock activation to find them
-apiRegistry.register(_BlankApiService);
+// Register API services BEFORE build so plugin sync finds them.
+apiRegistry.register(ConnectorsApiService);
 apiRegistry.initialize();
 
-// Create only the local MFE app shell.
-// queryCacheShared() joins the host-owned QueryClient without reconfiguring it.
-const mfeApp = createFrontX().use(effects()).use(queryCacheShared()).use(mock()).build();
+const mfeApp = createFrontX()
+  .use(effects())
+  .use(i18n())
+  .use(queryCacheShared())
+  .use(authShared())
+  .build();
 
-// Register slices with effects (needs store from build())
-registerSlice(homeSlice, initHomeEffects);
+registerSlice(connectSlice, initConnectEffects);
 
 export { mfeApp };

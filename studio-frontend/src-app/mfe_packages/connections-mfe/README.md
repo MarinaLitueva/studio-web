@@ -1,253 +1,108 @@
-# Blank MFE Template
+# Connections MFE
 
-This is a template for creating new FrontX Microfrontend packages. It provides a complete, working MFE structure with:
+The source hosts and model providers an organization holds credentials for, and
+the form that adds one.
 
-- Shadow DOM isolation
-- Bridge communication with the host
-- Theme and language property subscriptions
-- MFE-local i18n with 36 language files
-- UIKit component integration
-- TypeScript strict mode
-- Module Federation setup
+**Feature**: [`docs/sdlc/FEATURE/connection-create.md`](../../../docs/sdlc/FEATURE/connection-create.md)
+**Design**: Figma `Constructor Studio mockups`, node `40001018:15055`
 
-## How to Use This Template
+## Two roots, not one
 
-### 1. Copy the Template
+This MFE exposes two entries, and they do not share anything a bundler can see.
+`MfeHandlerMF` loads each expose into its own blob-URL module graph, so there are
+two apps, two stores and two event buses. What crosses is what the framework
+hands over through `globalThis`: the QueryClient and the host session.
 
-Copy the entire `_blank-mfe` directory to a new name:
+| Entry | Extension domain | Renders |
+|---|---|---|
+| `./lifecycle` | screen | `ConnectionsRoot` → the list at `/connections` |
+| `./dialogLifecycle` | overlay | `ConnectSourceDialog`, the create form |
 
-```bash
-cp -r src/mfe_packages/_blank-mfe src/mfe_packages/your-mfe-name
-```
+The form is an **overlay extension the shell mounts**, not a dialog this MFE
+draws. `connectActions.ts` asks the shell to mount and unmount it through the
+extension lifecycle actions; the shell owns the scrim, Escape and click-outside,
+and applies them without a veto. That is also why the create is performed in an
+effect rather than in the component — a write must not be cancelled by a React
+root going away. The kit's `Dialog` is deliberately unused: it does not forward
+`keepMounted` to its Portal, so an MFE slot inside it cannot survive a close.
 
-### 2. Update Package Metadata
+Because the two roots cannot hear each other's events, a created connection
+reaches the list by **invalidating the listing on the shared QueryClient**. The
+keys line up because both roots build the same descriptor from the same
+organization id.
 
-Edit `package.json`:
-- Change `"name"` from `"@gears-frontx/blank-mfe"` to `"@gears-frontx/your-mfe-name"`
-- Change the port in the `"dev"` and `"preview"` scripts (e.g., from `3099` to your chosen port)
+## One gear
 
-Edit `vite.config.ts`:
-- Change `name` in the federation config from `"blankMfe"` to `"yourMfeName"` (camelCase)
-- Update the port in the dev server config if needed
+Everything here talks to `studio-connector` at `/cf/studio-connector/v1`, and to
+nothing else. Four calls: `GET /providers`, `GET /connections?tenant=`,
+`POST /connections`, `POST /connections/{id}/test?tenant=`.
 
-### 3. Update GTS IDs in mfe.json
+Two of those POSTs read rather than write — the gear verifies a credential by
+using it. That is why `POST /connections` needs no separate "test connection"
+button beside it: it probes the provider before storing anything and answers with
+the identity the provider reported, so a rejected token never becomes a
+connection.
 
-Replace all placeholder IDs with your actual GTS IDs. The placeholders are marked with `[YOUR_ORG]`, `[YOUR_APP]`, `[YOUR_MFE_NAME]`, and `[YOUR_SCREEN_NAME]`.
+`POST /connections/{id}/test` is the status column. It is issued **once per row,
+independently**, wrapped in its own cached query — never gathered, because
+gathering would make the slowest provider the speed of the screen and one
+unreachable provider the availability of the screen. It is declared as a mutation
+descriptor because the descriptor layer has no POST-shaped read.
 
-**Manifest ID Pattern:**
-```
-gts.frontx.mfes.mfe.mf_manifest.v1~[YOUR_ORG].[YOUR_APP].mfe.[YOUR_MFE_NAME].manifest.v1
-```
+Every connection is created at `scope: 'organization'`, owned by the organization
+the shell publishes. Neither is a form field: at organization scope a connection
+is inherited by every workspace under it, which is what makes it usable from the
+New project wizard, and this screen does not know which workspace a member means.
 
-Example:
-```
-gts.frontx.mfes.mfe.mf_manifest.v1~acme.crm.mfe.customer.manifest.v1
-```
+## Four columns have no data source
 
-**Entry ID Pattern:**
-```
-gts.frontx.mfes.mfe.entry.v1~frontx.mfes.mfe.entry_mf.v1~[YOUR_ORG].[YOUR_APP].mfe.[YOUR_MFE_NAME].[YOUR_SCREEN_NAME].v1
-```
+The mockup has six. These four render a placeholder carrying the reason, and the
+FEATURE records each as a `@cpt-gap`:
 
-Example:
-```
-gts.frontx.mfes.mfe.entry.v1~frontx.mfes.mfe.entry_mf.v1~acme.crm.mfe.customer.details.v1
-```
+- **Available data** — nothing on the wire says which resources a connection exposes.
+- **Projects** — the only link is `sources[].connection_id` inside each project's
+  tenant metadata, and account-management has no bulk read: no `GET /tenants`, no
+  subtree endpoint, one metadata GET per project. Counting would cost a walk of
+  the whole organization tree plus a request per project on every open, and would
+  still miss projects seeded outside the wizard. It needs a rollup on the gear.
+- **Last sync** — no connection carries a sync timestamp. `created_at_epoch_secs`
+  is deliberately **not** shown here: when the record was written is not when it
+  last synchronised, and "8 min ago" would be read as the second thing.
+- **Actions** — Manage and Reconnect are `PATCH` and `DELETE`, and both need an
+  edit surface this feature does not define.
 
-**Extension ID Pattern:**
-```
-gts.frontx.mfes.ext.extension.v1~[YOUR_ORG].[YOUR_APP].ext.[YOUR_SCREEN_NAME]_screen.v1
-```
+## Traps worth knowing before you edit
 
-Example:
-```
-gts.frontx.mfes.ext.extension.v1~acme.crm.ext.customer_details_screen.v1
-```
+- **`@tanstack/react-query` resolves twice.** The host has 5.101.4, every MFE pins
+  5.90.21. At runtime this does not matter — the package is in `sharedDeps`, so
+  the bare specifier survives the build and the handler rewrites it to the host's
+  copy. In **tests** it does: a bare `useQuery` gets a different
+  `QueryClientContext` than the framework's provider mounts, and fails with "No
+  QueryClient set". `lifecycle.test.tsx` mocks `useQuery` for exactly this reason.
+  This MFE is the first to import `@tanstack/react-query` directly rather than
+  through `useApiQuery`, which it has to because the health check is a POST.
+- **A popover needs `container`.** The trigger lives in a shadow root; without the
+  root element passed as `container`, Base UI portals to `document.body` — outside
+  the shadow root, unstyled. And the container must be **state-backed**: a plain
+  `useRef` read during render is still `null`, because refs populate at commit.
+- **Restate `--font-sans` on every mounted root.** The kit's own token says
+  `Inter`, which matches no registered `@font-face`; without the restatement the
+  screen silently falls back to system-ui.
+- **No Tailwind inside the shadow root.** The re-anchored kit tokens are hex, so a
+  colour utility resolves to `hsl(<hex>)` and drops.
+- **`mfe.json` is validated against the real `exposes`.** Declaring an entry whose
+  `exposedModule` has no matching expose in `vite.config.ts` fails the build.
+- **Editing `mfe.json` alone changes nothing.** `generate:mfe-manifests` reads
+  `dist`, so the package must be rebuilt first.
 
-**Update the `remoteEntry` URL:**
-```json
-"remoteEntry": "http://localhost:[YOUR_PORT]/assets/remoteEntry.js"
-```
-
-**Update the `remoteName`:**
-```json
-"remoteName": "yourMfeName"
-```
-
-**Update the presentation metadata:**
-```json
-"presentation": {
-  "label": "Your Screen Label",
-  "icon": "lucide:your-icon",
-  "route": "/your-route",
-  "order": 100
-}
-```
-
-### 4. Customize the Screen Component
-
-Edit `src/screens/home/HomeScreen.tsx`:
-- Rename the component if needed
-- Add your business logic
-- Customize the UI using UIKit components
-
-### 5. Update Translations
-
-Edit the i18n files in `src/screens/home/i18n/`:
-- Update the `title` and `description` keys for all 36 language files
-- Add any additional translation keys your screen needs
-- Ensure all keys used in `t()` calls exist in the translation files
-
-### 6. Add to Workspace (Optional)
-
-If you want to run the MFE locally for development:
-
-1. Add to root `package.json` workspaces:
-```json
-"workspaces": [
-  "src/mfe_packages/your-mfe-name"
-]
-```
-
-2. Add dev scripts to root `package.json`:
-```json
-"dev:mfe:your-name": "npm run dev --workspace=@gears-frontx/your-mfe-name",
-"dev:all": "concurrently \"npm run dev\" \"npm run dev:mfe:your-name\""
-```
-
-3. Install dependencies:
-```bash
-npm install
-```
-
-### 7. Register with Host
-
-In the host app's MFE bootstrap file (e.g., `src/app/mfe/bootstrap.ts`):
-
-```typescript
-import yourMfeConfig from '@gears-frontx/your-mfe-name/mfe.json';
-
-// Register manifest
-runtime.registerManifest(yourMfeConfig.manifest);
-
-// Register entries
-yourMfeConfig.entries.forEach(entry => {
-  runtime.registerEntry(entry);
-});
-
-// Register extensions
-yourMfeConfig.extensions.forEach(extension => {
-  runtime.registerExtension(extension);
-});
-```
-
-## Project Structure
-
-```
-_blank-mfe/
-├── package.json              # Package metadata and dependencies
-├── tsconfig.json             # TypeScript configuration
-├── vite.config.ts            # Vite and Module Federation config
-├── mfe.json                  # MFE manifest, entries, and extensions
-├── README.md                 # This file
-└── src/
-    ├── lifecycle.tsx         # MFE lifecycle implementation
-    ├── shared/
-    │   └── useScreenTranslations.ts  # i18n hook
-    └── screens/
-        └── home/
-            ├── HomeScreen.tsx        # Screen component
-            └── i18n/                 # 36 language files
-                ├── en.json
-                ├── es.json
-                └── ... (34 more)
-```
-
-## Key Concepts
-
-### Shadow DOM Isolation
-
-All MFE content renders inside a Shadow DOM root, ensuring complete CSS isolation from the host application. Styles are injected by the lifecycle class in `initializeStyles()`.
-
-### Bridge Communication
-
-The `ChildMfeBridge` provides APIs for:
-- Property subscriptions (theme, language)
-- Actions chain execution (navigation, custom actions)
-- Bidirectional communication with the host
-
-### MFE-Local i18n
-
-Each screen manages its own translations using `useScreenTranslations`:
-- Translations are loaded dynamically based on the current language
-- Language changes trigger automatic translation reload
-- No host-side i18n dependencies
-
-### UI Components
-
-Use local components (e.g. `components/ui/`) for styling. Add your own primitives (Card, Button, Input, Select, Skeleton, etc.) or use the project’s chosen UI library. Keep components Shadow DOM compatible.
-
-## Development
-
-### Run Locally
+## Commands
 
 ```bash
-npm run dev
-```
-
-The MFE will be served at `http://localhost:[YOUR_PORT]/assets/remoteEntry.js`.
-
-### Build
-
-```bash
+npm run dev          # build + preview on :3040
 npm run build
-```
-
-### Type Check
-
-```bash
-tsc --noEmit
-```
-
-## CI Validation
-
-This template is NOT a workspace member by design. To validate the template structure in CI without adding it to the workspace:
-
-1. Copy the template to a temporary workspace location
-2. Run `tsc --noEmit` to validate TypeScript
-3. Run `eslint` to validate code style
-4. Discard the temporary copy
-
-Example CI script:
-
-```bash
-# Validate blank-mfe template
-cp -r src/mfe_packages/_blank-mfe /tmp/blank-mfe-validation
-cd /tmp/blank-mfe-validation
-npm install --package-lock-only
 npm run type-check
-npx eslint src/
-cd -
-rm -rf /tmp/blank-mfe-validation
+npm run test:unit
 ```
 
-## Troubleshooting
-
-### Module Federation Errors
-
-If you see "Shared module not available" errors:
-- Ensure all shared dependencies in `mfe.json` match those in `vite.config.ts`
-- Verify the host app is configured to consume your remote
-
-### Type Errors
-
-If TypeScript cannot resolve `@gears-frontx/*` imports:
-- Ensure `@gears-frontx/react` is in `dependencies`
-- Run `npm install` to symlink workspace packages
-
-### Style Issues
-
-If styles don't apply inside Shadow DOM:
-- Verify `initializeStyles()` is called in `mount()`
-- Check that CSS variable names match UIKit theme tokens
-- Ensure Tailwind utilities are defined in the injected `<style>` block
+The screen needs the shell running with the preview servers up — `npm run dev:all`
+from `studio-frontend/`. Menu clicks do nothing without them.
