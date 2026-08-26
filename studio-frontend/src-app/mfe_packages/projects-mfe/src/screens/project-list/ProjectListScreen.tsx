@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { Skeleton } from '@gears-frontx/ui-kit';
 import { useProjectListScreenTranslations, useProjectListText } from '../../i18n';
 import { ProjectTreeProvider } from '../../shared/projectTree';
-import { UsersProvider } from '../../shared/users';
 import { useProjectList } from '../../shared/useProjectList';
 import { DEFAULT_SORT_OPTION, type ProjectSortOption } from '../../model/project';
 import { ProjectsToolbar } from './components/ProjectsToolbar';
@@ -14,11 +13,7 @@ const ProjectList: React.FC = () => {
   const { isLoaded, error: translationsFailed } = useProjectListScreenTranslations();
   const t = useProjectListText();
   const [query, setQuery] = useState('');
-  /**
-   * Fixed while the sort is out of the UI. It still orders the rows the fetch
-   * returns, so restoring the control is a `useState` here plus the props back on
-   * `ProjectsToolbar` and `ProjectsTable`.
-   */
+
   const sort: ProjectSortOption = DEFAULT_SORT_OPTION;
 
   const { loading, failed, org, rows, toggle } = useProjectList(query, sort);
@@ -55,9 +50,7 @@ const ProjectList: React.FC = () => {
             <p className={styles.stateHint}>{org ? t('empty_hint') : t('empty_no_org')}</p>
           </div>
         ) : (
-          <UsersProvider tenantId={org?.id}>
-            <ProjectsTable rows={rows} onToggle={toggle} />
-          </UsersProvider>
+          <ProjectsTable rows={rows} onToggle={toggle} />
         )}
 
         {!busy && !failed && !translationsFailed && rows.length > 0 ? (
