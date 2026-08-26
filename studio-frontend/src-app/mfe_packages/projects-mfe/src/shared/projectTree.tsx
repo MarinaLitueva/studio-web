@@ -34,10 +34,13 @@ import { useBridge } from './bridge';
  *   workspace → project: a workspace inside a workspace renders as one;
  * * **everything starts collapsed.** Only the organization's own children are
  *   fetched up front, because they are the screen; every level below waits for
- *   a click on its chevron. First paint is therefore 3 requests and no more,
- *   with no per-project metadata read at all — that one was the real N, one
- *   request per row. Re-opening a branch costs nothing: the page stays both in
- *   this context's state and in the shared React Query cache.
+ *   a click on its chevron. Re-opening a branch costs nothing: the page stays
+ *   both in this context's state and in the shared React Query cache.
+ *
+ * This file therefore fetches one page per expanded node. The rows are not
+ * free on top of that: a project row reads its own metadata for Status and
+ * Owner (`ProjectsTable`), one request per visible project, cached long — see
+ * `AccountsApiService`.
  *
  * The price is that the screen only knows the projects the user has opened a
  * branch to. Nothing pretends otherwise: there is no row count, and what the

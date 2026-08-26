@@ -18,28 +18,30 @@ import { useProjectCreateText } from '../../../i18n';
 import { CREATE_SLICE_KEY, editDraft } from '../../../slices/createSlice';
 import { useBridge } from '../../../shared/bridge';
 import { useCurrentUser } from '../../../shared/useCurrentUser';
+import { displayName } from '../../../model/project';
 import type { ProjectMode } from '../../../api/types.ts';
 import type { User } from '../../../api/types';
 import styles from '../NewProjectWizard.module.css';
 
 /** Two letters at most, like the mockup's avatar. */
 function initials(user: User): string {
-  const source = user.display_name?.trim() || user.username;
-  const parts = source.split(/\s+/).filter(Boolean).slice(0, 2);
+  const parts = displayName(user).split(/\s+/).filter(Boolean).slice(0, 2);
   return parts.map((p) => p[0]!.toUpperCase()).join('') || '?';
 }
 
-function fullName(user: User): string {
-  return user.display_name?.trim() || user.username;
-}
-
+/**
+ * The owner, as the mockup draws them: initials, name, address. `initials` is a
+ * stand-in for the kit's Avatar, which does not exist yet — when it lands, this
+ * and the list's Owner cell (`OwnerInline`) both drop their local version
+ * instead of growing a second copy of the hue hash.
+ */
 const UserRow: React.FC<{ user: User }> = ({ user }) => (
   <>
     <span className={styles.ownerAvatar} aria-hidden="true">
       {initials(user)}
     </span>
     <span className={styles.ownerText}>
-      <span className={styles.ownerName}>{fullName(user)}</span>
+      <span className={styles.ownerName}>{displayName(user)}</span>
       {user.email ? <span className={styles.ownerEmail}>{user.email}</span> : null}
     </span>
   </>
