@@ -27,6 +27,7 @@ import {
   sidebarDomain,
   popupDomain,
   overlayDomain,
+  prewarmShadowStyles,
 } from '@gears-frontx/react';
 import type {
   FrontXApp,
@@ -71,6 +72,21 @@ interface MfeManifestConfig {
   entries: MfeEntryMF[];
   extensions?: Extension[];
   schemas?: JSONSchema[];
+}
+
+function mfeStylesheetHrefs(manifests: readonly MfeManifestConfig[]): string[] {
+  const hrefs: string[] = [];
+  for (const config of manifests) {
+    const baseUrl = config.manifest.metaData?.publicPath;
+    if (!baseUrl) continue;
+    for (const entry of config.entries) {
+      const css = entry.exposeAssets?.css;
+      for (const path of [...(css?.sync ?? []), ...(css?.async ?? [])]) {
+        hrefs.push(new URL(path, baseUrl).href);
+      }
+    }
+  }
+  return hrefs;
 }
 
 // ─── Domain implementation building blocks ───────────────────────────────────
@@ -388,6 +404,10 @@ export async function bootstrapMFE(app: FrontXApp): Promise<void> {
     );
     return;
   }
+  // Ahead of any mount, and not awaited: the first click may still beat it, and
+  // that mount simply takes the DOM-node path once.
+  prewarmShadowStyles(mfeStylesheetHrefs(manifests));
+
   // First pass: register every package's non-action schemas (derived
   // ExtensionDomain / Extension type schemas) so leaf-MFE extension validation
   // in the second pass can chain through them regardless of manifest order.

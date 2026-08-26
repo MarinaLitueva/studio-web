@@ -195,15 +195,25 @@ function useChildrenPage(
   onLoaded: (parentId: string, items: TenantDto[]) => void
 ): { isLoading: boolean; isError: boolean } {
   const accounts = apiRegistry.getService(AccountsApiService);
-  const { data, isLoading, isError } = useApiQuery(
+  const { data, isPending, isLoading, isError } = useApiQuery(
     accounts.children(childrenPageParams(parentId))
   );
 
+  // Dispatches on settle, not on a truthy body: `WithOrg` gates its screen on
+  // the org's own key appearing in the reducer, and a success that returned no
+  // body (`RestProtocol` hands back `response.data` verbatim) would otherwise
+  // leave that key undefined with nothing left in flight — a spinner with no
+  // end. Recording the empty page keeps the two in agreement.
+  //
+  // The gate is `isPending`, not `isLoading`. `isLoading` is
+  // `isPending && isFetching`, so an offline request — pending, `fetchStatus`
+  // 'paused' — reads as settled and would record an empty page, turning the
+  // spinner into a permanent "no projects".
   useEffect(() => {
-    if (!data) return;
-    warnIfTruncated(parentId, data);
-    onLoaded(parentId, data.items);
-  }, [data, onLoaded, parentId]);
+    if (isPending || isError) return;
+    if (data) warnIfTruncated(parentId, data);
+    onLoaded(parentId, data?.items ?? []);
+  }, [data, isError, isPending, onLoaded, parentId]);
 
   return { isLoading, isError };
 }
@@ -264,10 +274,19 @@ const WithOrg: React.FC<{ org: OrganizationRef; children: ReactNode }> = ({ org,
       toggle,
       // Only the organization's own page gates the screen; a node still in
       // flight shows as a row without children rather than as a spinner.
-      loading: isLoading,
+      //
+      // `isLoading` alone is not that gate. The page reaches `rows` through the
+      // reducer, dispatched from an effect, so there is one commit where the
+      // query has settled but `childrenByParent` is still empty — and the list
+      // screen reads that commit as "this organization has no projects" and
+      // paints its empty state for a frame before the table replaces it.
+      // Waiting for the org's own key closes the gap without claiming to wait
+      // for anything else: a genuinely empty organization records an empty page
+      // under that key, so it still resolves to the empty state, just once.
+      loading: isLoading || (!isError && childrenByParent[org.id] === undefined),
       failed: isError,
     }),
-    [org, rows, searchRows, siblingProjects, toggle, isLoading, isError]
+    [org, rows, searchRows, siblingProjects, toggle, isLoading, isError, childrenByParent]
   );
 
   return (

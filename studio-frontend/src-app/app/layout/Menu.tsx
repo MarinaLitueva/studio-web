@@ -22,7 +22,7 @@
  * domain appears, ordered by `presentation.order`.
  */
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   useFrontX,
   useAppSelector,
@@ -99,22 +99,37 @@ export const Menu: React.FC<MenuProps> = ({ children }) => {
     eventBus.emit('layout/menu/collapsed', { collapsed: true });
   }, []);
 
+  /**
+   * One mount at a time. `mountExtension` guards only `'mounted'`, never
+   * `'mounting'`, and `ExclusiveMountStrategy` decides whom to evict from a
+   * mounted set the mounter appends to only after the mount resolves — so two
+   * clicks inside one mount's window each see an empty set, evict nobody, and
+   * stack two screens. The window spans a full remote module load on a cold
+   * extension, which is long enough to hit by hand.
+   */
+  const [mounting, setMounting] = useState(false);
+
   const handleMenuItemClick = useCallback(
     async (extensionId: string) => {
-      if (!mfeRegistry) return;
-      await mfeRegistry.executeActionsChain({
-        action: {
-          type: FRONTX_ACTION_MOUNT_EXT,
-          target: FRONTX_SCREEN_DOMAIN,
-          payload: { subject: extensionId },
-        },
-      });
+      if (!mfeRegistry || mounting) return;
+      setMounting(true);
+      try {
+        await mfeRegistry.executeActionsChain({
+          action: {
+            type: FRONTX_ACTION_MOUNT_EXT,
+            target: FRONTX_SCREEN_DOMAIN,
+            payload: { subject: extensionId },
+          },
+        });
+      } finally {
+        setMounting(false);
+      }
       // Choosing a global area means the session is no longer inside a project.
       // The shell knows this without being told by any MFE.
       eventBus.emit('app/context/project/closed');
       close();
     },
-    [close, mfeRegistry]
+    [close, mfeRegistry, mounting]
   );
 
   if (!open) return null;

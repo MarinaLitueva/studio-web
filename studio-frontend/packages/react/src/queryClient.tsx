@@ -249,6 +249,7 @@ export function useFrontXQuery<TData = unknown, TError = Error>(
   return {
     data: result.data,
     error: result.error,
+    isPending: result.isPending,
     isLoading: result.isLoading,
     isFetching: result.isFetching,
     isError: result.isError,
@@ -335,6 +336,7 @@ export function useFrontXInfiniteQuery<TPage = unknown, TError = Error>(
   return {
     data: result.data,
     error: result.error,
+    isPending: result.isPending,
     isLoading: result.isLoading,
     isFetching: result.isFetching,
     isError: result.isError,
