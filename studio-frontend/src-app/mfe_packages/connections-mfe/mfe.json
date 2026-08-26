@@ -26,7 +26,7 @@
       "actions": [],
       "domainActions": [],
       "manifest": "gts.frontx.mfes.mfe.mf_manifest.v1~constructor_studio.connections.mfe.manifest.v1",
-      "exposedModule": "./dialogLifecycle"
+      "exposedModule": "./overlayLifecycle"
     }
   ],
   "extensions": [

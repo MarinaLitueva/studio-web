@@ -16,6 +16,5 @@ describe('health tone', () => {
   it('maps each state to the badge variant the design uses', () => {
     expect(healthTone('healthy')).toBe('success');
     expect(healthTone('unusable')).toBe('warning');
-    expect(healthTone('checking')).toBe('muted');
   });
 });

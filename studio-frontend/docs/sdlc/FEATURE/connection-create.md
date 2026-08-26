@@ -209,16 +209,18 @@ rather than in the code so the screen is not blamed for them:
 
 **Input**: one connection id and the organization in scope
 
-**Output**: healthy, unusable with the gear's reason, or still checking
+**Output**: healthy, unusable with the gear's reason, unreadable, or still checking
 
 **Steps**:
 1. [x] - `p1` - `API: POST /cf/studio-connector/v1/connections/{id}/test?tenant=` - `inst-1`
 2. [x] - `p1` - Issue it per row and independently, so a provider that is slow or down delays only its own row - `inst-2`
 3. [x] - `p1` - **IF** the check has not answered yet - `inst-3`
    1. [x] - `p1` - **RETURN** still checking; the cell shows a placeholder, not a status - `inst-4`
-4. [x] - `p1` - **IF** the gear refuses - `inst-5`
-   1. [x] - `p1` - **RETURN** unusable, carrying the gear's `CONNECTOR_CREDENTIAL_UNUSABLE` reason for the title - `inst-6`
-5. [x] - `p1` - **RETURN** healthy - `inst-7`
+4. [x] - `p1` - **IF** the check failed without the gear naming `CONNECTOR_CREDENTIAL_UNUSABLE` — no answer at all, or a fault of the gear's own rather than a verdict on the credential - `inst-5`
+   1. [x] - `p1` - **RETURN** unreadable; the cell says the health could not be read and **MUST NOT** say the connection is unusable - `inst-6`
+5. [x] - `p1` - **IF** the gear refuses - `inst-7`
+   1. [x] - `p1` - **RETURN** unusable, carrying the gear's `CONNECTOR_CREDENTIAL_UNUSABLE` reason for the title - `inst-8`
+6. [x] - `p1` - **RETURN** healthy - `inst-9`
 
 ### Write the connection
 
@@ -243,7 +245,7 @@ rather than in the code so the screen is not blamed for them:
 
 - [ ] `p2` - **ID**: `cpt-studiofrontend-state-connection-health`
 
-**States**: Checking, Healthy, NeedsAttention
+**States**: Checking, Healthy, NeedsAttention, Unreadable
 
 **Initial State**: Checking
 
@@ -252,6 +254,8 @@ rather than in the code so the screen is not blamed for them:
 2. [ ] - `p1` - **FROM** Checking **TO** NeedsAttention **WHEN** the test is refused - `inst-2`
 3. [ ] - `p1` - **FROM** Healthy **TO** Checking **WHEN** the check is retried after its cached answer goes stale - `inst-3`
 4. [ ] - `p1` - **FROM** NeedsAttention **TO** Checking **WHEN** the check is retried after its cached answer goes stale - `inst-4`
+5. [ ] - `p1` - **FROM** Checking **TO** Unreadable **WHEN** the test fails without the gear naming its refusal - `inst-5`
+6. [ ] - `p1` - **FROM** Unreadable **TO** Checking **WHEN** the check is retried after its cached answer goes stale - `inst-6`
 
 ## 5. Definitions of Done
 
@@ -272,7 +276,7 @@ This is the same arrangement the New project wizard uses, for the same reason.
 - `cpt-studiofrontend-flow-connection-create-abandon`
 
 **Touches**:
-- Entities: `mfe.json`, `dialogLifecycle`, `connectActions`
+- Entities: `mfe.json`, `overlayLifecycle`, `connectActions`
 
 ### Scope and owner are decided, not asked
 
@@ -378,9 +382,22 @@ The system **MUST** issue one health check per connection, independently, and
 **MUST** render the table before any of them has answered. A refused check
 **MUST** affect only its own row and **MUST** surface the gear's reason.
 
+A check that could not be made at all **MUST NOT** be reported as a refusal —
+the cell says the health could not be read. What decides is the gear naming its
+refusal `CONNECTOR_CREDENTIAL_UNUSABLE`, and **MUST NOT** be the HTTP status:
+the gear answers the same `failed_precondition` for every cause, and a
+deployment with no connector driver plugin answers 503 for every row, which
+under a status test would libel every credential at once.
+
 The check reaches the provider over the network. Gathering the answers before
 drawing would make the slowest provider the speed of the screen, and one
 unreachable provider the availability of the screen.
+
+Known residue, the gear's to settle: `test_connection` folds a provider that is
+down and a secret the caller may not read into `CONNECTOR_CREDENTIAL_UNUSABLE`
+as well, so those two still read as unusable. Separating them needs a second
+violation code there, the way `list_repositories` already has
+`CONNECTOR_LISTING_UNAVAILABLE`.
 
 **Implements**:
 - `cpt-studiofrontend-algo-connection-list-health`
@@ -388,7 +405,7 @@ unreachable provider the availability of the screen.
 
 **Touches**:
 - API: `POST /cf/studio-connector/v1/connections/{id}/test`
-- Entities: `useConnectionHealth`, `HealthInline`
+- Entities: `useConnectionHealth`, `HealthInline`, `LoadFailed`
 
 ### Columns without a source are empty, not invented
 

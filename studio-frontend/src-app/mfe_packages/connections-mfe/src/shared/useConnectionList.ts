@@ -8,7 +8,6 @@ import { useOrganization, type OrganizationRef } from './organization';
 
 export interface ConnectionRow {
   connection: ConnectionDto;
-  /** The provider's `display_name`, or its wire key when the gear is newer. */
   providerName: string;
 }
 

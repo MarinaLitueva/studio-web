@@ -39,7 +39,7 @@ vi.mock('@gears-frontx/react', async (importOriginal) => {
   };
 });
 
-async function mount(organization: unknown = { id: 'org-1', name: 'Acme' }) {
+async function renderDialog(organization: unknown = { id: 'org-1', name: 'Acme' }) {
   createFrontXApp({});
   const { mfeApp } = await import('../../init');
   const { STUDIO_SHARED_PROPERTY_CONTEXT_ORGANIZATION } = await import(
@@ -62,6 +62,18 @@ async function mount(organization: unknown = { id: 'org-1', name: 'Acme' }) {
       <ConnectSourceDialog bridge={bridge} />
     </FrontXProvider>
   );
+
+}
+
+/**
+ * The form is behind a first-load skeleton now, so every case that asserts on
+ * the form starts by waiting for the dictionary to land — `register` above
+ * seeds the registry, but `useScreenTranslations` still reports `isLoaded` a
+ * tick later.
+ */
+async function mount(organization: unknown = { id: 'org-1', name: 'Acme' }) {
+  await renderDialog(organization);
+  await screen.findByLabelText(en.field_provider);
 }
 
 describe('ConnectSourceDialog', () => {
@@ -99,6 +111,48 @@ describe('ConnectSourceDialog', () => {
     expect((screen.getByRole('button', { name: en.create }) as HTMLButtonElement).disabled).toBe(
       true
     );
+  });
+
+  it('draws a placeholder instead of the fields until the dictionary lands', async () => {
+    // Why the placeholder exists: the shell's frame is `h-fit`, so this card's
+    // height is the overlay's height. Fields appearing from nothing moved the
+    // centred card. jsdom computes no layout, so what is asserted here is the
+    // swap itself — nothing of the form on the first paint, all of it after —
+    // and the card's stated height in the stylesheet is what makes the swap
+    // free of movement.
+    await renderDialog();
+
+    expect(screen.queryByLabelText(en.field_provider)).toBeNull();
+    expect(screen.queryByLabelText(en.field_token)).toBeNull();
+    expect(screen.queryByRole('heading')).toBeNull();
+
+    expect(await screen.findByLabelText(en.field_provider)).toBeTruthy();
+    expect(screen.getByRole('heading', { name: en.title })).toBeTruthy();
+  });
+
+  it('opens the provider list without locking the document', async () => {
+    /*
+     * The twitch: Base UI's `modal` defaults to `true`, and the kit's `Select`
+     * is `Select.Root` unwrapped, so opening the list used to lock document
+     * scroll — from a `setTimeout(0)`, a tick after the popup paints, which is
+     * what made it read as a twitch rather than a jump. Modality belongs to the
+     * shell's frame, which owns the scrim and `aria-modal`.
+     *
+     * jsdom reports no inset scrollbars, so the lock it would take here is the
+     * overflow one; the `position`/`100vw` body restyle is the same lock's
+     * other branch. Asserting on overflow is asserting on the lock.
+     */
+    await mount();
+
+    fireEvent.click(screen.getByLabelText(en.field_provider));
+    expect(screen.getByRole('listbox')).toBeTruthy();
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0);
+    });
+
+    expect(document.documentElement.style.overflowY).toBe('');
+    expect(document.body.style.overflowY).toBe('');
+    expect(document.body.style.position).toBe('');
   });
 
   it('portals the provider popover inside this root instead of document.body', async () => {

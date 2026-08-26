@@ -16,7 +16,7 @@ hands over through `globalThis`: the QueryClient and the host session.
 | Entry | Extension domain | Renders |
 |---|---|---|
 | `./lifecycle` | screen | `ConnectionsRoot` → the list at `/connections` |
-| `./dialogLifecycle` | overlay | `ConnectSourceDialog`, the create form |
+| `./overlayLifecycle` | overlay | `ConnectSourceDialog`, the create form |
 
 The form is an **overlay extension the shell mounts**, not a dialog this MFE
 draws. `connectActions.ts` asks the shell to mount and unmount it through the

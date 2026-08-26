@@ -28,7 +28,7 @@ export default defineConfig({
       filename: 'remoteEntry.js',
       exposes: {
         './lifecycle': './src/lifecycle.tsx',
-        './dialogLifecycle': './src/dialogLifecycle.tsx',
+        './overlayLifecycle': './src/overlayLifecycle.tsx',
       },
       // Empty shared config — MF 2.0's shared dep mechanism is bypassed.
       // Shared deps are externalized via rollupOptions.external and provided

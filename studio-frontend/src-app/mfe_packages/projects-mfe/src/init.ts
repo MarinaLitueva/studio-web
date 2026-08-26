@@ -2,7 +2,7 @@
  * MFE Bootstrap — executed once per loaded entry, NOT once per MFE.
  *
  * That distinction cost a debugging session, so it is stated plainly: this MFE
- * exposes two entries (`./lifecycle` and `./wizardLifecycle`), and
+ * exposes two entries (`./lifecycle` and `./overlayLifecycle`), and
  * `MfeHandlerMF.loadExposedModuleIsolated` gives each one its own blob-URL
  * module graph — its `blobUrlMap` is created inside the call, and
  * `sharedDepTextCache` caches source text, not blob URLs. So this module is

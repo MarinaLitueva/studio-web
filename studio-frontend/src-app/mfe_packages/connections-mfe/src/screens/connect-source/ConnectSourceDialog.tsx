@@ -5,7 +5,7 @@
 // @cpt-dod:cpt-studiofrontend-dod-connection-create-overlay:p1
 // @cpt-dod:cpt-studiofrontend-dod-connection-create-verify:p1
 // @cpt-dod:cpt-studiofrontend-dod-connection-create-announce:p1
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   apiRegistry,
   eventBus,
@@ -25,6 +25,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Skeleton,
 } from '@gears-frontx/ui-kit';
 import { BridgeProvider } from '../../shared/bridge';
 import { OrganizationProvider, useOrganization } from '../../shared/organization';
@@ -47,7 +48,7 @@ const DialogBody: React.FC<{ bridge: ChildMfeBridge }> = ({ bridge }) => {
     },
     [containerRef]
   );
-  const { isLoaded } = useConnectSourceScreenTranslations();
+  const { isLoaded, error: translationsFailed } = useConnectSourceScreenTranslations();
   const t = useConnectSourceText();
   const dispatch = useAppDispatch();
   const app = useFrontX();
@@ -78,6 +79,13 @@ const DialogBody: React.FC<{ bridge: ChildMfeBridge }> = ({ bridge }) => {
     return () => subscription.unsubscribe();
   }, [app, bridge, connectors, orgId]);
 
+  /**
+   * The skeleton is for the first load and nothing else.
+   */
+  const everLoaded = useRef(false);
+  everLoaded.current ||= isLoaded;
+  const showSkeleton = !everLoaded.current && !translationsFailed;
+
   const blocked = submitting || orgLoading || !orgId || !isDraftUsable(draft);
 
   const onCreate = (): void => {
@@ -88,86 +96,99 @@ const DialogBody: React.FC<{ bridge: ChildMfeBridge }> = ({ bridge }) => {
   return (
     <div ref={attachContainer} className={styles.dialog} data-theme={dataTheme}>
       <BridgeProvider bridge={bridge}>
-        <h2 className={styles.title}>{isLoaded ? t('title') : ''}</h2>
+        {showSkeleton ? (
+          <Skeleton className={styles.titleSkeleton} />
+        ) : (
+          <h2 className={styles.title}>{t('title')}</h2>
+        )}
 
         <div className={styles.body}>
-          <div className={styles.field}>
-            <Label className={styles.fieldLabel} htmlFor="cs-provider">
-              {t('field_provider')}
-            </Label>
-            <Select
-              value={draft.provider}
-              onValueChange={(next) => dispatch(editDraft({ provider: next ?? '' }))}
-            >
-              <SelectTrigger
-                id="cs-provider"
-                className={styles.providerTrigger}
-                aria-label={t('field_provider')}
-              >
-                <SelectValue placeholder={t('field_provider_placeholder')}>
-                  {(selected) =>
-                    selected ? (chosen?.display_name ?? String(selected)) : t('field_provider_placeholder')
-                  }
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent container={containerEl ?? undefined}>
-                {providers.map((provider) => (
-                  <SelectItem key={provider.provider} value={provider.provider}>
-                    {provider.display_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {showSkeleton ? (
+            <Skeleton className={styles.bodySkeleton} />
+          ) : (
+            <>
+              <div className={styles.field}>
+                <Label className={styles.fieldLabel} htmlFor="cs-provider">
+                  {t('field_provider')}
+                </Label>
+                <Select
+                  value={draft.provider}
+                  modal={false}
+                  onValueChange={(next) => dispatch(editDraft({ provider: next ?? '' }))}
+                >
+                  <SelectTrigger
+                    id="cs-provider"
+                    className={styles.providerTrigger}
+                    aria-label={t('field_provider')}
+                  >
+                    <SelectValue placeholder={t('field_provider_placeholder')}>
+                      {(selected) =>
+                        selected ? (chosen?.display_name ?? String(selected)) : t('field_provider_placeholder')
+                      }
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent container={containerEl ?? undefined}>
+                    {providers.map((provider) => (
+                      <SelectItem key={provider.provider} value={provider.provider}>
+                        {provider.display_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-          <div className={styles.field}>
-            <Label className={styles.fieldLabel} htmlFor="cs-label">
-              {t('field_label')}
-            </Label>
-            <Input
-              id="cs-label"
-              value={draft.label}
-              onChange={(event) => dispatch(editDraft({ label: event.target.value }))}
-            />
-            <span className={styles.fieldHint}>{t('field_label_hint')}</span>
-          </div>
+              <div className={styles.field}>
+                <Label className={styles.fieldLabel} htmlFor="cs-label">
+                  {t('field_label')}
+                </Label>
+                <Input
+                  id="cs-label"
+                  value={draft.label}
+                  onChange={(event) => dispatch(editDraft({ label: event.target.value }))}
+                />
+                <span className={styles.fieldHint}>{t('field_label_hint')}</span>
+              </div>
 
-          <div className={styles.field}>
-            <Label className={styles.fieldLabel} htmlFor="cs-base-url">
-              {t('field_base_url')}
-            </Label>
-            <Input
-              id="cs-base-url"
-              value={draft.baseUrl}
-              placeholder={chosen?.default_base_url ?? ''}
-              onChange={(event) => dispatch(editDraft({ baseUrl: event.target.value }))}
-            />
-          </div>
+              <div className={styles.field}>
+                <Label className={styles.fieldLabel} htmlFor="cs-base-url">
+                  {t('field_base_url')}
+                </Label>
+                <Input
+                  id="cs-base-url"
+                  value={draft.baseUrl}
+                  placeholder={chosen?.default_base_url ?? ''}
+                  onChange={(event) => dispatch(editDraft({ baseUrl: event.target.value }))}
+                />
+              </div>
 
-          <div className={styles.field}>
-            <Label className={styles.fieldLabel} htmlFor="cs-token">
-              {chosen?.credential_label || t('field_token')}
-            </Label>
-            <Input
-              id="cs-token"
-              type="password"
-              autoComplete="off"
-              value={draft.token}
-              placeholder={chosen?.credential_hint ?? ''}
-              onChange={(event) => dispatch(editDraft({ token: event.target.value }))}
-            />
-          </div>
+              <div className={styles.field}>
+                <Label className={styles.fieldLabel} htmlFor="cs-token">
+                  {chosen?.credential_label || t('field_token')}
+                </Label>
+                <Input
+                  id="cs-token"
+                  type="password"
+                  autoComplete="off"
+                  value={draft.token}
+                  placeholder={chosen?.credential_hint ?? ''}
+                  onChange={(event) => dispatch(editDraft({ token: event.target.value }))}
+                />
+              </div>
+            </>
+          )}
         </div>
 
-        {(error || providersFailed || (!orgId && !orgLoading)) && (
+        {(translationsFailed || error || providersFailed || (!orgId && !orgLoading)) && (
           <p className={styles.error} role="alert">
-            {error
-              ? error === 'error_generic'
-                ? t('error_generic')
-                : error
-              : providersFailed
-                ? t('error_providers')
-                : t('error_no_org')}
+            {translationsFailed
+              ? 'Could not load this screen.'
+              : error
+                ? error === 'error_generic'
+                  ? t('error_generic')
+                  : error
+                : providersFailed
+                  ? t('error_providers')
+                  : t('error_no_org')}
           </p>
         )}
 

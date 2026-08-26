@@ -1,7 +1,7 @@
 /**
  * MFE Bootstrap — executed once per loaded entry, NOT once per MFE.
  *
- * This MFE exposes two entries (`./lifecycle` and `./dialogLifecycle`), and
+ * This MFE exposes two entries (`./lifecycle` and `./overlayLifecycle`), and
  * `MfeHandlerMF.loadExposedModuleIsolated` gives each one its own blob-URL
  * module graph. So this module is evaluated twice and there are TWO of
  * everything it creates: two apps, two stores, two event buses, two api

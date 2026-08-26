@@ -4,8 +4,7 @@
   flex-direction: column;
   gap: var(--space-5);
   width: 35rem;
-  height: auto;
-  max-height: calc(100vh - 8rem - 2px);
+  height: min(34.5rem, calc(100vh - 8rem - 2px));
   padding: var(--space-8);
   font-family: var(--font-sans);
   font-size: var(--text-body-size);
@@ -20,12 +19,23 @@
   font-weight: 600;
 }
 
+.titleSkeleton {
+  margin: 0 0 var(--space-5);
+  height: var(--text-body-line-height);
+  width: 14ch;
+}
+
 .body {
   display: flex;
   flex: 1;
   min-height: 0;
   flex-direction: column;
   gap: var(--space-5);
+}
+
+.bodySkeleton {
+  flex: 1;
+  min-height: 0;
 }
 
 .field {

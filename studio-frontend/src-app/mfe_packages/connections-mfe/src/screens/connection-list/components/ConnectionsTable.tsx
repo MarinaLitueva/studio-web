@@ -11,6 +11,7 @@ import { useConnectionListText } from '../../../i18n';
 import type { ConnectionRow } from '../../../shared/useConnectionList';
 import { ProviderGlyph } from './ProviderGlyph';
 import { HealthInline } from './HealthInline';
+import { NoData } from './NoData';
 import styles from '../ConnectionListScreen.module.css';
 
 // @cpt-dod:cpt-studiofrontend-dod-connection-list-gaps:p1
@@ -20,14 +21,6 @@ interface ConnectionsTableProps {
   rows: readonly ConnectionRow[];
   tenantId: string;
 }
-
-const NoData: React.FC<{ label: string }> = ({ label }) => (
-  <span className={styles.noData} title={label}>
-    —
-  </span>
-);
-
-NoData.displayName = 'NoData';
 
 const Row: React.FC<{ row: ConnectionRow; tenantId: string }> = ({ row, tenantId }) => {
   const t = useConnectionListText();

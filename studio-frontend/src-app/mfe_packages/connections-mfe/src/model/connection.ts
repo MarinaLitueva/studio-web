@@ -25,10 +25,8 @@ export function iconFor(code: string): LucideIcon {
 /** Every connection this screen creates is inherited by the whole organization. */
 export const CONNECTION_SCOPE = 'organization';
 
-export type ConnectionHealth = 'checking' | 'healthy' | 'unusable';
+export type ConnectionHealth = 'healthy' | 'unusable';
 
-export function healthTone(health: ConnectionHealth): 'success' | 'warning' | 'muted' {
-  if (health === 'healthy') return 'success';
-  if (health === 'unusable') return 'warning';
-  return 'muted';
+export function healthTone(health: ConnectionHealth): 'success' | 'warning' {
+  return health === 'healthy' ? 'success' : 'warning';
 }
