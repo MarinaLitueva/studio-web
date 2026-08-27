@@ -11,7 +11,7 @@
  * area now, heading included, so the shell no longer titles it.
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   useFrontX,
   useDomainExtensions,
@@ -94,18 +94,26 @@ export const Header: React.FC<HeaderProps> = ({ children }) => {
 
   // Mounting is all it takes: OverlayDialog derives its own visibility from
   // whether the overlay domain has something mounted.
+
+  const [mounting, setMounting] = useState(false);
+
   const openOverlayExtension = useCallback(
     async (extensionId: string) => {
-      if (!mfeRegistry) return;
-      await mfeRegistry.executeActionsChain({
-        action: {
-          type: FRONTX_ACTION_MOUNT_EXT,
-          target: overlayDomain.id,
-          payload: { subject: extensionId },
-        },
-      });
+      if (!mfeRegistry || mounting) return;
+      setMounting(true);
+      try {
+        await mfeRegistry.executeActionsChain({
+          action: {
+            type: FRONTX_ACTION_MOUNT_EXT,
+            target: overlayDomain.id,
+            payload: { subject: extensionId },
+          },
+        });
+      } finally {
+        setMounting(false);
+      }
     },
-    [mfeRegistry]
+    [mfeRegistry, mounting]
   );
 
   return (

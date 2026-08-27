@@ -1,5 +1,19 @@
 /**
- * MFE Bootstrap — executed once when any entry first loads.
+ * MFE Bootstrap — executed once per loaded entry, NOT once per MFE.
+ *
+ * That distinction cost a debugging session, so it is stated plainly: this MFE
+ * exposes two entries (`./lifecycle` and `./wizardLifecycle`), and
+ * `MfeHandlerMF.loadExposedModuleIsolated` gives each one its own blob-URL
+ * module graph — its `blobUrlMap` is created inside the call, and
+ * `sharedDepTextCache` caches source text, not blob URLs. So this module is
+ * evaluated twice and there are TWO of everything it creates: two `mfeApp`s,
+ * two redux stores, two event buses, two api registries.
+ *
+ * Nothing built here crosses between the entries. What crosses is what the
+ * framework deliberately hands off through `globalThis`: the QueryClient
+ * (`queryCacheShared`) and the host session (`authShared`). Anything the two
+ * roots must agree on has to travel through the query cache, or be resolved
+ * independently on both sides.
  * Creates the minimal FrontX app, registers slices, effects, and API services.
  * Cache/runtime note:
  * - The host app owns the shared runtime via queryCache().
@@ -36,13 +50,18 @@ import {
   queryCacheShared,
 } from '@gears-frontx/react';
 import { navSlice } from './slices/navSlice';
+import { createWizardSlice } from './slices/createSlice';
 import { initProjectsEffects } from './effects/projectsEffects';
+import { initWizardEffects } from './effects/wizardEffects';
 import { AccountsApiService } from './api/AccountsApiService';
+import { ConnectorsApiService } from './api/ConnectorsApiService';
 
 // Register API services BEFORE build so plugin sync finds them.
-// One service: projects are account-management tenants since the studio-project
-// gear was retired.
+// Two gears: account-management holds the projects themselves (tenants, since
+// the studio-project gear was retired), studio-connector the source hosts the
+// New project wizard imports from.
 apiRegistry.register(AccountsApiService);
+apiRegistry.register(ConnectorsApiService);
 apiRegistry.initialize();
 
 // Create only the local MFE app shell.
@@ -56,5 +75,6 @@ const mfeApp = createFrontX()
 
 // Register slices with effects (needs store from build())
 registerSlice(navSlice, initProjectsEffects);
+registerSlice(createWizardSlice, initWizardEffects);
 
 export { mfeApp };

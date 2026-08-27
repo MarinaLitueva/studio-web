@@ -2,6 +2,8 @@ import React from 'react';
 import { Search } from 'lucide-react';
 import { Button, Input, Skeleton } from '@gears-frontx/ui-kit';
 import { useProjectListText } from '../../../i18n';
+import { useBridge } from '../../../shared/bridge';
+import { openProjectWizard } from '../../../actions/wizardActions';
 import styles from '../ProjectListScreen.module.css';
 
 interface ProjectsToolbarProps {
@@ -32,6 +34,7 @@ export const ProjectsToolbar: React.FC<ProjectsToolbarProps> = ({
   busy,
 }) => {
   const t = useProjectListText();
+  const bridge = useBridge();
 
   return (
   <div className={styles.toolbar} role="toolbar" aria-label={t('toolbar_label')}>
@@ -49,7 +52,9 @@ export const ProjectsToolbar: React.FC<ProjectsToolbarProps> = ({
         onChange={(event) => onQueryChange(event.target.value)}
         aria-label={t('search_placeholder')}
       />
-      <Button size="sm">{t('new_project')}</Button>
+      <Button size="sm" onClick={() => openProjectWizard(bridge)}>
+        {t('new_project')}
+      </Button>
     </div>
   </div>
   );

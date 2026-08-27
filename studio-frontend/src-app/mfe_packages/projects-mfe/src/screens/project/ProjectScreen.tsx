@@ -7,7 +7,6 @@ import { AccountsApiService } from '../../api/AccountsApiService';
 import { useProjectConfig } from '../../shared/useProjectConfig';
 import { requestCloseProject } from '../../actions/projectsActions';
 import { NAV_SLICE_KEY } from '../../slices/navSlice';
-import { TeamSection } from './sections/TeamSection';
 import { SettingsSection } from './sections/SettingsSection';
 import { PlaceholderSection } from './sections/PlaceholderSection';
 import styles from './ProjectScreen.module.css';
@@ -44,8 +43,6 @@ export const ProjectScreen: React.FC<ProjectScreenProps> = ({ bridge, projectId 
     }
 
     switch (section) {
-      case 'team':
-        return <TeamSection tenantId={project.id} />;
       case 'settings':
         return <SettingsSection project={project} config={config} />;
       default:

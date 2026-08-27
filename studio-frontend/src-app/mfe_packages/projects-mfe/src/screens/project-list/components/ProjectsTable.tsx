@@ -14,8 +14,11 @@ import { requestOpenProject } from '../../../actions/projectsActions';
 import { useBridge } from '../../../shared/bridge';
 import { isProject, isWorkspace } from '../../../model/project';
 import { useProjectTree, type TreeRow } from '../../../shared/projectTree';
+import { useProjectConfig } from '../../../shared/useProjectConfig';
 import { useProjectListText } from '../../../i18n';
-import { StatusInline } from './StatusInline';
+import { NoData } from './NoData';
+import { OwnerInline } from './OwnerInline';
+import { ProjectStatusInline, StatusInline } from './StatusInline';
 import styles from '../ProjectListScreen.module.css';
 
 /** Keep in step with the header below — the skeleton row spans them all. */
@@ -34,13 +37,6 @@ interface ProjectsTableProps {
  * rotation and the disabled-leaf state from scratch. What stays projects-specific
  * is only which tenant types are leaves.
  */
-
-/** Muted placeholder for a column the mockups have and no endpoint serves. */
-const NoData: React.FC<{ label: string }> = ({ label }) => (
-  <span className={styles.noData} title={label}>
-    —
-  </span>
-);
 
 /** A project is a leaf that opens; anything above it is a container. */
 const TenantGlyph: React.FC<{ project: boolean }> = ({ project }) => (
@@ -63,14 +59,14 @@ const Chevron: React.FC<{ expandable: boolean; expanded: boolean }> = ({
 );
 
 /**
- * One row of the tree. It reads nothing of its own: everything drawn here comes
- * from the tenant page its parent already fetched. A project opens on click, a
- * node with children toggles.
+ * One row of the tree, drawn from the tenant page its parent fetched.
  */
-const Row: React.FC<{
+const RowCells: React.FC<{
   row: TreeRow;
   onToggle: (tenantId: string) => void;
-}> = ({ row, onToggle }) => {
+  status: React.ReactNode;
+  owner: React.ReactNode;
+}> = ({ row, onToggle, status, owner }) => {
   const t = useProjectListText();
   const { tenant, level, expandable, expanded } = row;
   const project = isProject(tenant);
@@ -78,6 +74,7 @@ const Row: React.FC<{
   const bridge = useBridge();
   const { siblingProjects } = useProjectTree();
 
+  /** A project opens on click, a node with children toggles. */
   const activate = (): void => {
     if (project) {
       // The switcher's list while this project is open: its workspace's page.
@@ -112,9 +109,7 @@ const Row: React.FC<{
           </span>
         </button>
       </TableCell>
-      <TableCell className={styles.colStatus}>
-        <StatusInline tenant={tenant} />
-      </TableCell>
+      <TableCell className={styles.colStatus}>{status}</TableCell>
       <TableCell className={styles.colIssues}>
         {/* Findings/Signals have no portfolio rollup — see `issueSummary`. */}
         <NoData label={t('no_data')} />
@@ -122,18 +117,64 @@ const Row: React.FC<{
       <TableCell className={styles.colMovement}>
         <NoData label={t('no_data')} />
       </TableCell>
-      <TableCell className={styles.colOwner}>
-        {/* AM tenants carry no owner — a project's `created_by` did not survive
-            the gear's retirement, and `/tenants/{id}/users` is one request per
-            row. Kept as a column: the mockup has it and the source is coming. */}
-        <NoData label={t('no_owner')} />
-      </TableCell>
+      <TableCell className={styles.colOwner}>{owner}</TableCell>
       <TableCell className={styles.colUpdated}>
         <span className={styles.updated}>{formatRelative(tenant.updated_at)}</span>
       </TableCell>
     </TableRow>
   );
 };
+
+RowCells.displayName = 'RowCells';
+
+/** The one place this screen reads a project's metadata. */
+const ProjectRow: React.FC<{
+  row: TreeRow;
+  onToggle: (tenantId: string) => void;
+}> = ({ row, onToggle }) => {
+  const state = useProjectConfig(row.tenant.id);
+
+  return (
+    <RowCells
+      row={row}
+      onToggle={onToggle}
+      status={<ProjectStatusInline tenant={row.tenant} state={state} />}
+      owner={<OwnerInline state={state} />}
+    />
+  );
+};
+
+ProjectRow.displayName = 'ProjectRow';
+
+const ContainerRow: React.FC<{
+  row: TreeRow;
+  onToggle: (tenantId: string) => void;
+}> = ({ row, onToggle }) => {
+  const t = useProjectListText();
+
+  return (
+    <RowCells
+      row={row}
+      onToggle={onToggle}
+      status={<StatusInline tenant={row.tenant} />}
+      owner={<NoData label={t('no_owner')} />}
+    />
+  );
+};
+
+ContainerRow.displayName = 'ContainerRow';
+
+const Row: React.FC<{
+  row: TreeRow;
+  onToggle: (tenantId: string) => void;
+}> = ({ row, onToggle }) =>
+  isProject(row.tenant) ? (
+    <ProjectRow row={row} onToggle={onToggle} />
+  ) : (
+    <ContainerRow row={row} onToggle={onToggle} />
+  );
+
+Row.displayName = 'Row';
 
 const PendingRow: React.FC<{ level: number }> = ({ level }) => (
   <TableRow aria-hidden>

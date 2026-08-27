@@ -1,11 +1,5 @@
 /**
  * Tenants + their metadata -> what a screen renders.
- *
- * The gap between the mockups and the backend lives here. What is real: name,
- * hierarchy, lifecycle status, timestamps (AM), and mode/stages/status/source
- * (project-config metadata). What has no source at all yet: the mockups'
- * issue counts, 7-day movement, health status ("On track"/"Needs attention")
- * and freshness markers ("Stale", "Partial data").
  */
 
 import { TENANT_TYPES, type ProjectConfig, type TenantDto, type User } from '../api/types';
@@ -37,14 +31,8 @@ export function tenantTypeRank(tenant: TenantDto): number {
   return 2;
 }
 
-/**
- * The list's sort, applied entirely on the client. AM's `$orderby` allow-list
- * does carry `name` and `updated_at`, but the tree is fetched one page per
- * expanded node — ordering each page separately would order siblings, which is
- * exactly what `sortRows` already does here for free. Nothing is gained by
- * asking the server, and a mixed client/server order would be a lie the moment
- * one branch is loaded and another is not.
- */
+/** The list's sort, applied entirely on the client. */
+
 export type ProjectSortOption = 'recent' | 'oldest' | 'alphabetical';
 
 export const DEFAULT_SORT_OPTION: ProjectSortOption = 'recent';
@@ -126,18 +114,16 @@ export function statusTone(status: ReturnType<typeof projectStatus>): StatusTone
   }
 }
 
-/** The second line under a project's name: whatever the config actually carries. */
 export function projectSubtitle(config: ProjectConfig | null): string | null {
-  return config?.brief?.trim() || config?.source_git_url || null;
+  return (
+    config?.brief?.trim() ||
+    config?.source_git_url ||
+    config?.sources?.[0]?.clone_url ||
+    null
+  );
 }
 
 /**
- * The journey-stage catalogue, mirroring `JOURNEY_STAGES` in
- * studio-frontend-prototype/src/api.ts — it moved to the clients when the
- * `studio-project` gear was retired (it used to be `GET /studio-project/v1/stages`),
- * so both clients now have to agree on it by hand. `intent` is always applied;
- * order is the journey's order, not the order a config happens to list.
- *
  * Labels are English here, exactly as in the prototype: they are catalogue data,
  * not screen copy, and inventing 8 keys × 35 locale files for a list nothing can
  * edit yet would be worse than saying so out loud. Translating them is a
@@ -173,10 +159,7 @@ export function orderedStages(
   return [...known, ...unknown];
 }
 
-export function ownerName(id: string | undefined, users: Map<string, User> | null): string | null {
-  if (!id) return null;
-  const user = users?.get(id);
-  if (!user) return null;
+export function displayName(user: User): string {
   return user.display_name?.trim() || user.username;
 }
 
@@ -199,7 +182,3 @@ export function healthStatus(_tenant: TenantDto): undefined {
   return undefined;
 }
 
-export function usersById(users: readonly User[] | undefined): Map<string, User> | null {
-  if (!users) return null;
-  return new Map(users.map((user) => [user.id, user]));
-}

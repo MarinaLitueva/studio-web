@@ -105,6 +105,11 @@ export function ExtensionDomainSlot(props: ExtensionDomainSlotProps): React.Reac
   const [attached, setAttached] = useState(false);
   // @cpt-end:cpt-frontx-state-react-bindings-extension-slot:p1:inst-slot-attached
 
+  /**
+   * The detach this slot last started, if it has not settled.
+   */
+  const pendingDetach = useRef<Promise<void> | null>(null);
+
   useEffect(() => {
     const root = rootRef.current;
     if (!root) {
@@ -115,21 +120,34 @@ export function ExtensionDomainSlot(props: ExtensionDomainSlotProps): React.Reac
     // Resolve the per-domain mounter and attach the DOM root.
     // The mounter owns all per-extension container placement under this root.
     const mounter = registry.getMounter(domainId);
-    mounter.attach(root);
+    let cancelled = false;
+    const attach = (): void => {
+      if (cancelled) return;
+      mounter.attach(root);
+      setAttached(true);
+      emitAttached(root);
+    };
+
+    const previous = pendingDetach.current;
+    if (previous) void previous.then(attach, attach);
+    else attach();
     // @cpt-end:cpt-frontx-flow-react-bindings-extension-domain-slot:p1:inst-attach-root
-
-    // @cpt-begin:cpt-frontx-state-react-bindings-extension-slot:p1:inst-slot-attached
-    setAttached(true);
-    // @cpt-end:cpt-frontx-state-react-bindings-extension-slot:p1:inst-slot-attached
-
-    emitAttached(root);
 
     // @cpt-begin:cpt-frontx-flow-react-bindings-extension-domain-slot:p1:inst-detach-root
     return () => {
-      // Mass-unmount every extension currently mounted in the domain.
-      // detach() is async (awaits per-extension unmounts) but React cleanup is
-      // synchronous; we deliberately fire-and-forget here.
-      void mounter.detach();
+      cancelled = true;
+
+      // Mass-unmount every extension currently mounted in the domain. detach()
+      // is async (awaits per-extension unmounts) but React cleanup is
+      // synchronous, so it is not awaited here — it is recorded instead, and the
+      // next attach waits behind it.
+      const detached = Promise.resolve(mounter.detach()).catch((error: unknown) => {
+        console.error(`[ExtensionDomainSlot] detach failed for domain '${domainId}':`, error);
+      });
+      pendingDetach.current = detached;
+      void detached.finally(() => {
+        if (pendingDetach.current === detached) pendingDetach.current = null;
+      });
 
       // @cpt-begin:cpt-frontx-state-react-bindings-extension-slot:p1:inst-slot-detached
       setAttached(false);

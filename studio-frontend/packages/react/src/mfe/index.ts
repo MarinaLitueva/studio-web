@@ -14,5 +14,10 @@ export {
   useMountedExtensions,
   useRegisteredPackages,
 } from './hooks';
-export { ThemeAwareReactLifecycle } from './ThemeAwareReactLifecycle';
+export {
+  ThemeAwareReactLifecycle,
+  type ThemeAwareReactLifecycleOptions,
+} from './ThemeAwareReactLifecycle';
+export { anchorKitThemeOnShadowHost } from './anchorKitThemeOnShadowHost';
+export { prewarmShadowStyles } from './shadowStyles';
 export { ExtensionDomainSlot, type ExtensionDomainSlotProps } from './components/ExtensionDomainSlot';

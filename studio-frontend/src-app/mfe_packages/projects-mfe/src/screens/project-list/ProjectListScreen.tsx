@@ -13,11 +13,7 @@ const ProjectList: React.FC = () => {
   const { isLoaded, error: translationsFailed } = useProjectListScreenTranslations();
   const t = useProjectListText();
   const [query, setQuery] = useState('');
-  /**
-   * Fixed while the sort is out of the UI. It still orders the rows the fetch
-   * returns, so restoring the control is a `useState` here plus the props back on
-   * `ProjectsToolbar` and `ProjectsTable`.
-   */
+
   const sort: ProjectSortOption = DEFAULT_SORT_OPTION;
 
   const { loading, failed, org, rows, toggle } = useProjectList(query, sort);

@@ -1,33 +1,56 @@
 /**
  * account-management — the only gear behind this MFE now.
- *
- * 1. `/tenants/{id}/children` returns **direct children only** — the repo AND-s
- *    `tenants.parent_id` with the path parent (`repo_impl/reads.rs::list_children`),
- *    and the only query params are `limit`, `cursor`, `$filter`, `$orderby`.
- *    There is no subtree endpoint and no `GET /tenants` collection, and neither
- *    `parent_id` nor `depth` is in the OData allow-list — so "the whole
- *    organization in one request" is not available at any price. The tree is
- *    therefore one request per *expanded* node; see shared/projectTree.tsx.
- * 2. It is cursor-paginated and clamped to 200 rows per page
- *    (`listing.max_top`), so a node with more children needs the cursor.
- * 3. Project attributes are tenant metadata, one GET per project, with no bulk
- *    read of any kind. That is why the list screen does not read them at all
- *    (it would be one request per row) and the project screen does.
  */
 
-import { BaseApiService, RestEndpointProtocol, RestProtocol } from '@gears-frontx/react';
+import {
+  BaseApiService,
+  RestEndpointProtocol,
+  RestProtocol,
+  type EndpointDescriptor,
+} from '@gears-frontx/react';
+import { orNullOnNotFound } from '../shared/notFound';
 import type { Me, MetadataEntry, Page, ProjectConfig, TenantDto, User } from './types';
+
+/** `POST /tenants`. AM accepts these three fields on create. */
+export interface CreateTenantBody {
+  name: string;
+  parent_id: string;
+  tenant_type: string;
+}
 
 export const ACCOUNTS_API_BASE_URL = '/cf/account-management/v1';
 
 /** AM's own ceiling (`listing.max_top`), so one page is usually enough. */
 export const CHILDREN_PAGE_LIMIT = 200;
 
+export interface ProjectConfigParams {
+  tenantId: string;
+  metadataType: string;
+}
+
+export interface UserLookupParams {
+  tenantId: string;
+  userId: string;
+}
+
+function userLookupPath({ tenantId, userId }: UserLookupParams): string {
+  const query = new URLSearchParams({ $filter: `id eq ${userId}`, limit: '1' });
+  return `/tenants/${tenantId}/users?${query.toString()}`;
+}
+
 export interface ChildrenParams {
   tenantId: string;
   tenantType?: string;
   limit?: number;
   cursor?: string;
+}
+
+/**
+ * Parameters of the one page the tree reads per node — and therefore the cache
+ * key the wizard has to invalidate for a created project to appear in the list.
+ */
+export function childrenPageParams(tenantId: string): ChildrenParams {
+  return { tenantId, limit: CHILDREN_PAGE_LIMIT };
 }
 
 function childrenPath({ tenantId, tenantType, limit, cursor }: ChildrenParams): string {
@@ -57,14 +80,31 @@ export class AccountsApiService extends BaseApiService {
     childrenPath
   );
 
-  readonly tenantUsers = this.protocol(RestEndpointProtocol).queryWith<
+  readonly tenantUser = this.protocol(RestEndpointProtocol).queryWith<
     Page<User>,
-    { tenantId: string }
-  >(({ tenantId }) => `/tenants/${tenantId}/users`);
+    UserLookupParams
+  >(userLookupPath);
 
-  /** 404 means "never set" — see shared/notFound.ts for the read side. */
-  readonly projectConfig = this.protocol(RestEndpointProtocol).queryWith<
+
+  private readonly projectConfigEntry = this.protocol(RestEndpointProtocol).queryWith<
     MetadataEntry<ProjectConfig>,
-    { tenantId: string; metadataType: string }
+    ProjectConfigParams
   >(({ tenantId, metadataType }) => `/tenants/${tenantId}/metadata/${metadataType}`);
+
+  readonly projectConfig = (
+    params: ProjectConfigParams
+  ): EndpointDescriptor<MetadataEntry<ProjectConfig> | null> =>
+    orNullOnNotFound(this.projectConfigEntry(params));
+
+  readonly createTenant = this.protocol(RestEndpointProtocol).mutation<
+    TenantDto,
+    CreateTenantBody
+  >('POST', '/tenants');
+
+  projectConfigWrite(tenantId: string, metadataType: string) {
+    return this.protocol(RestEndpointProtocol).mutation<unknown, ProjectConfig>(
+      'PUT',
+      `/tenants/${tenantId}/metadata/${metadataType}`
+    );
+  }
 }
