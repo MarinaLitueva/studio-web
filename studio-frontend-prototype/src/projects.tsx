@@ -11,7 +11,7 @@
  * catalogue — it is simply not a place you navigate to.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 import { api, TENANT_TYPES, type User } from "./api";
 import { errText, matches } from "./format";
@@ -86,6 +86,7 @@ export function ProjectsPortfolio({
   org,
   onOpen,
   onOpenStudio,
+  onOpenProject,
   onChanged,
 }: {
   token: string;
@@ -102,6 +103,8 @@ export function ProjectsPortfolio({
   homeOrgId: string | null;
   onOpen: (root: RootProject) => void;
   onOpenStudio: (root: RootProject) => void;
+  /** Open a nested project (from the expandable tree under a workspace). */
+  onOpenProject?: (wsId: string, p: { id: string; name: string }) => void;
   onChanged: () => void;
 }) {
   const [people, setPeople] = useState<Record<string, User[]>>({});
@@ -109,6 +112,45 @@ export function ProjectsPortfolio({
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Expandable tree of nested projects per workspace (lazy-loaded on expand).
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [children, setChildren] = useState<Record<string, { id: string; name: string }[]>>({});
+  const [loadingKids, setLoadingKids] = useState<Set<string>>(new Set());
+
+  const loadChildren = useCallback(
+    async (wsId: string) => {
+      setLoadingKids((s) => new Set(s).add(wsId));
+      try {
+        const page = await api.tenantChildren(token, wsId);
+        const kids = (page.items ?? [])
+          .filter((t) => t.tenant_type === TENANT_TYPES.project)
+          .map((t) => ({ id: t.id, name: t.name }));
+        setChildren((c) => ({ ...c, [wsId]: kids }));
+      } catch {
+        setChildren((c) => ({ ...c, [wsId]: [] }));
+      } finally {
+        setLoadingKids((s) => {
+          const n = new Set(s);
+          n.delete(wsId);
+          return n;
+        });
+      }
+    },
+    [token],
+  );
+
+  const toggle = (wsId: string) => {
+    setExpanded((s) => {
+      const n = new Set(s);
+      if (n.has(wsId)) {
+        n.delete(wsId);
+      } else {
+        n.add(wsId);
+        if (children[wsId] === undefined) void loadChildren(wsId);
+      }
+      return n;
+    });
+  };
 
   const ids = roots.map((r) => r.id).join(",");
 
@@ -233,35 +275,84 @@ export function ProjectsPortfolio({
               </tr>
             </thead>
             <tbody>
-              {visible.map((root) => (
-                <tr key={root.id} className="prow root">
-                  <td>
-                    <div className="pcell">
-                      <span className="pico" aria-hidden>
-                        <FolderIcon />
-                      </span>
-                      <div>
-                        <button type="button" className="pname" onClick={() => onOpen(root)}>
-                          {root.name}
+              {visible.map((root) => {
+                const isOpen = expanded.has(root.id);
+                const kids = children[root.id];
+                const kidsLoading = loadingKids.has(root.id);
+                return (
+                  <Fragment key={root.id}>
+                    <tr className="prow root">
+                      <td>
+                        <div className="pcell">
+                          <button
+                            type="button"
+                            className="tree-toggle"
+                            aria-label={isOpen ? "Collapse projects" : "Expand projects"}
+                            aria-expanded={isOpen}
+                            onClick={() => toggle(root.id)}
+                          >
+                            {isOpen ? "▾" : "▸"}
+                          </button>
+                          <span className="pico" aria-hidden>
+                            <FolderIcon />
+                          </span>
+                          <div>
+                            <button type="button" className="pname" onClick={() => onOpen(root)}>
+                              {root.name}
+                            </button>
+                            <div className="sub">{root.self_managed ? "self-managed" : "workspace"}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <Avatars users={people[root.id]} />
+                      </td>
+                      <td className="pactions">
+                        <button onClick={() => onOpen(root)}>Open</button>
+                        <button className="primary" onClick={() => onOpenStudio(root)}>
+                          Open in IDE
                         </button>
-                        <div className="sub">{root.self_managed ? "self-managed" : "workspace"}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td>
-                    <Avatars users={people[root.id]} />
-                  </td>
-                  <td className="pactions">
-                    <button onClick={() => onOpen(root)}>Open</button>
-                    <button className="primary" onClick={() => onOpenStudio(root)}>
-                      Open Studio
-                    </button>
-                    <button className="ghost" title="Delete workspace" onClick={() => void remove(root)}>
-                      ✕
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                        <button className="ghost" title="Delete workspace" onClick={() => void remove(root)}>
+                          ✕
+                        </button>
+                      </td>
+                    </tr>
+                    {isOpen &&
+                      (kids === undefined && kidsLoading ? (
+                        <tr className="prow nested">
+                          <td colSpan={3}>
+                            <div className="pcell indent sub">Loading projects…</div>
+                          </td>
+                        </tr>
+                      ) : (kids ?? []).length === 0 ? (
+                        <tr className="prow nested">
+                          <td colSpan={3}>
+                            <div className="pcell indent sub">No projects yet</div>
+                          </td>
+                        </tr>
+                      ) : (
+                        (kids ?? []).map((p) => (
+                          <tr key={p.id} className="prow nested">
+                            <td>
+                              <div className="pcell indent">
+                                <span className="pico" aria-hidden>
+                                  ▦
+                                </span>
+                                <button type="button" className="pname" onClick={() => onOpenProject?.(root.id, p)}>
+                                  {p.name}
+                                </button>
+                              </div>
+                            </td>
+                            <td />
+                            <td className="pactions">
+                              <button onClick={() => onOpenProject?.(root.id, p)}>Open</button>
+                            </td>
+                          </tr>
+                        ))
+                      ))}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         )}

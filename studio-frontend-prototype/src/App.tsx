@@ -22,17 +22,9 @@ import {
   UNAUTHENTICATED_EVENT,
   shortTypeName,
   TENANT_TYPES,
-  JOURNEY_STAGES,
-  STATUS_LADDER,
-  normalizeStages,
-  type ArtifactEdge,
-  type ArtifactNode,
   type Connection,
   type ConnectorProvider,
   type Me,
-  type ProjectConfig,
-  type ProjectMode,
-  type ProjectStatus,
   type RemoteRepo,
   type RepoEntry,
   type Tenant,
@@ -69,7 +61,7 @@ interface Workspace extends Tenant {
   orgId: string;
 }
 
-/** What "Open Studio" launches against. A root project passes itself (a
+/** What "Open in IDE" launches against. A root project passes itself (a
  *  Workspace is a valid target — it already has id + name). A nested project
  *  passes its OWN id and its single source as the root repo, so each project
  *  gets its own session (keyed by id) cloning its own content. The session gear
@@ -495,8 +487,6 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
   // back. Lifted to the shell so the sidebar switcher (where "Home" used to be)
   // and the portfolio share one selection. null = "resolve a sensible default".
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
-  const [orgNavMenu, setOrgNavMenu] = useState(false);
-  const [wsNavMenu, setWsNavMenu] = useState(false);
   // Admin area (console pattern): a separate mode with its own sidebar for
   // organizations / members / workspaces administration.
   const [adminOpen, setAdminOpen] = useState(false);
@@ -823,10 +813,8 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
     implicitOrgId ??
     null;
   const activeOrg = orgOptions.find((o) => o.id === activeOrgResolvedId) ?? null;
-  // Workspaces of the active org — the second sidebar switcher's options — and
-  // the one currently in the crumb (null = the whole-org "All workspaces" view).
+  // Workspaces of the active org — the path picker's workspace options.
   const orgWorkspaces = workspaces.filter((w) => w.orgId === activeOrgResolvedId);
-  const currentWorkspace = workspaces.find((w) => w.id === crumb.projectId) ?? null;
 
   // When a project is open, the sidebar gains its tab nav (Overview / Artifacts
   // / Spec Quality / Team) so the tabs live on the panel rather than the page.
@@ -920,6 +908,33 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // Nested projects of the workspace in context — options for the PathBar's
+  // project dropdown. Loaded when a workspace is selected; cleared otherwise.
+  const [nestedProjects, setNestedProjects] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!crumb.projectId) {
+      setNestedProjects([]);
+      return;
+    }
+    api.tenantChildren(token, crumb.projectId).then(
+      (page) => {
+        if (cancelled) return;
+        setNestedProjects(
+          (page.items ?? [])
+            .filter((t) => t.tenant_type === TENANT_TYPES.project)
+            .map((t) => ({ id: t.id, name: t.name })),
+        );
+      },
+      () => {
+        if (!cancelled) setNestedProjects([]);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [token, crumb.projectId]);
 
   return (
     <div className="shell">
@@ -1052,127 +1067,10 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
             </>
           ) : (
             <>
-            {/* Organization switcher — sits where "Home" used to, because the
-                organization IS the home context: pick one and its projects
-                open. A static pill when there is only one; creation lives in
-                the account menu below. */}
-            <div className="nav-section org-nav">
-              <div className="org-select-wrap">
-                <button
-                  type="button"
-                  className="org-select"
-                  disabled={orgOptions.length <= 1}
-                  title={activeOrg?.name ?? "Organization"}
-                  onClick={() => setOrgNavMenu((v) => !v)}
-                >
-                  <span className="account-avatar small">
-                    {(activeOrg?.name ?? "?").slice(0, 1).toUpperCase()}
-                  </span>
-                  <span className="org-select-name">{activeOrg?.name ?? "Select organization"}</span>
-                  {orgOptions.length > 1 && <span className="chev">▾</span>}
-                </button>
-                {orgNavMenu && orgOptions.length > 1 && (
-                  <div className="org-menu">
-                    {orgOptions.map((o) => (
-                      <button
-                        key={o.id}
-                        type="button"
-                        onClick={() => {
-                          setActiveOrgId(o.id);
-                          setCrumb({});
-                          setView("projects");
-                          setActiveSpace(null);
-                          setOrgNavMenu(false);
-                        }}
-                      >
-                        <span className="account-avatar small">{o.name.slice(0, 1).toUpperCase()}</span>
-                        {o.name}
-                      </button>
-                    ))}
-                    <button
-                      type="button"
-                      className="org-new"
-                      title="Create an organization in the account menu"
-                      onClick={() => {
-                        setOrgNavMenu(false);
-                        setAccountMenu(true);
-                      }}
-                    >
-                      ＋ New organization
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-            {/* Workspace switcher — one level below the organization one. Picking
-                a workspace opens its projects (+ its properties panel); "All
-                workspaces" drops back to the whole-org portfolio. */}
-            {activeOrg && (
-              <div className="nav-section org-nav ws-nav">
-                <div className="org-select-wrap">
-                  <button
-                    type="button"
-                    className="org-select"
-                    title={currentWorkspace?.name ?? "All workspaces"}
-                    onClick={() => setWsNavMenu((v) => !v)}
-                  >
-                    <span className="account-avatar small">
-                      {(currentWorkspace?.name ?? "▤").slice(0, 1).toUpperCase()}
-                    </span>
-                    <span className="org-select-name">
-                      {currentWorkspace?.name ?? "All workspaces"}
-                    </span>
-                    <span className="chev">▾</span>
-                  </button>
-                  {wsNavMenu && (
-                    <div className="org-menu">
-                      <button
-                        type="button"
-                        className={!crumb.projectId ? "on" : ""}
-                        onClick={() => {
-                          setCrumb({});
-                          setView("projects");
-                          setActiveSpace(null);
-                          setWsNavMenu(false);
-                        }}
-                      >
-                        <span className="account-avatar small">▤</span>
-                        All workspaces
-                      </button>
-                      {orgWorkspaces.map((w) => (
-                        <button
-                          key={w.id}
-                          type="button"
-                          className={crumb.projectId === w.id ? "on" : ""}
-                          onClick={() => {
-                            setCrumb({ projectId: w.id });
-                            setView("projects");
-                            setActiveSpace(null);
-                            setWsNavMenu(false);
-                          }}
-                        >
-                          <span className="account-avatar small">
-                            {w.name.slice(0, 1).toUpperCase()}
-                          </span>
-                          {w.name}
-                        </button>
-                      ))}
-                      <button
-                        type="button"
-                        className="org-new"
-                        title="Create a workspace in the account menu"
-                        onClick={() => {
-                          setWsNavMenu(false);
-                          setAccountMenu(true);
-                        }}
-                      >
-                        ＋ New workspace
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+            {/* Organization / workspace switchers used to live here; the
+                horizontal path picker (org › workspace › project) above the
+                content is now the single place to switch context, so the
+                sidebar keeps only the nav surfaces below. */}
             {projectOpen && (
               // ── Project context: the open project's tabs live in the sidebar ──
               <div className="nav-section nav-section-project">
@@ -1396,7 +1294,11 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
                 const post = () => {
                   const theme = document.documentElement.dataset.theme ?? "light";
                   frame.contentWindow?.postMessage(
-                    { type: "studio.init", theme, apiToken: tokenRef.current },
+                    // `wsId` is the tenant this session was opened against — a
+                    // workspace tenant (its graph shows every project) or a
+                    // project tenant (just that project). The IDE scopes the
+                    // Artifact Graph's reads to it.
+                    { type: "studio.init", theme, apiToken: tokenRef.current, workspaceId: s.wsId },
                     origin,
                   );
                 };
@@ -1424,6 +1326,43 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
       <div className="content" style={activeSpace ? { display: "none" } : undefined}>
         {/* Floating assistant, bottom-right, on every portal screen (mockups). */}
         <StudioAI token={token} />
+        {/* Horizontal path picker (org › workspace › project) — replaces the
+            in-view breadcrumb trail. Each level is a dropdown; picking a project
+            opens it, "All projects" drops back to the workspace's project list. */}
+        {!adminOpen && (
+          <PathBar
+            orgs={orgOptions}
+            activeOrg={activeOrg}
+            onPickOrg={(id) => {
+              setActiveOrgId(id);
+              setCrumb({});
+              setView("projects");
+              setActiveSpace(null);
+            }}
+            workspaces={orgWorkspaces}
+            currentWorkspaceId={crumb.projectId}
+            onPickWorkspace={(id) => {
+              setCrumb(id ? { projectId: id } : {});
+              setView("projects");
+              setActiveSpace(null);
+            }}
+            projects={nestedProjects}
+            currentProjectId={crumb.nestedId}
+            currentProjectName={projectLabel}
+            onPickProject={(p) => {
+              if (p) {
+                setProjectLabel(p.name);
+                setCrumb({ projectId: crumb.projectId, nestedId: p.id });
+                setProjectTab("overview");
+              } else {
+                setProjectLabel(undefined);
+                setCrumb({ projectId: crumb.projectId });
+              }
+              setView("projects");
+              setActiveSpace(null);
+            }}
+          />
+        )}
         {error && <div className="error">{error}</div>}
         {adminOpen ? (
           <>
@@ -1931,6 +1870,176 @@ interface Crumb {
   nestedId?: string;
 }
 
+/** Horizontal path picker: org › workspace › project, each a dropdown. Mirrors
+ *  the sidebar switcher pattern (button + menu) but laid out horizontally and
+ *  outside the sidebar, so the whole path can be re-picked in one place. The
+ *  project level uses the same mechanic as the workspace level: pick one to open
+ *  it, "All projects" returns to the workspace's project list. */
+function PathBar({
+  orgs,
+  activeOrg,
+  onPickOrg,
+  workspaces,
+  currentWorkspaceId,
+  onPickWorkspace,
+  projects,
+  currentProjectId,
+  currentProjectName,
+  onPickProject,
+}: {
+  orgs: { id: string; name: string }[];
+  activeOrg: { id: string; name: string } | null;
+  onPickOrg: (id: string) => void;
+  workspaces: { id: string; name: string }[];
+  currentWorkspaceId?: string;
+  onPickWorkspace: (id: string | null) => void;
+  projects: { id: string; name: string }[];
+  currentProjectId?: string;
+  currentProjectName?: string;
+  onPickProject: (p: { id: string; name: string } | null) => void;
+}) {
+  const [open, setOpen] = useState<"org" | "ws" | "proj" | null>(null);
+  const initial = (s: string) => (s || "?").slice(0, 1).toUpperCase();
+  const currentWs = workspaces.find((w) => w.id === currentWorkspaceId) ?? null;
+
+  return (
+    <div className="path-bar" onMouseLeave={() => setOpen(null)}>
+      {/* Organization */}
+      <div className="path-seg org-select-wrap">
+        <button
+          type="button"
+          className="org-select"
+          disabled={orgs.length <= 1}
+          title={activeOrg?.name ?? "Organization"}
+          onClick={() => setOpen((o) => (o === "org" ? null : "org"))}
+        >
+          <span className="account-avatar small">{initial(activeOrg?.name ?? "?")}</span>
+          <span className="org-select-name">{activeOrg?.name ?? "Organization"}</span>
+          {orgs.length > 1 && <span className="chev">▾</span>}
+        </button>
+        {open === "org" && orgs.length > 1 && (
+          <div className="org-menu">
+            {orgs.map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                className={activeOrg?.id === o.id ? "on" : ""}
+                onClick={() => {
+                  onPickOrg(o.id);
+                  setOpen(null);
+                }}
+              >
+                <span className="account-avatar small">{initial(o.name)}</span>
+                {o.name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <span className="path-sep">›</span>
+
+      {/* Workspace */}
+      <div className="path-seg org-select-wrap">
+        <button
+          type="button"
+          className="org-select"
+          title={currentWs?.name ?? "All workspaces"}
+          onClick={() => setOpen((o) => (o === "ws" ? null : "ws"))}
+        >
+          <span className="account-avatar small">{currentWs ? initial(currentWs.name) : "▤"}</span>
+          <span className="org-select-name">{currentWs?.name ?? "All workspaces"}</span>
+          <span className="chev">▾</span>
+        </button>
+        {open === "ws" && (
+          <div className="org-menu">
+            <button
+              type="button"
+              className={!currentWorkspaceId ? "on" : ""}
+              onClick={() => {
+                onPickWorkspace(null);
+                setOpen(null);
+              }}
+            >
+              <span className="account-avatar small">▤</span>
+              All workspaces
+            </button>
+            {workspaces.map((w) => (
+              <button
+                key={w.id}
+                type="button"
+                className={currentWorkspaceId === w.id ? "on" : ""}
+                onClick={() => {
+                  onPickWorkspace(w.id);
+                  setOpen(null);
+                }}
+              >
+                <span className="account-avatar small">{initial(w.name)}</span>
+                {w.name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Project — only meaningful once a workspace is chosen */}
+      {currentWorkspaceId && (
+        <>
+          <span className="path-sep">›</span>
+          <div className="path-seg org-select-wrap">
+            <button
+              type="button"
+              className="org-select"
+              title={currentProjectName ?? "All projects"}
+              onClick={() => setOpen((o) => (o === "proj" ? null : "proj"))}
+            >
+              <span className="account-avatar small">
+                {currentProjectName ? initial(currentProjectName) : "▦"}
+              </span>
+              <span className="org-select-name">{currentProjectName ?? "All projects"}</span>
+              <span className="chev">▾</span>
+            </button>
+            {open === "proj" && (
+              <div className="org-menu">
+                <button
+                  type="button"
+                  className={!currentProjectId ? "on" : ""}
+                  onClick={() => {
+                    onPickProject(null);
+                    setOpen(null);
+                  }}
+                >
+                  <span className="account-avatar small">▦</span>
+                  All projects
+                </button>
+                {projects.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className={currentProjectId === p.id ? "on" : ""}
+                    onClick={() => {
+                      onPickProject(p);
+                      setOpen(null);
+                    }}
+                  >
+                    <span className="account-avatar small">{initial(p.name)}</span>
+                    {p.name}
+                  </button>
+                ))}
+                {projects.length === 0 && (
+                  <div className="sub" style={{ padding: "6px 10px" }}>
+                    No projects yet
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function Breadcrumbs({
   items,
 }: {
@@ -2005,6 +2114,10 @@ function ProjectsView({
           const ws = workspaces.find((w) => w.id === r.id);
           if (ws) onOpenStudio(ws);
         }}
+        onOpenProject={(wsId, p) => {
+          setProjectLabel(p.name);
+          setCrumb({ projectId: wsId, nestedId: p.id });
+        }}
         onChanged={onChanged}
       />
     );
@@ -2054,13 +2167,6 @@ function ProjectsView({
         }}
         onChanged={onChanged}
       />
-      <WorkspaceDashboard
-        token={token}
-        ws={root}
-        embedded
-        onBack={() => setCrumb({})}
-        onOpenStudio={onOpenStudio}
-      />
     </>
   );
 }
@@ -2084,6 +2190,10 @@ function WorkspaceProjects({
   const [busy, setBusy] = useState(false);
   const [newName, setNewName] = useState("");
   const [newMode, setNewMode] = useState<import("./api").ProjectMode>("greenfield");
+  // Inline row editing (rename) + per-row busy for edit/delete.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [rowBusy, setRowBusy] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     setErr(null);
@@ -2126,6 +2236,46 @@ function WorkspaceProjects({
       setErr(errText(e));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const startEdit = (p: { id: string; name: string }) => {
+    setEditingId(p.id);
+    setEditName(p.name);
+    setErr(null);
+  };
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditName("");
+  };
+  const saveEdit = async (id: string) => {
+    const name = editName.trim();
+    if (!name) return;
+    setRowBusy(id);
+    setErr(null);
+    try {
+      await api.updateTenant(token, id, { name });
+      cancelEdit();
+      await reload();
+      onChanged();
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setRowBusy(null);
+    }
+  };
+  const remove = async (p: { id: string; name: string }) => {
+    if (!window.confirm(`Delete project “${p.name}”? This cannot be undone.`)) return;
+    setRowBusy(p.id);
+    setErr(null);
+    try {
+      await api.deleteTenant(token, p.id);
+      await reload();
+      onChanged();
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setRowBusy(null);
     }
   };
 
@@ -2177,25 +2327,84 @@ function WorkspaceProjects({
         {projects === null ? (
           <p className="empty">Loading…</p>
         ) : projects.length === 0 ? (
-          <p className="empty">
-            No projects yet — create one to get a codebase context (sources, IDE, artifacts).
-          </p>
+          <div className="empty" style={{ textAlign: "center", padding: "28px 12px" }}>
+            <div style={{ fontSize: 30, opacity: 0.4, marginBottom: 10 }}>▦</div>
+            <div style={{ marginBottom: 14 }}>
+              No projects yet — create one to get a codebase context (sources, IDE, artifacts).
+            </div>
+            <button className="primary" onClick={() => setCreating(true)}>
+              New project
+            </button>
+          </div>
         ) : (
-          <ul className="rows">
-            {projects.map((p) => (
-              <li key={p.id}>
-                <div className="grow">
-                  <div className="name">{p.name}</div>
-                  <div className="sub">
-                    <code>{p.id.slice(0, 8)}…</code>
-                  </div>
-                </div>
-                <button className="ghost" onClick={() => onOpenProject(p)}>
-                  Open
-                </button>
-              </li>
-            ))}
-          </ul>
+          <table className="ptable">
+            <thead>
+              <tr>
+                <th>Project</th>
+                <th>ID</th>
+                <th aria-label="actions" />
+              </tr>
+            </thead>
+            <tbody>
+              {projects.map((p) => {
+                const editing = editingId === p.id;
+                const busyRow = rowBusy === p.id;
+                return (
+                  <tr key={p.id} className="prow root">
+                    <td>
+                      <div className="pcell">
+                        <span className="pico" aria-hidden>▦</span>
+                        <div>
+                          {editing ? (
+                            <input
+                              value={editName}
+                              autoFocus
+                              onChange={(e) => setEditName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") void saveEdit(p.id);
+                                if (e.key === "Escape") cancelEdit();
+                              }}
+                              style={{ width: "100%" }}
+                            />
+                          ) : (
+                            <button type="button" className="pname" onClick={() => onOpenProject(p)}>
+                              {p.name}
+                            </button>
+                          )}
+                          <div className="sub">project</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <code>{p.id.slice(0, 8)}…</code>
+                    </td>
+                    <td className="pactions">
+                      {editing ? (
+                        <>
+                          <button className="primary" disabled={busyRow || !editName.trim()} onClick={() => void saveEdit(p.id)}>
+                            {busyRow ? "Saving…" : "Save"}
+                          </button>
+                          <button className="ghost" disabled={busyRow} onClick={cancelEdit}>
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button onClick={() => onOpenProject(p)}>Open</button>
+                          <button className="ghost" disabled={busyRow} onClick={() => startEdit(p)}>
+                            Edit
+                          </button>
+                          <button className="ghost" disabled={busyRow} title="Delete project" onClick={() => void remove(p)}>
+                            ✕
+                          </button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         )}
       </div>
     </>
@@ -2206,157 +2415,14 @@ function WorkspaceProjects({
  *  studio-project gear used to own, now stored as `project.config` tenant
  *  metadata on the project tenant and edited here. Status is forward-only and
  *  the stage list is validated against the catalogue, both client-side now. */
-function ProjectProperties({ token, projectId }: { token: string; projectId: string }) {
-  const fallback: ProjectConfig = { mode: "greenfield", status: "draft", stages: ["intent"] };
-  const [saved, setSaved] = useState<ProjectConfig | null>(null);
-  const [draft, setDraft] = useState<ProjectConfig | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [justSaved, setJustSaved] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    api.projectConfig(token, projectId).then(
-      (c) => {
-        if (cancelled) return;
-        const v: ProjectConfig = { ...fallback, ...(c ?? {}), stages: normalizeStages(c?.stages ?? ["intent"]) };
-        setSaved(v);
-        setDraft(v);
-      },
-      (e) => {
-        if (!cancelled) setErr(errText(e));
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, projectId]);
-
-  if (err) return <div className="error">{err}</div>;
-  if (!draft || !saved) return <p className="empty">Loading project properties…</p>;
-
-  const stages = draft.stages ?? [];
-  const statusIdx = STATUS_LADDER.indexOf(draft.status ?? "draft");
-  const dirty = JSON.stringify(saved) !== JSON.stringify(draft);
-
-  const patch = (p: Partial<ProjectConfig>) => {
-    setJustSaved(false);
-    setDraft((d) => (d ? { ...d, ...p } : d));
-  };
-  const toggleStage = (key: string) => patch({ stages: normalizeStages(stages.includes(key) ? stages.filter((s) => s !== key) : [...stages, key]) });
-
-  async function save() {
-    if (!draft) return;
-    setBusy(true);
-    setErr(null);
-    try {
-      const clean: ProjectConfig = { ...draft, stages: normalizeStages(draft.stages ?? []) };
-      await api.putProjectConfig(token, projectId, clean);
-      setSaved(clean);
-      setDraft(clean);
-      setJustSaved(true);
-    } catch (e) {
-      setErr(errText(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="card">
-      <div className="topbar" style={{ marginBottom: 8 }}>
-        <h2 style={{ margin: 0 }}>Project properties</h2>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {justSaved && !dirty && <span className="sub">Saved</span>}
-          <button className="primary" disabled={busy || !dirty} onClick={() => void save()}>
-            {busy ? "Saving…" : "Save"}
-          </button>
-        </div>
-      </div>
-
-      <div className="field">
-        <span className="lbl">Mode</span>
-        <select
-          value={draft.mode ?? "greenfield"}
-          onChange={(e) => patch({ mode: e.target.value as ProjectMode })}
-        >
-          <option value="greenfield">Greenfield — build from an idea</option>
-          <option value="modernize">Modernize — start from a source repository</option>
-        </select>
-      </div>
-
-      <div className="field">
-        <span className="lbl">Status</span>
-        <div style={{ display: "flex", gap: 6 }}>
-          {STATUS_LADDER.map((s, i) => (
-            <button
-              key={s}
-              className={draft.status === s ? "primary" : "ghost"}
-              // Forward-only: you can hold or advance, never regress.
-              disabled={i < statusIdx}
-              title={i < statusIdx ? "Status is forward-only — it cannot move back" : undefined}
-              onClick={() => patch({ status: s as ProjectStatus })}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="field">
-        <span className="lbl">Journey stages</span>
-        <div className="chips">
-          {JOURNEY_STAGES.map((s) => {
-            const on = stages.includes(s.key) || s.required;
-            return (
-              <button
-                key={s.key}
-                type="button"
-                className={`chip${on ? " on" : ""}`}
-                disabled={s.required}
-                title={s.required ? "Intent is always applied" : undefined}
-                onClick={() => toggleStage(s.key)}
-              >
-                {s.label}
-                {s.required ? " ·" : ""}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="field">
-        <span className="lbl">{draft.mode === "modernize" ? "Notes" : "Brief"}</span>
-        <textarea
-          rows={4}
-          placeholder={
-            draft.mode === "modernize"
-              ? "Optional notes about the modernization."
-              : "The idea, pasted PRD or notes that seed this project."
-          }
-          value={draft.brief ?? ""}
-          onChange={(e) => patch({ brief: e.target.value })}
-        />
-      </div>
-
-      {draft.source_git_url && (
-        <p className="hint" style={{ marginTop: 4 }}>
-          Seed source: <code>{draft.source_git_url}</code>. The working repositories are managed on
-          the Artifacts tab (workspace settings).
-        </p>
-      )}
-    </div>
-  );
-}
-
 /** The sections of an open project. Lifted so the shell sidebar can BE the
  *  project's nav (the tab is stored on the shell, not inside ProjectScreen). */
-type ProjTab = "overview" | "artifacts" | "analyze" | "people";
+type ProjTab = "overview" | "artifacts" | "analyze" | "automation" | "people";
 const PROJECT_TABS: { id: ProjTab; icon: string; label: string }[] = [
   { id: "overview", icon: "home", label: "Overview" },
   { id: "artifacts", icon: "file", label: "Artifacts" },
   { id: "analyze", icon: "scan", label: "Spec Quality" },
+  { id: "automation", icon: "shield", label: "Automation" },
   { id: "people", icon: "users", label: "Team" },
 ];
 
@@ -2420,21 +2486,28 @@ function ProjectScreen({
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={onBack}>← {workspace.name}</button>
           <button className="primary" onClick={() => onOpenStudio(proj)}>
-            Open Studio
+            Open in IDE
           </button>
         </div>
       </div>
       <div className="proj-content">
         {tab === "overview" && (
           <>
-            <ProjectProperties token={token} projectId={proj.id} />
             <WorkspaceDashboard token={token} ws={proj} embedded onBack={onBack} onOpenStudio={onOpenStudio} />
           </>
         )}
         {tab === "artifacts" && (
-          <ArtifactsView token={token} workspace={proj} onOpenStudio={onOpenStudio} />
+          <ArtifactsView
+            token={token}
+            workspace={proj}
+            parentWorkspaceId={workspace.id}
+            onOpenStudio={onOpenStudio}
+          />
         )}
-        {tab === "analyze" && <SpecQuality token={token} workspaceId={proj.id} />}
+        {tab === "analyze" && (
+          <SpecQuality token={token} workspaceId={proj.id} parentWorkspaceId={workspace.id} />
+        )}
+        {tab === "automation" && <AutomationSettings token={token} ws={proj} />}
         {tab === "people" && (
           <PeopleView
             token={token}
@@ -2549,7 +2622,7 @@ function WorkspacesView({
                 {w.self_managed && <span className="badge selfmanaged">self-managed</span>}
                 <button onClick={() => onOpen(w)}>Open</button>
                 <button className="primary" onClick={() => onOpenStudio(w)}>
-                  Open Studio
+                  Open in IDE
                 </button>
                 <button className="ghost" title="Delete workspace" onClick={() => void remove(w)}>
                   ✕
@@ -2597,22 +2670,10 @@ const PAT_SECRET_TYPE = "gts.cf.core.credstore.secret.v1~cf.core.credstore.api_k
 const PERSONAL_SECRET_TYPE =
   "gts.cf.core.credstore.secret.v1~cf.core.credstore.personal_token.v1~";
 
-function WorkspaceDashboard({
-  token,
-  ws,
-  onBack,
-  onOpenStudio,
-  embedded = false,
-}: {
-  token: string;
-  ws: Workspace;
-  onBack: () => void;
-  onOpenStudio: (target: StudioTarget) => void;
-  /** Rendered inside the workspace row rather than as its own page: the row
-   *  already shows the name and carries "Open Studio", so the topbar would be
-   *  a second copy of both. */
-  embedded?: boolean;
-}) {
+/** Automation trust ramp for a project — moved out of the overview into its own
+ *  sidebar tab. Loads/saves the workspace settings (automation_level + approved
+ *  worker categories) as GTS-validated tenant metadata. */
+function AutomationSettings({ token, ws }: { token: string; ws: Workspace }) {
   const [settings, setSettings] = useState<WorkspaceSettings | null>(null);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -2631,7 +2692,7 @@ function WorkspaceDashboard({
     void load();
   }, [load]);
 
-  async function saveSettings(e: FormEvent) {
+  async function save(e: FormEvent) {
     e.preventDefault();
     if (!settings) return;
     setError(null);
@@ -2643,6 +2704,101 @@ function WorkspaceDashboard({
       setError(errText(err));
     }
   }
+
+  return (
+    <div className="card">
+      <h2>Automation — trust ramp</h2>
+      <p className="hint">
+        The domain model's trust ramp, per project: <b>manual</b> = read-only insight,{" "}
+        <b>recommendations</b> = prepared actions awaiting approval, <b>autonomous</b> = approved
+        automation for the categories below. Stored as tenant metadata (GTS-validated).
+      </p>
+      {error && <div className="error">{error}</div>}
+      {!settings ? (
+        <p className="empty">Loading…</p>
+      ) : (
+        <form onSubmit={save}>
+          <label className="field" style={{ maxWidth: 320 }}>
+            Automation level
+            <select
+              style={{ display: "block", width: "100%", marginTop: 6 }}
+              value={settings.automation_level ?? "recommendations"}
+              onChange={(e) =>
+                setSettings({
+                  ...settings,
+                  automation_level: e.target.value as WorkspaceSettings["automation_level"],
+                })
+              }
+            >
+              <option value="manual">manual — humans do everything</option>
+              <option value="recommendations">recommendations — workers suggest, humans approve</option>
+              <option value="autonomous">autonomous — approved workers act on their own</option>
+            </select>
+          </label>
+          <div className="field">
+            Approved worker categories
+            <div style={{ display: "flex", gap: 14, marginTop: 6, flexWrap: "wrap" }}>
+              {WORKER_CATEGORIES.map((c) => (
+                <label key={c} style={{ fontWeight: 400 }}>
+                  <input
+                    type="checkbox"
+                    checked={settings.approved_worker_categories?.includes(c) ?? false}
+                    onChange={(e) => {
+                      const cur = new Set(settings.approved_worker_categories ?? []);
+                      if (e.target.checked) cur.add(c);
+                      else cur.delete(c);
+                      setSettings({ ...settings, approved_worker_categories: [...cur] });
+                    }}
+                  />{" "}
+                  {c}
+                </label>
+              ))}
+            </div>
+          </div>
+          <button className="primary">Save settings</button>
+          {saved && (
+            <span className="hint" style={{ marginLeft: 10 }}>
+              saved ✓
+            </span>
+          )}
+        </form>
+      )}
+    </div>
+  );
+}
+
+function WorkspaceDashboard({
+  token,
+  ws,
+  onBack,
+  onOpenStudio,
+  embedded = false,
+}: {
+  token: string;
+  ws: Workspace;
+  onBack: () => void;
+  onOpenStudio: (target: StudioTarget) => void;
+  /** Rendered inside the workspace row rather than as its own page: the row
+   *  already shows the name and carries "Open in IDE", so the topbar would be
+   *  a second copy of both. */
+  embedded?: boolean;
+}) {
+  const [settings, setSettings] = useState<WorkspaceSettings | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const s = await api.workspaceSettings(token, ws.id);
+      setSettings(s ?? { automation_level: "recommendations", approved_worker_categories: [] });
+    } catch (e) {
+      setError(errText(e));
+    }
+  }, [token, ws.id]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   return (
     <>
@@ -2657,7 +2813,7 @@ function WorkspaceDashboard({
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={onBack}>← Back</button>
             <button className="primary" onClick={() => onOpenStudio(ws)}>
-              Open Studio
+              Open in IDE
             </button>
           </div>
         </div>
@@ -2699,7 +2855,7 @@ function WorkspaceDashboard({
           </h2>
           {onOpenStudio && (
             <button className="primary" onClick={() => onOpenStudio(ws)}>
-              Open Studio
+              Open in IDE
             </button>
           )}
         </div>
@@ -2722,71 +2878,6 @@ function WorkspaceDashboard({
               </li>
             ))}
           </ul>
-        )}
-      </div>
-
-      <div className="card">
-        <div className="card-head">
-          <h2>Artifact map</h2>
-        </div>
-        <p className="hint">
-          How this project's artifacts relate — the repository, its issues, pull requests and files,
-          each a node read back from the knowledge graph. Click any node to inspect the metadata the
-          graph stored for it; use “show more” to expand a category. Run Sync on the Artifacts tab to
-          populate it. (Live work statuses are still planned.)
-        </p>
-        <ArtifactGraph token={token} />
-      </div>
-
-      <div className="card">
-        <h2>Automation — trust ramp</h2>
-        <p className="hint">
-          The domain model's trust ramp, per project: <b>manual</b> = read-only insight,{" "}
-          <b>recommendations</b> = prepared actions awaiting approval, <b>autonomous</b> = approved
-          automation for the categories below. Stored as tenant metadata (GTS-validated).
-        </p>
-        {settings && (
-          <form onSubmit={saveSettings}>
-            <label className="field" style={{ maxWidth: 320 }}>
-              Automation level
-              <select
-                style={{ display: "block", width: "100%", marginTop: 6 }}
-                value={settings.automation_level ?? "recommendations"}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    automation_level: e.target.value as WorkspaceSettings["automation_level"],
-                  })
-                }
-              >
-                <option value="manual">manual — humans do everything</option>
-                <option value="recommendations">recommendations — workers suggest, humans approve</option>
-                <option value="autonomous">autonomous — approved workers act on their own</option>
-              </select>
-            </label>
-            <div className="field">
-              Approved worker categories
-              <div style={{ display: "flex", gap: 14, marginTop: 6, flexWrap: "wrap" }}>
-                {WORKER_CATEGORIES.map((c) => (
-                  <label key={c} style={{ fontWeight: 400 }}>
-                    <input
-                      type="checkbox"
-                      checked={settings.approved_worker_categories?.includes(c) ?? false}
-                      onChange={(e) => {
-                        const cur = new Set(settings.approved_worker_categories ?? []);
-                        if (e.target.checked) cur.add(c);
-                        else cur.delete(c);
-                        setSettings({ ...settings, approved_worker_categories: [...cur] });
-                      }}
-                    />{" "}
-                    {c}
-                  </label>
-                ))}
-              </div>
-            </div>
-            <button className="primary">Save settings</button>
-            {saved && <span className="hint" style={{ marginLeft: 10 }}>saved ✓</span>}
-          </form>
         )}
       </div>
 
@@ -3505,10 +3596,14 @@ async function attachReposToWorkspace(
 function ArtifactsView({
   token,
   workspace,
+  parentWorkspaceId,
   onOpenStudio,
 }: {
   token: string;
   workspace: Workspace;
+  /** The parent workspace tenant id. `workspace` here is the project tenant;
+   *  both are tagged onto synced nodes so the graph can scope to either. */
+  parentWorkspaceId?: string;
   onOpenStudio?: (ws: Workspace) => void;
 }) {
   // Bumped after every successful sync so the ingested-artifacts viewer reloads.
@@ -3518,16 +3613,17 @@ function ArtifactsView({
       <h1>Artifacts</h1>
       <p className="subtitle">
         What this project works on — repositories attached as sources, plus files added by hand. A
-        session clones these into the IDE when you open Studio.
+        session clones these into the IDE when you open it.
       </p>
       <ProjectSources
         token={token}
         workspace={workspace}
+        parentWorkspaceId={parentWorkspaceId}
         onOpenStudio={onOpenStudio}
         onSynced={() => setRefreshKey((k) => k + 1)}
       />
-      <IngestedArtifacts token={token} refreshKey={refreshKey} />
-      <ProjectFiles token={token} />
+      <IngestedArtifacts token={token} scope={workspace.id} refreshKey={refreshKey} />
+      <ProjectFiles token={token} workspace={workspace} parentWorkspaceId={parentWorkspaceId} />
     </>
   );
 }
@@ -3535,7 +3631,17 @@ function ArtifactsView({
 /** The ingested-artifacts viewer: issues and pull requests pulled from the
  *  attached sources by the artifact-ingest gear and read back from the graph
  *  store. Reloads whenever `refreshKey` changes (i.e. after a Sync). */
-function IngestedArtifacts({ token, refreshKey }: { token: string; refreshKey: number }) {
+function IngestedArtifacts({
+  token,
+  scope,
+  refreshKey,
+}: {
+  token: string;
+  /** Project tenant id — reads are scoped to it so the list shows only this
+   *  project's ingested artifacts, not every repo across the org. */
+  scope?: string;
+  refreshKey: number;
+}) {
   const [nodes, setNodes] = useState<import("./api").ArtifactNode[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [tab, setTab] = useState<"issue" | "pull_request" | "file">("issue");
@@ -3543,10 +3649,10 @@ function IngestedArtifacts({ token, refreshKey }: { token: string; refreshKey: n
   const reload = useCallback(() => {
     setErr(null);
     api
-      .listArtifactNodes(token)
+      .listArtifactNodes(token, undefined, scope)
       .then((r) => setNodes(r.nodes ?? []))
       .catch((e) => setErr(errText(e)));
-  }, [token]);
+  }, [token, scope]);
 
   useEffect(() => {
     reload();
@@ -3560,13 +3666,44 @@ function IngestedArtifacts({ token, refreshKey }: { token: string; refreshKey: n
   const emptyLabel =
     tab === "issue" ? "issues" : tab === "pull_request" ? "pull requests" : "files";
 
+  // Experiment: ask the embedded Studio (Theia) sessions to open their
+  // Workspace Graph view. Same postMessage channel as the theme/token bridge;
+  // the IDE's portal-bridge maps `studio.openGraph` onto the graph command.
+  const openGraphInStudio = () => {
+    document
+      .querySelectorAll<HTMLIFrameElement>("iframe.space-frame")
+      .forEach((f) => {
+        const origin = f.dataset.origin;
+        if (origin) f.contentWindow?.postMessage({ type: "studio.openGraph" }, origin);
+      });
+  };
+
+  // Ask the embedded Studio (Theia) to open a repository file in its editor.
+  // The IDE's portal-bridge maps `studio.openInEditor` onto the editor open
+  // against the first workspace root (ADR-0010 openInEditor). `path` is the
+  // repo-relative path stored on the file node.
+  const openInEditor = (path?: string) => {
+    if (!path) return;
+    document
+      .querySelectorAll<HTMLIFrameElement>("iframe.space-frame")
+      .forEach((f) => {
+        const origin = f.dataset.origin;
+        if (origin) f.contentWindow?.postMessage({ type: "studio.openInEditor", path }, origin);
+      });
+  };
+
   return (
     <div className="card">
       <div className="card-head">
         <h2>Ingested{nodes ? ` · ${issues.length + prs.length + files.length}` : ""}</h2>
-        <button className="ghost" onClick={reload}>
-          Refresh
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="ghost" onClick={openGraphInStudio} title="Open the Workspace Graph in the embedded Studio IDE">
+            Open graph in Studio
+          </button>
+          <button className="ghost" onClick={reload}>
+            Refresh
+          </button>
+        </div>
       </div>
       <p className="hint">
         Issues, pull requests and repository files pulled from the attached sources by Sync. Stored
@@ -3612,6 +3749,15 @@ function IngestedArtifacts({ token, refreshKey }: { token: string; refreshKey: n
                       {v.sha ? `${kb ? " · " : ""}${String(v.sha).slice(0, 7)}` : ""}
                     </div>
                   </div>
+                  {typeof v.path === "string" && v.path && (
+                    <button
+                      className="ghost"
+                      onClick={() => openInEditor(v.path)}
+                      title="Open this file in the embedded Studio editor"
+                    >
+                      Open in editor
+                    </button>
+                  )}
                 </li>
               );
             })}
@@ -3661,431 +3807,85 @@ function IngestedArtifacts({ token, refreshKey }: { token: string; refreshKey: n
  *  back from the graph and draws each repository with its issues, pull requests
  *  and files as a radial hub-and-spoke. Edges are derived from each node's
  *  `repo` reference — no extra endpoint needed. */
-function ArtifactGraph({ token }: { token: string }) {
-  const [nodes, setNodes] = useState<ArtifactNode[] | null>(null);
-  const [edges, setEdges] = useState<ArtifactEdge[]>([]);
-  const [err, setErr] = useState<string | null>(null);
-
-  const reload = useCallback(() => {
-    setErr(null);
-    api
-      .listArtifactNodes(token)
-      .then((r) => setNodes(r.nodes ?? []))
-      .catch((e) => setErr(errText(e)));
-    // Relations are best-effort: an older backend without the endpoint just
-    // leaves the graph without cross-links rather than erroring the whole card.
-    api
-      .artifactEdges(token)
-      .then((r) => setEdges(r.edges ?? []))
-      .catch(() => setEdges([]));
-  }, [token]);
-
-  useEffect(() => {
-    reload();
-  }, [reload]);
-
-  const repos = (nodes ?? []).filter((n) => n.type_id.includes("repo"));
-
-  return (
-    <>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-        <button className="ghost" onClick={reload}>
-          Refresh
-        </button>
-      </div>
-      {err && <p className="error">{err}</p>}
-      {nodes === null ? (
-        <p className="empty">Loading graph…</p>
-      ) : repos.length === 0 ? (
-        <p className="empty">
-          Nothing ingested yet — run Sync on a repository in the Artifacts tab to build the graph.
-        </p>
-      ) : (
-        <>
-          {repos.map((repo) => (
-            <RepoGraph key={repo.instance_id} repo={repo} nodes={nodes!} edges={edges} />
-          ))}
-          <div
-            style={{
-              display: "flex",
-              gap: 16,
-              flexWrap: "wrap",
-              marginTop: 8,
-              fontSize: 12,
-              color: "var(--muted, #9aa0a6)",
-            }}
-          >
-            {[
-              ["Repository", "#3b82f6"],
-              ["Issue", "#10b981"],
-              ["Pull request", "#8b5cf6"],
-              ["File", "#f59e0b"],
-            ].map(([label, color]) => (
-              <span key={label} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                <span
-                  style={{ width: 10, height: 10, borderRadius: 10, background: color as string }}
-                />
-                {label}
-              </span>
-            ))}
-          </div>
-        </>
-      )}
-    </>
-  );
-}
-
-/** One repository's radial graph: repo in the centre, three category hubs
- *  (Issues / Pull requests / Files) with counts, and a capped sample of items
- *  under each. */
-const GRAPH_COLORS = { repo: "#3b82f6", issue: "#10b981", pr: "#8b5cf6", file: "#f59e0b" } as const;
-type GraphKind = keyof typeof GRAPH_COLORS;
-
-function nodeKind(n: ArtifactNode): GraphKind {
-  if (n.type_id.includes("pull_request")) return "pr";
-  if (n.type_id.includes("issue")) return "issue";
-  if (n.type_id.includes("file")) return "file";
-  return "repo";
-}
-
-function nodeLabel(n: ArtifactNode): string {
-  const v = n.value;
-  if (nodeKind(n) === "file") return String(v.path ?? "(file)");
-  return `${v.number != null ? `#${v.number} ` : ""}${v.title ?? "(untitled)"}`;
-}
-
-const gtrunc = (s: string, n = 40) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
-
-/** One repository's graph. The repo is the centre; three category hubs (Issues /
- *  Pull requests / Files) fan out; and every artifact is its OWN clickable node.
- *  Selecting a node opens an inspector with the full metadata the graph store
- *  holds for it. Each column is capped and grows with "show more" so a large
- *  repo stays legible. */
-function RepoGraph({
-  repo,
-  nodes,
-  edges,
-}: {
-  repo: ArtifactNode;
-  nodes: ArtifactNode[];
-  edges: ArtifactEdge[];
-}) {
-  const rid = repo.instance_id;
-  const mine = (n: ArtifactNode) => n.value.repo === rid;
-  const nodeById = new Map(nodes.map((n) => [n.instance_id, n]));
-  const issues = nodes.filter((n) => n.type_id.includes("issue") && mine(n));
-  const prs = nodes.filter((n) => n.type_id.includes("pull_request") && mine(n));
-  const files = nodes.filter((n) => n.type_id.includes("file") && mine(n));
-
-  const [selected, setSelected] = useState<ArtifactNode | null>(null);
-  const [caps, setCaps] = useState<Record<GraphKind, number>>({ repo: 0, issue: 16, pr: 16, file: 16 });
-  const bump = (k: GraphKind) => setCaps((c) => ({ ...c, [k]: c[k] + 24 }));
-
-  const hubs = [
-    { key: "issue" as GraphKind, label: "Issues", all: issues },
-    { key: "pr" as GraphKind, label: "Pull requests", all: prs },
-    { key: "file" as GraphKind, label: "Files", all: files },
-  ].map((h) => ({ ...h, items: h.all.slice(0, caps[h.key]), color: GRAPH_COLORS[h.key] }));
-
-  const W = 1180;
-  const colCX = [110, 520, 900];
-  const repoX = W / 2;
-  const repoY = 40;
-  const hubY = 116;
-  const nodesTop = 178;
-  const rowH = 22;
-  const maxRows = Math.max(1, ...hubs.map((h) => h.items.length));
-  const footerY = nodesTop + maxRows * rowH + 4;
-  const H = footerY + 30;
-
-  const isSel = (n: ArtifactNode) => selected?.instance_id === n.instance_id;
-
-  return (
-    <>
-      <svg
-        viewBox={`0 0 ${W} ${H}`}
-        width="100%"
-        role="img"
-        style={{ maxWidth: "100%", background: "var(--bg, #0e1116)", borderRadius: 10 }}
-      >
-        {/* repo → hub edges */}
-        {hubs.map((_, i) => (
-          <line
-            key={`e${i}`}
-            x1={repoX}
-            y1={repoY + 14}
-            x2={colCX[i]}
-            y2={hubY - 12}
-            stroke="var(--border, #333)"
-            strokeWidth={1.5}
-          />
-        ))}
-        {/* hub spines */}
-        {hubs.map((h, i) =>
-          h.items.length > 0 ? (
-            <line
-              key={`sp${i}`}
-              x1={colCX[i]}
-              y1={hubY + 12}
-              x2={colCX[i]}
-              y2={nodesTop + (h.items.length - 1) * rowH}
-              stroke="var(--border, #333)"
-              strokeWidth={1}
-              opacity={0.4}
-            />
-          ) : null,
-        )}
-        {/* repo node */}
-        <circle
-          cx={repoX}
-          cy={repoY}
-          r={13}
-          fill={GRAPH_COLORS.repo}
-          style={{ cursor: "pointer" }}
-          onClick={() => setSelected(repo)}
-        />
-        {isSel(repo) && (
-          <circle cx={repoX} cy={repoY} r={17} fill="none" stroke={GRAPH_COLORS.repo} strokeWidth={2} />
-        )}
-        <text x={repoX} y={repoY - 20} textAnchor="middle" fontSize={13} fontWeight={600} fill="var(--text, #e6e6e6)">
-          {gtrunc(String(repo.value.full_path ?? "repository"), 60)}
-        </text>
-        {/* hubs + artifact nodes */}
-        {hubs.map((h, i) => (
-          <g key={`h${i}`}>
-            <circle cx={colCX[i]} cy={hubY} r={10} fill={h.color} />
-            <text x={colCX[i]} y={hubY - 16} textAnchor="middle" fontSize={12.5} fontWeight={600} fill="var(--text, #e6e6e6)">
-              {h.label} · {h.all.length}
-            </text>
-            {h.items.map((n, j) => {
-              const y = nodesTop + j * rowH;
-              return (
-                <g key={n.instance_id} style={{ cursor: "pointer" }} onClick={() => setSelected(n)}>
-                  <circle cx={colCX[i]} cy={y} r={6} fill={h.color} opacity={isSel(n) ? 1 : 0.85} />
-                  {isSel(n) && <circle cx={colCX[i]} cy={y} r={9} fill="none" stroke={h.color} strokeWidth={2} />}
-                  <text
-                    x={colCX[i] + 14}
-                    y={y + 4}
-                    textAnchor="start"
-                    fontSize={11.5}
-                    fill={isSel(n) ? "var(--text, #e6e6e6)" : "var(--muted, #9aa0a6)"}
-                  >
-                    {gtrunc(nodeLabel(n))}
-                    <title>{nodeLabel(n)}</title>
-                  </text>
-                </g>
-              );
-            })}
-            {h.all.length > h.items.length && (
-              <text
-                x={colCX[i]}
-                y={nodesTop + h.items.length * rowH + 8}
-                textAnchor="middle"
-                fontSize={11}
-                fill="var(--accent, #4c8bf5)"
-                style={{ cursor: "pointer" }}
-                onClick={() => bump(h.key)}
-              >
-                + show more ({h.all.length - h.items.length} left)
-              </text>
-            )}
-          </g>
-        ))}
-      </svg>
-      {selected && (
-        <NodeInspector
-          node={selected}
-          edges={edges}
-          nodeById={nodeById}
-          onSelect={setSelected}
-          onClose={() => setSelected(null)}
-        />
-      )}
-    </>
-  );
-}
-
-/** Full metadata for one graph node, straight from the payload the graph store
- *  returned — a labelled row per field, the body behind a disclosure, and a link
- *  out to the source when there is a url. */
-/** A human label for a relation type, phrased from the selected node's side. */
-function relText(typeId: string, outgoing: boolean): string {
-  if (typeId.includes("authored_by")) return outgoing ? "Author" : "Authored";
-  if (typeId.includes("modifies")) return outgoing ? "Modifies" : "Modified by";
-  if (typeId.includes("artifact_of")) return outgoing ? "Belongs to" : "Artifacts";
-  if (typeId.includes("contains")) return outgoing ? "Contains" : "In repository";
-  return typeId;
-}
-
-function NodeInspector({
-  node,
-  edges,
-  nodeById,
-  onSelect,
-  onClose,
-}: {
-  node: ArtifactNode;
-  edges: ArtifactEdge[];
-  nodeById: Map<string, ArtifactNode>;
-  onSelect: (n: ArtifactNode) => void;
-  onClose: () => void;
-}) {
-  const v = node.value;
-  const kind = nodeKind(node);
-
-  // Relations of this node, grouped by a human label. Endpoints resolve to the
-  // nodes we hold; a capped node set means some targets may be unresolved (we
-  // still show their id, just not clickable).
-  const REL_CAP = 40;
-  const relGroups = new Map<string, { id: string; node?: ArtifactNode }[]>();
-  for (const e of edges) {
-    const outgoing = e.from === node.instance_id;
-    const incoming = e.to === node.instance_id;
-    if (!outgoing && !incoming) continue;
-    const otherId = outgoing ? e.to : e.from;
-    const label = relText(e.type_id, outgoing);
-    const arr = relGroups.get(label) ?? [];
-    arr.push({ id: otherId, node: nodeById.get(otherId) });
-    relGroups.set(label, arr);
-  }
-  const rows: [string, string][] = [];
-  const add = (label: string, val: unknown) => {
-    if (val == null || val === "") return;
-    if (Array.isArray(val)) {
-      if (val.length === 0) return;
-      rows.push([label, val.join(", ")]);
-    } else if (typeof val === "boolean") {
-      rows.push([label, val ? "yes" : "no"]);
-    } else {
-      rows.push([label, String(val)]);
-    }
-  };
-  add("Full path", v.full_path);
-  add("Number", v.number);
-  add("State", v.state);
-  add("Author", v.author);
-  add("Labels", v.labels);
-  add("Source branch", v.source_branch);
-  add("Target branch", v.target_branch);
-  add("Merged", v.merged);
-  add("Provider", v.provider);
-  add("External id", v.external_id);
-  add("Path", v.path);
-  add("SHA", v.sha);
-  add("Directory", v.is_dir);
-  add("Size", v.size != null ? `${v.size} bytes` : undefined);
-  add("Created", v.created_at);
-  add("Updated", v.updated_at);
-  const handled = new Set([
-    "repo", "body", "text", "title", "number", "state", "author", "labels",
-    "source_branch", "target_branch", "merged", "provider", "external_id",
-    "path", "sha", "is_dir", "size", "created_at", "updated_at", "full_path", "url",
-  ]);
-  for (const [k, val] of Object.entries(v)) if (!handled.has(k)) add(k, val);
-
-  const title =
-    kind === "file"
-      ? String(v.path ?? "(file)")
-      : kind === "repo"
-        ? String(v.full_path ?? "repository")
-        : `${v.number != null ? `#${v.number} ` : ""}${v.title ?? "(untitled)"}`;
-  const body = typeof v.body === "string" ? v.body : "";
-
-  return (
-    <div className="card" style={{ marginTop: 12 }}>
-      <div className="card-head">
-        <h3 style={{ margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ width: 11, height: 11, borderRadius: 11, background: GRAPH_COLORS[kind], display: "inline-block" }} />
-          {gtrunc(title, 80)}
-        </h3>
-        <button className="ghost" onClick={onClose}>
-          Close
-        </button>
-      </div>
-      <div className="sub" style={{ marginBottom: 10 }}>
-        <code>{shortTypeName(node.type_id)}</code> · <code>{node.instance_id.slice(0, 12)}…</code>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "max-content 1fr", gap: "4px 16px" }}>
-        {rows.map(([k, val]) => (
-          <div key={k} style={{ display: "contents" }}>
-            <span className="sub">{k}</span>
-            <span style={{ wordBreak: "break-word" }}>{val}</span>
-          </div>
-        ))}
-      </div>
-
-      {relGroups.size > 0 && (
-        <div style={{ marginTop: 12 }}>
-          <div className="sub" style={{ marginBottom: 6 }}>
-            Relations
-          </div>
-          {[...relGroups.entries()].map(([label, items]) => (
-            <div key={label} style={{ marginBottom: 6 }}>
-              <span className="sub" style={{ marginRight: 6 }}>
-                {label} · {items.length}
-              </span>
-              <span className="chips">
-                {items.slice(0, REL_CAP).map((it, idx) => {
-                  const name = it.node ? gtrunc(nodeLabel(it.node), 36) : `${it.id.slice(0, 8)}…`;
-                  return it.node ? (
-                    <button
-                      key={`${it.id}-${idx}`}
-                      type="button"
-                      className="chip"
-                      title={it.node ? nodeLabel(it.node) : it.id}
-                      onClick={() => it.node && onSelect(it.node)}
-                    >
-                      {name}
-                    </button>
-                  ) : (
-                    <span key={`${it.id}-${idx}`} className="chip" title={it.id}>
-                      {name}
-                    </span>
-                  );
-                })}
-                {items.length > REL_CAP && (
-                  <span className="sub">+{items.length - REL_CAP} more</span>
-                )}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-      {v.url && (
-        <p style={{ marginTop: 10 }}>
-          <a href={String(v.url)} target="_blank" rel="noreferrer">
-            Open on {String(v.provider ?? "source")} ↗
-          </a>
-        </p>
-      )}
-      {body && (
-        <details style={{ marginTop: 10 }}>
-          <summary className="sub">Body</summary>
-          <pre style={{ whiteSpace: "pre-wrap", fontSize: 12, marginTop: 8, maxHeight: 320, overflow: "auto" }}>
-            {body.slice(0, 4000)}
-            {body.length > 4000 ? "…" : ""}
-          </pre>
-        </details>
-      )}
-    </div>
-  );
-}
-
 /** The manual-file half of Artifacts. file-storage is the platform blob store,
  *  but uploads go through its signed-URL data-plane sidecar, which this assembly
  *  does not run — so the list is read-only and "Add file" says why rather than
  *  offering a button that cannot finish. Per-project association arrives with
  *  the project-as-tenant work (phase 2). */
-function ProjectFiles({ token }: { token: string }) {
-  const [files, setFiles] = useState<import("./api").StoredFile[] | null>(null);
+function ProjectFiles({
+  token,
+  workspace,
+  parentWorkspaceId,
+}: {
+  token: string;
+  workspace: Workspace;
+  /** Parent workspace tenant. `workspace` is the project tenant; files are
+   *  tagged with both so the graph can scope to either. */
+  parentWorkspaceId?: string;
+}) {
+  const [files, setFiles] = useState<
+    { id: string; path: string; size?: number; has_text?: boolean }[] | null
+  >(null);
   const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  const reload = useCallback(async () => {
+    setErr(null);
+    try {
+      // Scope to this project tenant (matches the file's project_id), then keep
+      // only hand-added files.
+      const { nodes } = await api.listArtifactNodes(token, "file", workspace.id);
+      const mine = (nodes ?? [])
+        .filter((n) => {
+          const v = (n.value ?? {}) as Record<string, unknown>;
+          return v.origin === "manual";
+        })
+        .map((n) => {
+          const v = (n.value ?? {}) as Record<string, unknown>;
+          return {
+            id: n.instance_id,
+            path: typeof v.path === "string" ? v.path : n.instance_id,
+            size: typeof v.size === "number" ? v.size : undefined,
+            has_text: v.has_text === true,
+          };
+        });
+      setFiles(mine);
+    } catch (e) {
+      setErr(errText(e));
+    }
+  }, [token, workspace.id]);
 
   useEffect(() => {
-    api
-      .files(token)
-      .then((f) => setFiles(f.items ?? []))
-      .catch((e) => setErr(errText(e)));
-  }, [token]);
+    void reload();
+  }, [reload]);
+
+  const TEXT_RE = /\.(md|markdown|txt|json|ya?ml|rst|adoc|csv|tsv|toml|ini|cfg|xml|html?|css|jsx?|tsx?|py|rs|go|java|sql|sh)$/i;
+
+  const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-picking the same file
+    if (!file) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const text = TEXT_RE.test(file.name) ? await file.text() : undefined;
+      await api.addManualFile(token, {
+        // `workspace` is the project tenant; tag both so the file shows in a
+        // workspace-level graph and a project-level one alike.
+        workspace_id: parentWorkspaceId ?? workspace.id,
+        project_id: workspace.id,
+        path: file.name,
+        text,
+        size: file.size,
+      });
+      await reload();
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const count = files?.length ?? 0;
 
@@ -4093,31 +3893,31 @@ function ProjectFiles({ token }: { token: string }) {
     <div className="card">
       <div className="card-head">
         <h2>Added by hand{count > 0 ? ` · ${count}` : ""}</h2>
-        <button
-          className="primary"
-          disabled
-          title="Uploads need the file-storage data-plane (signed-URL sidecar), which is not deployed in this environment yet"
-        >
-          Add file…
+        <button className="primary" disabled={busy} onClick={() => inputRef.current?.click()}>
+          {busy ? "Uploading…" : "Add file…"}
         </button>
       </div>
+      <input ref={inputRef} type="file" style={{ display: "none" }} onChange={onPick} />
       <p className="hint">
-        Manually added files for later processing. Upload needs the file-storage data-plane, which
-        this environment does not run yet — the list is read-only for now and shows the platform
-        file-storage until per-project files are wired.
+        Manually added files are stored as file nodes in the artifact graph, scoped to this project —
+        no file-storage data-plane needed. Text files keep their content (searchable and graph-ready);
+        binary files keep only metadata.
       </p>
       {err && <p className="error">{err}</p>}
       {files === null ? (
         <p className="empty">Loading files…</p>
       ) : files.length === 0 ? (
-        <p className="empty">No files yet — manual upload arrives with the file-storage data-plane.</p>
+        <p className="empty">No files yet — use “Add file…” to attach one.</p>
       ) : (
         <ul className="rows">
           {files.map((f) => (
             <li key={f.id}>
               <div className="grow">
-                <div className="name">{f.name ?? f.file_name ?? f.id}</div>
-                <div className="sub">{f.id}</div>
+                <div className="name">{f.path}</div>
+                <div className="sub">
+                  {typeof f.size === "number" ? `${(f.size / 1024).toFixed(1)} KB` : ""}
+                  {f.has_text ? " · text" : " · metadata only"}
+                </div>
               </div>
             </li>
           ))}
@@ -4162,11 +3962,15 @@ function parseRepoSource(
 function ProjectSources({
   token,
   workspace: ws,
+  parentWorkspaceId,
   onOpenStudio,
   onSynced,
 }: {
   token: string;
   workspace: Workspace;
+  /** Parent workspace tenant. `ws` is the project tenant; sync tags both onto
+   *  every node so the graph can scope to either level. */
+  parentWorkspaceId?: string;
   onOpenStudio?: (ws: Workspace) => void;
   onSynced?: () => void;
 }) {
@@ -4196,20 +4000,41 @@ function ProjectSources({
         secret_ref: r.token_ref,
         repo_full_path: parsed.full_path,
         base_url: parsed.base_url,
-        // Let the backend read this repo's checkout from the IDE workspace
-        // (one shared clone) when the session has already materialized it.
-        workspace_id: ws.id,
+        // Tag every node with both tenants: the parent workspace (so a
+        // workspace-level graph shows every project) and this project (so a
+        // project-level graph shows only its own). `project_id` also locates
+        // the IDE's shared checkout to read instead of cloning.
+        workspace_id: parentWorkspaceId ?? ws.id,
+        project_id: ws.id,
         repo_dir: r.target || r.name,
       });
       const deadline = Date.now() + 5 * 60 * 1000;
+      // Running total of nodes the backend reports as already stored in the
+      // graph. When it climbs, refresh the ingested-artifacts viewer so the
+      // objects appear as they land, not only when the whole sync finishes.
+      let lastStored = -1;
+      // Compact "what's been pulled so far" line, hiding zero counts.
+      const counts = (t: {
+        issues: number;
+        pull_requests: number;
+        files: number;
+        comments: number;
+        commits: number;
+      }) =>
+        [
+          t.issues ? `${t.issues} issues` : "",
+          t.pull_requests ? `${t.pull_requests} PRs` : "",
+          t.files ? `${t.files} files` : "",
+          t.comments ? `${t.comments} comments` : "",
+          t.commits ? `${t.commits} commits` : "",
+        ]
+          .filter(Boolean)
+          .join(" · ");
       for (;;) {
         await new Promise((res) => setTimeout(res, 1200));
         const t = await api.artifactSyncTask(token, task_id);
         if (t.status === "succeeded") {
-          setSync((s) => ({
-            ...s,
-            [r.name]: `${t.issues} issues · ${t.pull_requests} PRs · ${t.files} files`,
-          }));
+          setSync((s) => ({ ...s, [r.name]: counts(t) || "done" }));
           onSynced?.();
           break;
         }
@@ -4217,8 +4042,17 @@ function ProjectSources({
           setSync((s) => ({ ...s, [r.name]: t.message || "sync failed" }));
           break;
         }
-        const phase = t.message || t.status;
-        setSync((s) => ({ ...s, [r.name]: /…$/.test(phase) ? phase : `${phase}…` }));
+        // Live line: the current phase, plus counts and how many objects are
+        // already in the graph.
+        const phase = (t.message || t.status).replace(/…$/, "");
+        const c = counts(t);
+        const line = `${phase}${c ? ` — ${c}` : ""}${t.stored ? ` · ${t.stored} in graph` : ""}…`;
+        setSync((s) => ({ ...s, [r.name]: line }));
+        // Objects landed since last tick → reload the ingested list.
+        if (t.stored > lastStored) {
+          lastStored = t.stored;
+          onSynced?.();
+        }
         if (Date.now() > deadline) {
           setSync((s) => ({ ...s, [r.name]: "timed out — still running server-side" }));
           break;
@@ -6386,7 +6220,7 @@ function StudioLauncher({
   // away and the container-side splash keeps the frame alive until Theia
   // takes the port over.
 
-  // "Open Studio" means open the Studio — launch as soon as the sources are
+  // "Open in IDE" means open the Studio — launch as soon as the sources are
   // known instead of asking for a second click. Creation is idempotent per
   // workspace: an already-running session is simply returned (and opened).
   useEffect(() => {

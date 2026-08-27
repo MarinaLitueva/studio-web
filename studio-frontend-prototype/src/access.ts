@@ -51,7 +51,7 @@ export const PRIVILEGES: Privilege[] = [
   { id: "project.create", group: "Projects", label: "Create projects" },
   { id: "project.edit", group: "Projects", label: "Edit a project" },
   { id: "project.delete", group: "Projects", label: "Delete a project" },
-  { id: "project.studio", group: "Projects", label: "Open Studio" },
+  { id: "project.studio", group: "Projects", label: "Open in IDE" },
 
   { id: "work.view", group: "Works", label: "View works" },
   { id: "work.create", group: "Works", label: "Create works" },
