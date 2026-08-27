@@ -94,4 +94,10 @@ spec:
         - name: vault
           secret:
             secretName: {{ .Values.keycloak.vaultSecret }}
+            # Service releases share this chart with the infrastructure
+            # release.  Keep an already-running Keycloak available while the
+            # environment-specific social-login vault is being provisioned;
+            # deploy-infra.yml enforces that the Secret exists before an
+            # infrastructure rollout.
+            optional: true
 {{- end }}
