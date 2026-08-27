@@ -1,10 +1,12 @@
 import { inject, injectable } from '@theia/core/shared/inversify';
 import {
     type StudioAuditEntry,
+    type StudioOpenInEditorRequest,
     type StudioOperationEvent,
     type StudioRepositoryDescriptor,
     type StudioRuntimeClient
 } from '../common/studio-protocol';
+import { OpenInEditorFrontendController } from './open-in-editor-controller';
 import { AuditFrontendController } from './audit-controller';
 import { GitOperationsFrontendController } from './git-operations-contribution';
 import { WorkspaceSourcesFrontendController } from './workspace-sources-controller';
@@ -24,7 +26,9 @@ export class StudioRuntimeFrontendClient implements StudioRuntimeClient {
         @inject(AuditFrontendController)
         protected readonly audit: AuditFrontendController,
         @inject(WorkspaceSourcesFrontendController)
-        protected readonly workspaceSources: WorkspaceSourcesFrontendController
+        protected readonly workspaceSources: WorkspaceSourcesFrontendController,
+        @inject(OpenInEditorFrontendController)
+        protected readonly openInEditor: OpenInEditorFrontendController
     ) {}
 
     onOperationEvent(event: StudioOperationEvent): void {
@@ -45,5 +49,9 @@ export class StudioRuntimeFrontendClient implements StudioRuntimeClient {
 
     onWorkspaceActivityEvent(event: Parameters<WorkspaceSourcesFrontendController['onWorkspaceActivityEvent']>[0]): void {
         this.workspaceSources.onWorkspaceActivityEvent(event);
+    }
+
+    onOpenInEditor(request: StudioOpenInEditorRequest): void {
+        void this.openInEditor.onOpenInEditor(request);
     }
 }

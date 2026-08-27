@@ -1,5 +1,8 @@
 import * as path from 'path';
+import * as express from '@theia/core/shared/express';
 import { ContainerModule } from '@theia/core/shared/inversify';
+import { mountStudioControlApi } from './studio-control-api';
+import { StudioEventForwarder, resolveForwarderConfig } from './studio-event-forwarder';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
 import { ConnectionHandler, Disposable, DisposableCollection, RpcConnectionHandler } from '@theia/core/lib/common';
 import {
@@ -8,6 +11,8 @@ import {
     type EnqueueStudioOperationRequest,
     type StudioAuditDeltaRequest,
     type StudioOperationDeltaRequest,
+    type StudioOpenInEditorRequest,
+    type StudioOpenInEditorResult,
     type StudioRetryOperationRequest,
     type StudioRuntimeClient,
     type StudioWorkspaceRequest
@@ -81,6 +86,10 @@ export class StudioRuntimeEndpoint implements StudioRuntimeService, BackendAppli
     protected runtimeMode: WorkspaceRuntimeMode = 'legacy';
     protected canonicalConfigPath = '';
     protected workspaceRoot = '';
+    // Bridge status (ADR-0010): set once onStart completes; the max operation
+    // sequence observed, so the control API's runtime status is cheap.
+    protected started = false;
+    protected lastEventSequence = 0;
 
     constructor(
         protected readonly runtimeConfigService: StudioRuntimeConfigService,
@@ -109,13 +118,16 @@ export class StudioRuntimeEndpoint implements StudioRuntimeService, BackendAppli
 
         await this.workspaceSyncOrchestrator.initialize();
         this.toDispose.push(Disposable.create(
-            this.operationQueue.subscribe(event => this.broadcast(client => {
-                client.onOperationEvent(event);
-                const auditEntry = this.operationQueue.getAuditEntriesAfter(event.sequence - 1).entries[0];
-                if (auditEntry) {
-                    client.onAuditEvent?.(auditEntry);
-                }
-            }))
+            this.operationQueue.subscribe(event => {
+                this.lastEventSequence = Math.max(this.lastEventSequence, event.sequence);
+                this.broadcast(client => {
+                    client.onOperationEvent(event);
+                    const auditEntry = this.operationQueue.getAuditEntriesAfter(event.sequence - 1).entries[0];
+                    if (auditEntry) {
+                        client.onAuditEvent?.(auditEntry);
+                    }
+                });
+            })
         ));
         this.toDispose.push(this.repositoryRegistry.onDidChangeRepositories(repositories =>
             this.broadcast(client => client.onRepositoriesChanged(repositories))
@@ -126,7 +138,37 @@ export class StudioRuntimeEndpoint implements StudioRuntimeService, BackendAppli
         this.toDispose.push(this.workspaceSyncOrchestrator.onDidChangeActivity(event =>
             this.broadcast(client => client.onWorkspaceActivityEvent?.(event))
         ));
+        const forwarderConfig = resolveForwarderConfig(config.workspaceId);
+        if (forwarderConfig) {
+            const forwarder = new StudioEventForwarder(forwarderConfig);
+            this.addClient(forwarder);
+            this.toDispose.push(Disposable.create(() => this.removeClient(forwarder)));
+        }
         await this.operationQueue.initialize();
+        this.started = true;
+    }
+
+    /**
+     * Mount the internal S2S control API (ADR-0010). Dormant unless the
+     * STUDIO_THEIA_S2S_TOKEN is set, so a normal IDE session is unaffected.
+     */
+    configure(app: express.Application): void {
+        mountStudioControlApi(app, {
+            workspaceId: () => this.runtimeConfigService.getConfig().workspaceId,
+            runtimeStatus: () => ({
+                ready: this.started,
+                workspaceMode: this.runtimeMode,
+                activeClients: this.clients.size,
+                lastEventSequence: this.lastEventSequence,
+                version: (process.env.STUDIO_THEIA_VERSION ?? '').trim() || 'dev'
+            }),
+            getSession: () => this.getSession(),
+            getRepositories: () => this.getRepositories(),
+            enqueueOperation: request => this.enqueueOperation(request),
+            getOperationDeltas: request => this.getOperationDeltas(request),
+            retryOperation: request => this.retryOperation(request),
+            openInEditor: request => this.openInEditor(request)
+        });
     }
 
     async getSession() {
@@ -135,6 +177,21 @@ export class StudioRuntimeEndpoint implements StudioRuntimeService, BackendAppli
 
     async getRepositories() {
         return this.repositoryRegistry.descriptors;
+    }
+
+    async openInEditor(request: StudioOpenInEditorRequest): Promise<StudioOpenInEditorResult> {
+        // Broadcast to the runtime clients; browser clients open the file, the
+        // event forwarder (no onOpenInEditor) is skipped. `delivered` counts the
+        // clients that can act on it, so a session with no open browser tab
+        // reports opened:false instead of a false positive.
+        let delivered = 0;
+        this.broadcast(client => {
+            if (client.onOpenInEditor) {
+                client.onOpenInEditor(request);
+                delivered++;
+            }
+        });
+        return { opened: delivered > 0, resolvedRelativePath: request.relativePath };
     }
 
     async resolveWorkspacePath(request: StudioWorkspaceRequest) {

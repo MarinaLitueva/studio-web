@@ -21,6 +21,7 @@ use toolkit_security::SecurityContext;
 use uuid::Uuid;
 
 use super::clone;
+use super::embed::Embedder;
 use super::graph::{GraphStore, GtsEdge, GtsNode};
 use super::gts;
 use super::tasks::{TaskRecord, TaskRegistry};
@@ -31,6 +32,38 @@ const MAX_PAGES: u32 = 50;
 const PER_PAGE: u32 = 100;
 /// Backstop on file nodes per sync, so a giant monorepo can't flood the graph.
 const MAX_FILES: usize = 10_000;
+/// Backstops on comment/commit nodes per sync — the same "don't flood the
+/// graph" guard as files. Hitting one is logged (not silent truncation).
+const MAX_COMMENTS: usize = 20_000;
+const MAX_COMMITS: usize = 20_000;
+/// Chunk sizes for flushing to the graph store. graph-storage caps a single
+/// ingest at ~10k nodes / 20k edges (and a per-payload ceiling), so we upsert
+/// in bounded batches instead of one giant call — this also bounds memory and
+/// makes a mid-sync failure partial rather than all-or-nothing.
+const NODE_CHUNK: usize = 1_000;
+const EDGE_CHUNK: usize = 5_000;
+
+/// The text an embedder sees for a node — mirrors the fields lexical search
+/// composes (title/path/body/message/…), so a vector hit and a keyword hit
+/// agree on what the node "is about".
+fn node_text(n: &GtsNode) -> String {
+    let v = &n.value;
+    let mut parts: Vec<String> = Vec::new();
+    for key in [
+        "title",
+        "path",
+        "full_path",
+        "body",
+        "message",
+        "summary",
+        "login",
+    ] {
+        if let Some(s) = v.get(key).and_then(serde_json::Value::as_str) {
+            parts.push(s.to_string());
+        }
+    }
+    parts.join("\n")
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct SyncSummary {
@@ -44,6 +77,10 @@ pub struct IngestService {
     /// provider key (`github`, …) → driver.
     drivers: HashMap<String, Arc<dyn ConnectorDriver>>,
     graph: Arc<dyn GraphStore>,
+    /// Computes node embeddings for the graph's vector column. `NoopEmbedder`
+    /// until a real model is wired — its `dimensions() == 0` short-circuits the
+    /// embedding step, so ingest and search behave exactly as before.
+    embedder: Arc<dyn Embedder>,
     /// The studio-session workspaces root (`STUDIO_WORKSPACES_ROOT`). When a
     /// sync names a workspace + repo dir and the session gear has already
     /// cloned it here, ingest reads that checkout instead of cloning its own —
@@ -56,11 +93,31 @@ pub struct IngestService {
     tasks: Arc<TaskRegistry>,
 }
 
+/// One spec-quality finding to persist. Built by the portal from a detector
+/// result; `subject` is the document node's instance id.
+pub struct QualityFinding {
+    pub detector: String,
+    pub subject: String,
+    pub path: Option<String>,
+    pub severity: Option<String>,
+    pub summary: Option<String>,
+    pub score: Option<f64>,
+    pub details: serde_json::Value,
+}
+
+/// A relation between two document nodes derived from a detector (bloat
+/// duplicate / traceability link). Endpoints are node instance ids.
+pub struct QualityLink {
+    pub from: String,
+    pub to: String,
+}
+
 impl IngestService {
     pub fn new(
         credstore: Arc<dyn CredStoreClientV1>,
         drivers: HashMap<String, Arc<dyn ConnectorDriver>>,
         graph: Arc<dyn GraphStore>,
+        embedder: Arc<dyn Embedder>,
         workspaces_root: Option<PathBuf>,
         work_root: Option<PathBuf>,
     ) -> Self {
@@ -68,6 +125,7 @@ impl IngestService {
             credstore,
             drivers,
             graph,
+            embedder,
             workspaces_root,
             work_root,
             tasks: Arc::new(TaskRegistry::default()),
@@ -109,6 +167,7 @@ impl IngestService {
         since: Option<String>,
         token: String,
         workspace_id: Option<String>,
+        project_id: Option<String>,
         repo_dir: Option<String>,
     ) -> String {
         let id = Uuid::new_v4().to_string();
@@ -127,6 +186,7 @@ impl IngestService {
                     since.as_deref(),
                     &token,
                     workspace_id.as_deref(),
+                    project_id.as_deref(),
                     repo_dir.as_deref(),
                     Some(&task_id),
                 )
@@ -162,6 +222,7 @@ impl IngestService {
         since: Option<&str>,
         token: &str,
         workspace_id: Option<&str>,
+        project_id: Option<&str>,
         repo_dir: Option<&str>,
         task_id: Option<&str>,
     ) -> anyhow::Result<SyncSummary> {
@@ -187,6 +248,9 @@ impl IngestService {
         let mut users: HashMap<String, GtsNode> = HashMap::new();
         let mut pr_refs: Vec<(i64, String)> = Vec::new();
         let mut file_paths: HashSet<String> = HashSet::new();
+        // issue/PR number → its node instance id, so a comment (which only knows
+        // the number it is on) can be linked to the right artifact node.
+        let mut by_number: HashMap<i64, String> = HashMap::new();
 
         // Link an issue/PR to its author: intern a user node and add an
         // authored_by edge. No-op when the author is unknown.
@@ -205,6 +269,16 @@ impl IngestService {
         let repo_id = repo.instance_id.clone();
         nodes.push(repo);
 
+        // How many of `nodes` are already flushed to the graph. Each phase
+        // flushes the nodes it just appended (`nodes[flushed..]`) so objects
+        // land in the store as the sync runs. Flush the repo node right away.
+        let mut flushed = 0usize;
+        self.flush_and_report(
+            ctx, task_id, &mut nodes, &mut flushed, workspace_id, project_id,
+            "pulling issues…", 0, 0, 0, 0, 0,
+        )
+        .await?;
+
         self.progress(task_id, "pulling issues…");
         let mut issues = 0usize;
         for page in 1..=MAX_PAGES {
@@ -217,11 +291,20 @@ impl IngestService {
             issues += batch.len();
             for i in batch {
                 let author = i.author.clone();
+                let number = i.number;
                 let node = gts::issue_node(&repo_id, connector_id, repo_full_path, i);
                 edges.push(gts::artifact_of_edge(&node.instance_id, &repo_id));
                 author_edge(&mut edges, &mut users, &node.instance_id, author.as_deref());
+                by_number.insert(number, node.instance_id.clone());
                 nodes.push(node);
             }
+            // Flush this page of issues immediately — they show up in the graph
+            // (and the live count climbs) before the whole sync completes.
+            self.flush_and_report(
+                ctx, task_id, &mut nodes, &mut flushed, workspace_id, project_id,
+                "pulling issues…", issues, 0, 0, 0, 0,
+            )
+            .await?;
         }
 
         self.progress(task_id, "pulling pull requests…");
@@ -241,9 +324,15 @@ impl IngestService {
                 let pr_id = node.instance_id.clone();
                 edges.push(gts::artifact_of_edge(&pr_id, &repo_id));
                 author_edge(&mut edges, &mut users, &pr_id, author.as_deref());
+                by_number.insert(number, pr_id.clone());
                 pr_refs.push((number, pr_id));
                 nodes.push(node);
             }
+            self.flush_and_report(
+                ctx, task_id, &mut nodes, &mut flushed, workspace_id, project_id,
+                "pulling pull requests…", issues, pull_requests, 0, 0, 0,
+            )
+            .await?;
         }
 
         // Files come from, in order of preference:
@@ -253,8 +342,12 @@ impl IngestService {
         //   3. the connector tree API (metadata only).
         // Best-effort: a failure here never discards the issue/PR nodes.
         let mut files = 0usize;
+        // The IDE materializes each repo under the tenant that opened Studio —
+        // the project tenant when opened from a project. Prefer `project_id`
+        // for the checkout path; fall back to `workspace_id` for a
+        // workspace-level open.
         let on_disk: Option<(Vec<clone::WalkedFile>, Option<String>)> = if let Some(dir) =
-            self.shared_checkout_dir(workspace_id, repo_dir)
+            self.shared_checkout_dir(project_id.or(workspace_id), repo_dir)
         {
             self.progress(task_id, "reading workspace files…");
             match self.walk_checkout(dir).await {
@@ -339,6 +432,14 @@ impl IngestService {
             }
         }
 
+        // Flush the file nodes gathered from the checkout/tree before deriving
+        // PR→file links (those are edges, whose endpoints must already exist).
+        self.flush_and_report(
+            ctx, task_id, &mut nodes, &mut flushed, workspace_id, project_id,
+            "reading files…", issues, pull_requests, files, 0, 0,
+        )
+        .await?;
+
         // PR → file (`modifies`): one API call per PR, best-effort, and only for
         // files we actually ingested so every edge endpoint exists in the graph.
         if !pr_refs.is_empty() && !file_paths.is_empty() {
@@ -369,21 +470,145 @@ impl IngestService {
             }
         }
 
-        // Author nodes discovered along the way join the batch.
-        nodes.extend(users.into_values());
-
-        self.progress(task_id, "storing…");
-        self.graph.upsert_nodes(ctx, &nodes).await?;
-        // Relations are additive: if the store rejects an edge batch, keep the
-        // nodes (the sync still succeeded) and log rather than failing the job.
-        if let Err(e) = self.graph.upsert_edges(ctx, &edges).await {
-            tracing::warn!(
-                error = %e,
-                repo = repo_full_path,
-                edges = edges.len(),
-                "studio-artifact-ingest: edge upsert failed — nodes stored without relations"
-            );
+        // Comments on issues and PRs. Best-effort and paged; each links to the
+        // issue/PR node by number (`comment_on`) and to its author.
+        self.progress(task_id, "pulling comments…");
+        let mut comments = 0usize;
+        for page in 1..=MAX_PAGES {
+            let batch = match driver
+                .list_comments(&auth, repo_full_path, since, page, PER_PAGE)
+                .await
+            {
+                Ok(b) => b,
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        repo = repo_full_path,
+                        "studio-artifact-ingest: comment listing failed — skipping comments"
+                    );
+                    break;
+                }
+            };
+            if batch.is_empty() {
+                break;
+            }
+            comments += batch.len();
+            for c in batch {
+                let author = c.author.clone();
+                let target = by_number.get(&c.target_number).cloned();
+                let node = gts::comment_node(&repo_id, connector_id, repo_full_path, c);
+                let comment_id = node.instance_id.clone();
+                if let Some(target_id) = target {
+                    edges.push(gts::comment_on_edge(&comment_id, &target_id));
+                }
+                author_edge(&mut edges, &mut users, &comment_id, author.as_deref());
+                nodes.push(node);
+            }
+            self.flush_and_report(
+                ctx, task_id, &mut nodes, &mut flushed, workspace_id, project_id,
+                "pulling comments…", issues, pull_requests, files, comments, 0,
+            )
+            .await?;
+            if comments >= MAX_COMMENTS {
+                tracing::warn!(
+                    repo = repo_full_path,
+                    cap = MAX_COMMENTS,
+                    "studio-artifact-ingest: comment cap reached — remaining comments not ingested"
+                );
+                break;
+            }
         }
+
+        // Commits. Best-effort and paged; each links to the repo (`artifact_of`)
+        // and to its author. Commit→file links are deferred (one extra call per
+        // commit — see the batching plan).
+        self.progress(task_id, "pulling commits…");
+        let mut commits = 0usize;
+        for page in 1..=MAX_PAGES {
+            let batch = match driver
+                .list_commits(&auth, repo_full_path, since, page, PER_PAGE)
+                .await
+            {
+                Ok(b) => b,
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        repo = repo_full_path,
+                        "studio-artifact-ingest: commit listing failed — skipping commits"
+                    );
+                    break;
+                }
+            };
+            if batch.is_empty() {
+                break;
+            }
+            commits += batch.len();
+            for c in batch {
+                let author = c.author.clone();
+                let node = gts::commit_node(&repo_id, connector_id, repo_full_path, c);
+                let commit_id = node.instance_id.clone();
+                edges.push(gts::artifact_of_edge(&commit_id, &repo_id));
+                author_edge(&mut edges, &mut users, &commit_id, author.as_deref());
+                nodes.push(node);
+            }
+            self.flush_and_report(
+                ctx, task_id, &mut nodes, &mut flushed, workspace_id, project_id,
+                "pulling commits…", issues, pull_requests, files, comments, commits,
+            )
+            .await?;
+            if commits >= MAX_COMMITS {
+                tracing::warn!(
+                    repo = repo_full_path,
+                    cap = MAX_COMMITS,
+                    "studio-artifact-ingest: commit cap reached — remaining commits not ingested"
+                );
+                break;
+            }
+        }
+        tracing::info!(
+            repo = repo_full_path,
+            comments,
+            commits,
+            "studio-artifact-ingest: pulled comments and commits"
+        );
+
+        // Author nodes discovered along the way join the batch, then a final
+        // flush stores them plus anything appended since the last page. Node
+        // tenant-tagging happens inside `store_node_batch`, so every flushed
+        // batch is already scoped (see rest.rs `scope`).
+        nodes.extend(users.into_values());
+        self.progress(task_id, "storing…");
+        self.flush_and_report(
+            ctx, task_id, &mut nodes, &mut flushed, workspace_id, project_id,
+            "storing…", issues, pull_requests, files, comments, commits,
+        )
+        .await?;
+
+        // Relations last — every endpoint node is now stored. Additive: a
+        // rejected edge chunk is logged and skipped (its nodes are already
+        // stored and the sync still succeeds) rather than failing the whole job.
+        let (total_nodes, total_edges) = (flushed, edges.len());
+        let mut edge_errors = 0usize;
+        for chunk in edges.chunks(EDGE_CHUNK) {
+            if let Err(e) = self.graph.upsert_edges(ctx, chunk).await {
+                edge_errors += chunk.len();
+                tracing::warn!(
+                    error = %e,
+                    repo = repo_full_path,
+                    chunk = chunk.len(),
+                    "studio-artifact-ingest: edge chunk upsert failed — skipped"
+                );
+            }
+        }
+        tracing::info!(
+            repo = repo_full_path,
+            nodes = total_nodes,
+            edges = total_edges,
+            edge_errors,
+            node_chunk = NODE_CHUNK,
+            edge_chunk = EDGE_CHUNK,
+            "studio-artifact-ingest: stored graph (chunked)"
+        );
         Ok(SyncSummary {
             issues,
             pull_requests,
@@ -474,6 +699,104 @@ impl IngestService {
         }
     }
 
+    /// Tag a batch of freshly-built nodes with their tenant scope, embed them
+    /// (a no-op until a real embedder is wired), and upsert them to the graph
+    /// in bounded chunks. Factored out of the final flush so a sync can store
+    /// its objects batch-by-batch as it pulls them, not only at the end.
+    async fn store_node_batch(
+        &self,
+        ctx: &SecurityContext,
+        batch: &mut [GtsNode],
+        workspace_id: Option<&str>,
+        project_id: Option<&str>,
+    ) -> anyhow::Result<()> {
+        if batch.is_empty() {
+            return Ok(());
+        }
+        if workspace_id.is_some() || project_id.is_some() {
+            for n in batch.iter_mut() {
+                if let Some(obj) = n.value.as_object_mut() {
+                    if let Some(ws) = workspace_id {
+                        obj.insert(
+                            "workspace_id".to_string(),
+                            serde_json::Value::String(ws.to_string()),
+                        );
+                    }
+                    if let Some(pr) = project_id {
+                        obj.insert(
+                            "project_id".to_string(),
+                            serde_json::Value::String(pr.to_string()),
+                        );
+                    }
+                }
+            }
+        }
+        let embed_dims = self.embedder.dimensions();
+        for chunk in batch.chunks(NODE_CHUNK) {
+            // Embed the chunk when a real embedder is wired; NoopEmbedder reports
+            // 0 dimensions, so this stays a no-op (empty embeddings → NULL
+            // vector) until a model lands.
+            let embeddings: Vec<Option<Vec<f32>>> = if embed_dims > 0 {
+                let texts: Vec<String> = chunk.iter().map(node_text).collect();
+                self.embedder.embed(&texts).await.unwrap_or_else(|e| {
+                    tracing::warn!(
+                        error = %e,
+                        "studio-artifact-ingest: embedding failed — storing chunk without vectors"
+                    );
+                    vec![None; chunk.len()]
+                })
+            } else {
+                Vec::new()
+            };
+            self.graph
+                .upsert_nodes_embedded(ctx, chunk, &embeddings)
+                .await?;
+        }
+        Ok(())
+    }
+
+    /// Flush the nodes appended since the last flush (`nodes[*flushed..]`) to
+    /// the graph, then report progress on the task: the phase line plus the
+    /// running counts, including how many nodes are now stored. This is what
+    /// makes a sync's objects appear in the graph — and its counts tick up —
+    /// while it is still running, instead of only when it finishes.
+    #[allow(clippy::too_many_arguments)]
+    async fn flush_and_report(
+        &self,
+        ctx: &SecurityContext,
+        task_id: Option<&str>,
+        nodes: &mut Vec<GtsNode>,
+        flushed: &mut usize,
+        workspace_id: Option<&str>,
+        project_id: Option<&str>,
+        phase: &str,
+        issues: usize,
+        pull_requests: usize,
+        files: usize,
+        comments: usize,
+        commits: usize,
+    ) -> anyhow::Result<()> {
+        let end = nodes.len();
+        if end > *flushed {
+            self.store_node_batch(ctx, &mut nodes[*flushed..end], workspace_id, project_id)
+                .await?;
+            *flushed = end;
+        }
+        if let Some(id) = task_id {
+            self.tasks.report(
+                id,
+                phase,
+                issues as u32,
+                pull_requests as u32,
+                files as u32,
+                comments as u32,
+                commits as u32,
+                *flushed as u32,
+            );
+        }
+        Ok(())
+    }
+
     /// Text files (path + content) from the studio-session checkout of one repo,
     /// so the portal can run analysis (spec-quality) over the actual repository
     /// rather than a hand-picked file. Empty when the checkout has not been
@@ -510,5 +833,124 @@ impl IngestService {
         ctx: &SecurityContext,
     ) -> anyhow::Result<Vec<super::graph::GtsEdgeView>> {
         self.graph.list_relations(ctx).await
+    }
+
+    /// Search the artifact graph. When an embedder is wired, the query is
+    /// embedded and the store runs hybrid (semantic) retrieval; otherwise it
+    /// falls back to a lexical match — so this upgrades to semantic automatically
+    /// the moment a model lands behind the [`Embedder`] seam.
+    pub async fn search(
+        &self,
+        ctx: &SecurityContext,
+        text: &str,
+        limit: u32,
+    ) -> anyhow::Result<Vec<GtsNode>> {
+        let query_vector: Option<Vec<f32>> = if self.embedder.dimensions() > 0 {
+            let one = [text.to_string()];
+            self.embedder
+                .embed(&one)
+                .await
+                .ok()
+                .and_then(|mut v| v.pop().flatten())
+        } else {
+            None
+        };
+        self.graph
+            .search(ctx, query_vector.as_deref(), text, limit)
+            .await
+    }
+
+    /// Upsert a single manually-added file into the graph as a `file` node
+    /// (no connector). Idempotent by (workspace, path). Returns the node id.
+    pub async fn upsert_manual_file(
+        &self,
+        ctx: &SecurityContext,
+        workspace_id: &str,
+        project_id: Option<&str>,
+        path: &str,
+        size: u64,
+        text: Option<String>,
+    ) -> anyhow::Result<String> {
+        use super::gts;
+        let node = gts::manual_file_node(workspace_id, project_id, path, size, text);
+        let id = node.instance_id.clone();
+        self.graph
+            .upsert_nodes(ctx, std::slice::from_ref(&node))
+            .await?;
+        Ok(id)
+    }
+
+    /// Persist spec-quality detector results the portal has parsed: one finding
+    /// node per (detector, document) plus its `finding_on` edge, and the derived
+    /// document↔document relations (`duplicates`, `traces_to`). Idempotent —
+    /// re-running a detector upserts the same instances. Returns (nodes, edges).
+    pub async fn upsert_quality(
+        &self,
+        ctx: &SecurityContext,
+        findings: &[QualityFinding],
+        duplicates: &[QualityLink],
+        traces: &[QualityLink],
+        workspace_id: Option<&str>,
+        project_id: Option<&str>,
+    ) -> anyhow::Result<(usize, usize)> {
+        use super::gts;
+        let mut nodes: Vec<GtsNode> = Vec::new();
+        let mut edges: Vec<GtsEdge> = Vec::new();
+
+        for f in findings {
+            if f.detector.trim().is_empty() || f.subject.trim().is_empty() {
+                continue;
+            }
+            let mut node = gts::spec_finding_node(
+                f.detector.trim(),
+                f.subject.trim(),
+                f.path.as_deref(),
+                f.severity.as_deref(),
+                f.summary.as_deref(),
+                f.score,
+                f.details.clone(),
+            );
+            // Scope the finding to the same tenants as the document it is about,
+            // so it survives the graph's `scope` filter instead of vanishing.
+            if let Some(obj) = node.value.as_object_mut() {
+                if let Some(ws) = workspace_id {
+                    obj.insert(
+                        "workspace_id".to_string(),
+                        serde_json::Value::String(ws.to_string()),
+                    );
+                }
+                if let Some(pr) = project_id {
+                    obj.insert(
+                        "project_id".to_string(),
+                        serde_json::Value::String(pr.to_string()),
+                    );
+                }
+            }
+            let finding_id = node.instance_id.clone();
+            nodes.push(node);
+            edges.push(gts::finding_on_edge(&finding_id, f.subject.trim()));
+        }
+        for d in duplicates {
+            let (a, b) = (d.from.trim(), d.to.trim());
+            if a.is_empty() || b.is_empty() || a == b {
+                continue;
+            }
+            edges.push(gts::duplicates_edge(a, b));
+        }
+        for t in traces {
+            let (from, to) = (t.from.trim(), t.to.trim());
+            if from.is_empty() || to.is_empty() || from == to {
+                continue;
+            }
+            edges.push(gts::traces_to_edge(from, to));
+        }
+
+        if !nodes.is_empty() {
+            self.graph.upsert_nodes(ctx, &nodes).await?;
+        }
+        if !edges.is_empty() {
+            self.graph.upsert_edges(ctx, &edges).await?;
+        }
+        Ok((nodes.len(), edges.len()))
     }
 }

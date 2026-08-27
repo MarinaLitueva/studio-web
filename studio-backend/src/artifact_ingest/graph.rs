@@ -56,6 +56,33 @@ pub trait GraphStore: Send + Sync {
     /// bug, so implementations may drop or reject such an edge.
     async fn upsert_edges(&self, ctx: &SecurityContext, edges: &[GtsEdge]) -> anyhow::Result<()>;
 
+    /// Upsert nodes with an aligned embedding per node (`embeddings[i]` is the
+    /// vector for `nodes[i]`, `None` when none was computed). Defaulted to
+    /// ignore the embeddings and delegate to [`Self::upsert_nodes`], so a store
+    /// without vector support (the in-memory one) needs no change.
+    async fn upsert_nodes_embedded(
+        &self,
+        ctx: &SecurityContext,
+        nodes: &[GtsNode],
+        _embeddings: &[Option<Vec<f32>>],
+    ) -> anyhow::Result<()> {
+        self.upsert_nodes(ctx, nodes).await
+    }
+
+    /// Rank nodes by relevance to a query. With `query_vector = Some(_)` the
+    /// store may use vector similarity (hybrid retrieval); otherwise it falls
+    /// back to a lexical match on `text`. Defaulted to empty for a store with no
+    /// search.
+    async fn search(
+        &self,
+        _ctx: &SecurityContext,
+        _query_vector: Option<&[f32]>,
+        _text: &str,
+        _limit: u32,
+    ) -> anyhow::Result<Vec<GtsNode>> {
+        Ok(Vec::new())
+    }
+
     /// All stored nodes, optionally filtered to those whose type id contains
     /// `type_filter` (e.g. `issue`, `pull_request`, `file`, `repo`).
     async fn list(
@@ -149,6 +176,30 @@ impl GraphStore for InMemoryGraphStore {
                     from: e.from.clone(),
                     to: e.to.clone(),
                 })
+                .collect()
+        };
+        Ok(out)
+    }
+
+    /// Naive lexical fallback: substring match over each node's serialized value.
+    /// The in-memory store holds no embeddings, so `query_vector` is ignored.
+    async fn search(
+        &self,
+        _ctx: &SecurityContext,
+        _query_vector: Option<&[f32]>,
+        text: &str,
+        limit: u32,
+    ) -> anyhow::Result<Vec<GtsNode>> {
+        let needle = text.trim().to_lowercase();
+        let out = {
+            let map = self
+                .nodes
+                .lock()
+                .map_err(|_| anyhow::anyhow!("graph store lock poisoned"))?;
+            map.values()
+                .filter(|n| needle.is_empty() || n.value.to_string().to_lowercase().contains(&needle))
+                .take(limit as usize)
+                .cloned()
                 .collect()
         };
         Ok(out)

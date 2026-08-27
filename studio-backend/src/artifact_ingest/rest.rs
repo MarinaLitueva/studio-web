@@ -9,7 +9,7 @@ use axum::extract::{Path, Query};
 use axum::{Extension, Router};
 use serde_json::Value;
 use toolkit::api::canonical_prelude::*;
-use toolkit::api::operation_builder::{CORE_GLOBAL_BASE_LICENSE_FEATURE, LicenseFeature};
+use toolkit::api::operation_builder::{LicenseFeature, CORE_GLOBAL_BASE_LICENSE_FEATURE};
 use toolkit::api::{OpenApiRegistry, OperationBuilder};
 use toolkit_canonical_errors::resource_error;
 use toolkit_security::SecurityContext;
@@ -63,13 +63,21 @@ pub struct SyncRequest {
     /// RFC 3339 lower bound for incremental sync (optional).
     #[serde(default)]
     pub since: Option<String>,
-    /// Workspace this repo belongs to. With `repo_dir`, lets ingest read the
-    /// studio-session checkout (the same clone the IDE opens) instead of
-    /// cloning its own. Omitted = fall back to own-clone / tree API.
+    /// Workspace tenant this repo belongs to (the parent of `project_id`).
+    /// Tagged onto every stored node so a workspace-level graph can show every
+    /// project's artifacts. Omitted = not scoped to a workspace.
     #[serde(default)]
     pub workspace_id: Option<String>,
-    /// Directory name of this repo under the workspace root (the source's
-    /// `target`, or its `name`). Pairs with `workspace_id`.
+    /// Project tenant this repo belongs to. Tagged onto every stored node so a
+    /// project-level graph shows only its own artifacts, and used (in
+    /// preference to `workspace_id`) to locate the IDE's shared checkout —
+    /// `{workspaces_root}/{project_id}/{repo_dir}` — so ingest reads the same
+    /// clone the IDE opened instead of cloning its own. Omitted = fall back to
+    /// `workspace_id`, then own-clone / tree API.
+    #[serde(default)]
+    pub project_id: Option<String>,
+    /// Directory name of this repo under the checkout root (the source's
+    /// `target`, or its `name`). Pairs with `project_id`/`workspace_id`.
     #[serde(default)]
     pub repo_dir: Option<String>,
 }
@@ -94,10 +102,16 @@ pub struct TaskStatusResponse {
     pub repo_full_path: String,
     /// Current phase while running, or the error message on failure.
     pub message: Option<String>,
-    /// Populated once `succeeded`.
+    /// Live counts, updated per phase while running (not only on success) so the
+    /// portal can show progress as objects are pulled and stored.
     pub issues: u32,
     pub pull_requests: u32,
     pub files: u32,
+    pub comments: u32,
+    pub commits: u32,
+    /// Nodes already flushed to the graph store so far — the objects that are
+    /// queryable right now, mid-sync.
+    pub stored: u32,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -106,6 +120,34 @@ pub struct NodesQuery {
     /// Omitted = every ingested node.
     #[serde(default)]
     pub r#type: Option<String>,
+    /// Tenant scope: keep only nodes whose `workspace_id` OR `project_id`
+    /// equals this. Pass a workspace tenant to see every project under it, or a
+    /// project tenant to see just that project. Omitted = no scoping.
+    #[serde(default)]
+    pub scope: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct EdgesQuery {
+    /// Tenant scope (see [`NodesQuery::scope`]): keep only edges whose both
+    /// endpoints are in-scope nodes. Omitted = every relation.
+    #[serde(default)]
+    pub scope: Option<String>,
+}
+
+/// True when a node's `value` is inside `scope` — i.e. its `workspace_id` or
+/// its `project_id` equals `scope`. Used to keep a project's (or workspace's)
+/// graph to its own artifacts. A `None` scope admits everything.
+fn node_in_scope(value: &Value, scope: Option<&str>) -> bool {
+    let Some(scope) = scope else {
+        return true;
+    };
+    let obj = match value.as_object() {
+        Some(o) => o,
+        None => return false,
+    };
+    let matches = |key: &str| obj.get(key).and_then(Value::as_str) == Some(scope);
+    matches("workspace_id") || matches("project_id")
 }
 
 /// One ingested artifact node.
@@ -167,6 +209,112 @@ pub struct RepoFilesResponse {
     pub files: Vec<RepoFileDto>,
 }
 
+/// One spec-quality finding to persist (portal-parsed from a detector result).
+#[derive(Debug)]
+#[toolkit_macros::api_dto(request)]
+pub struct QualityFindingDto {
+    /// `bloat` | `traceability` | `leak` | `purpose`.
+    pub detector: String,
+    /// Instance id of the document node the finding is about.
+    pub subject: String,
+    /// Document path/name, for display.
+    #[serde(default)]
+    pub path: Option<String>,
+    /// Verdict/severity label (detector-specific).
+    #[serde(default)]
+    pub severity: Option<String>,
+    /// One-line human summary of the finding.
+    #[serde(default)]
+    pub summary: Option<String>,
+    /// Optional numeric score (e.g. duplication ratio).
+    #[serde(default)]
+    pub score: Option<f64>,
+    /// The raw detector detail object, stored verbatim.
+    #[serde(default)]
+    #[schema(value_type = Object)]
+    pub details: Value,
+}
+
+/// A derived relation between two document nodes (endpoints by instance id).
+#[derive(Debug)]
+#[toolkit_macros::api_dto(request)]
+pub struct QualityLinkDto {
+    pub from: String,
+    pub to: String,
+}
+
+/// Batch of spec-quality results to materialize into the graph.
+#[derive(Debug)]
+#[toolkit_macros::api_dto(request)]
+pub struct QualityFindingsRequest {
+    #[serde(default)]
+    pub findings: Vec<QualityFindingDto>,
+    /// Bloat near-duplicate pairs → `duplicates` edges.
+    #[serde(default)]
+    pub duplicates: Vec<QualityLinkDto>,
+    /// Traceability links → `traces_to` edges.
+    #[serde(default)]
+    pub traces: Vec<QualityLinkDto>,
+    /// Workspace tenant these findings belong to — tagged onto each finding
+    /// node so it survives a workspace-level graph scope (see the `scope` param
+    /// on `/nodes`). Omitted = the findings are unscoped.
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    /// Project tenant these findings belong to — tagged onto each finding node
+    /// so it survives a project-level graph scope. Omitted = workspace-only.
+    #[serde(default)]
+    pub project_id: Option<String>,
+}
+
+/// Count of graph objects upserted.
+#[derive(Debug)]
+#[toolkit_macros::api_dto(response)]
+pub struct QualityFindingsResponse {
+    pub nodes: u32,
+    pub edges: u32,
+}
+
+/// A search over the artifact graph. Semantic (hybrid) when an embedder is
+/// wired, lexical otherwise — the request shape is the same either way.
+#[derive(Debug)]
+#[toolkit_macros::api_dto(request)]
+pub struct SearchRequest {
+    /// Free-text query.
+    pub text: String,
+    /// Maximum matches (default 20, capped at 200).
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+/// A manually-added file to store in the graph as a `file` node (no connector).
+#[derive(Debug)]
+#[toolkit_macros::api_dto(request)]
+pub struct ManualFileRequest {
+    /// Workspace tenant this file belongs to (the parent of `project_id`).
+    /// Tagged onto the node so a workspace-level graph shows it. Also keys the
+    /// node's identity, so re-uploading the same name upserts.
+    pub workspace_id: String,
+    /// Project tenant this file belongs to. Tagged onto the node so a
+    /// project-level graph shows only its own files. Omitted = workspace-only.
+    #[serde(default)]
+    pub project_id: Option<String>,
+    /// File name or relative path.
+    pub path: String,
+    /// Text content (for text files). Omit for binary — only metadata is kept.
+    #[serde(default)]
+    pub text: Option<String>,
+    /// Size in bytes (defaults to the text length when omitted).
+    #[serde(default)]
+    pub size: Option<u64>,
+}
+
+/// The stored file node's id.
+#[derive(Debug)]
+#[toolkit_macros::api_dto(response)]
+pub struct ManualFileResponse {
+    pub instance_id: String,
+}
+
 async fn sync(
     Extension(ctx): Extension<SecurityContext>,
     Extension(ingest): Extension<Ingest>,
@@ -197,6 +345,11 @@ async fn sync(
             .map(str::to_string),
         token,
         req.workspace_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string),
+        req.project_id
             .as_deref()
             .map(str::trim)
             .filter(|s| !s.is_empty())
@@ -232,6 +385,9 @@ async fn task_status(
         issues: rec.issues,
         pull_requests: rec.pull_requests,
         files: rec.files,
+        comments: rec.comments,
+        commits: rec.commits,
+        stored: rec.stored,
     }))
 }
 
@@ -242,6 +398,7 @@ async fn list_nodes(
 ) -> ApiResult<JsonBody<ArtifactNodeListResponse>> {
     let svc = ingest.get()?;
     let filter = q.r#type.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let scope = q.scope.as_deref().map(str::trim).filter(|s| !s.is_empty());
     let nodes = svc
         .list_nodes(&ctx, filter)
         .await
@@ -249,6 +406,7 @@ async fn list_nodes(
     Ok(Json(ArtifactNodeListResponse {
         nodes: nodes
             .into_iter()
+            .filter(|n| node_in_scope(&n.value, scope))
             .map(|n| {
                 // File nodes carry full text content; drop it from the listing
                 // so the payload stays small (`has_text` still flags it). A
@@ -270,8 +428,28 @@ async fn list_nodes(
 async fn list_edges(
     Extension(ctx): Extension<SecurityContext>,
     Extension(ingest): Extension<Ingest>,
+    Query(q): Query<EdgesQuery>,
 ) -> ApiResult<JsonBody<ArtifactEdgeListResponse>> {
     let svc = ingest.get()?;
+    let scope = q.scope.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    // When scoped, an edge is kept only if BOTH endpoints are in-scope nodes.
+    // Build that id set from the (scope-filtered) node list first; endpoints
+    // reference nodes by instance id.
+    let in_scope: Option<std::collections::HashSet<String>> = if scope.is_some() {
+        let nodes = svc
+            .list_nodes(&ctx, None)
+            .await
+            .map_err(|e| CanonicalError::internal(format!("{e:#}")).create())?;
+        Some(
+            nodes
+                .into_iter()
+                .filter(|n| node_in_scope(&n.value, scope))
+                .map(|n| n.instance_id)
+                .collect(),
+        )
+    } else {
+        None
+    };
     let edges = svc
         .list_relations(&ctx)
         .await
@@ -279,6 +457,12 @@ async fn list_edges(
     Ok(Json(ArtifactEdgeListResponse {
         edges: edges
             .into_iter()
+            .filter(|e| {
+                in_scope
+                    .as_ref()
+                    .map(|set| set.contains(&e.from) && set.contains(&e.to))
+                    .unwrap_or(true)
+            })
             .map(|e| ArtifactEdgeDto {
                 type_id: e.type_id,
                 from: e.from,
@@ -304,6 +488,118 @@ async fn repo_files(
             .map(|(path, text)| RepoFileDto { path, text })
             .collect(),
     }))
+}
+
+async fn save_quality(
+    Extension(ctx): Extension<SecurityContext>,
+    Extension(ingest): Extension<Ingest>,
+    Json(req): Json<QualityFindingsRequest>,
+) -> ApiResult<JsonBody<QualityFindingsResponse>> {
+    let svc = ingest.get()?;
+    let findings: Vec<super::service::QualityFinding> = req
+        .findings
+        .into_iter()
+        .map(|f| super::service::QualityFinding {
+            detector: f.detector,
+            subject: f.subject,
+            path: f.path,
+            severity: f.severity,
+            summary: f.summary,
+            score: f.score,
+            details: f.details,
+        })
+        .collect();
+    let to_link = |l: QualityLinkDto| super::service::QualityLink {
+        from: l.from,
+        to: l.to,
+    };
+    let duplicates: Vec<super::service::QualityLink> =
+        req.duplicates.into_iter().map(to_link).collect();
+    let traces: Vec<super::service::QualityLink> = req.traces.into_iter().map(to_link).collect();
+    let workspace_id = req
+        .workspace_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    let project_id = req
+        .project_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+
+    let (nodes, edges) = svc
+        .upsert_quality(
+            &ctx,
+            &findings,
+            &duplicates,
+            &traces,
+            workspace_id.as_deref(),
+            project_id.as_deref(),
+        )
+        .await
+        .map_err(|e| CanonicalError::internal(format!("{e:#}")).create())?;
+    Ok(Json(QualityFindingsResponse {
+        nodes: nodes as u32,
+        edges: edges as u32,
+    }))
+}
+
+async fn search(
+    Extension(ctx): Extension<SecurityContext>,
+    Extension(ingest): Extension<Ingest>,
+    Json(req): Json<SearchRequest>,
+) -> ApiResult<JsonBody<ArtifactNodeListResponse>> {
+    let svc = ingest.get()?;
+    let limit = req.limit.unwrap_or(20).clamp(1, 200);
+    let nodes = svc
+        .search(&ctx, req.text.trim(), limit)
+        .await
+        .map_err(|e| CanonicalError::internal(format!("{e:#}")).create())?;
+    Ok(Json(ArtifactNodeListResponse {
+        nodes: nodes
+            .into_iter()
+            .map(|n| {
+                let mut value = n.value;
+                if let Some(obj) = value.as_object_mut() {
+                    obj.remove("text");
+                }
+                ArtifactNodeDto {
+                    type_id: n.type_id.to_string(),
+                    instance_id: n.instance_id,
+                    value,
+                }
+            })
+            .collect(),
+    }))
+}
+
+async fn add_file(
+    Extension(ctx): Extension<SecurityContext>,
+    Extension(ingest): Extension<Ingest>,
+    Json(req): Json<ManualFileRequest>,
+) -> ApiResult<JsonBody<ManualFileResponse>> {
+    let svc = ingest.get()?;
+    let workspace_id = req.workspace_id.trim().to_string();
+    let project_id = req
+        .project_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    let path = req.path.trim().to_string();
+    if workspace_id.is_empty() || path.is_empty() {
+        return Err(CanonicalError::internal("workspace_id and path are required").create());
+    }
+    let size = req
+        .size
+        .unwrap_or_else(|| req.text.as_ref().map(|t| t.len() as u64).unwrap_or(0));
+    let instance_id = svc
+        .upsert_manual_file(&ctx, &workspace_id, project_id.as_deref(), &path, size, req.text)
+        .await
+        .map_err(|e| CanonicalError::internal(format!("{e:#}")).create())?;
+    Ok(Json(ManualFileResponse { instance_id }))
 }
 
 pub fn register_routes(
@@ -400,6 +696,74 @@ pub fn register_routes(
         .require_license_features::<License>([])
         .handler(repo_files)
         .json_response_with_schema::<RepoFilesResponse>(openapi, StatusCode::OK, "Repository files")
+        .error_401(openapi)
+        .error_500(openapi)
+        .register(router, openapi);
+
+    let router = OperationBuilder::post("/studio-artifact-ingest/v1/quality")
+        .operation_id("studio_artifact_ingest.save_quality")
+        .summary("Persist spec-quality detector results into the artifact graph")
+        .description(
+            "Upserts, per document, a spec_finding node (bloat/traceability/leak/\
+             purpose) with its finding_on edge, plus the derived document↔document \
+             relations (duplicates, traces_to) the portal built from a detector \
+             result. Idempotent by (detector, document).",
+        )
+        .tag("StudioArtifactIngest")
+        .authenticated()
+        .require_license_features::<License>([])
+        .json_request::<QualityFindingsRequest>(openapi, "Findings and derived links")
+        .handler(save_quality)
+        .json_response_with_schema::<QualityFindingsResponse>(
+            openapi,
+            StatusCode::OK,
+            "Upsert counts",
+        )
+        .error_400(openapi)
+        .error_401(openapi)
+        .error_500(openapi)
+        .register(router, openapi);
+
+    let router = OperationBuilder::post("/studio-artifact-ingest/v1/search")
+        .operation_id("studio_artifact_ingest.search")
+        .summary("Search the artifact graph (semantic when embeddings exist, else lexical)")
+        .description(
+            "Ranks artifact nodes against a free-text query. With node embeddings \
+             present the store runs hybrid retrieval (vector similarity seeds a \
+             graph walk, filtered by text); without them it falls back to a \
+             lexical full-text match. The request shape is identical either way.",
+        )
+        .tag("StudioArtifactIngest")
+        .authenticated()
+        .require_license_features::<License>([])
+        .json_request::<SearchRequest>(openapi, "Query text and limit")
+        .handler(search)
+        .json_response_with_schema::<ArtifactNodeListResponse>(
+            openapi,
+            StatusCode::OK,
+            "Ranked matches, most relevant first",
+        )
+        .error_400(openapi)
+        .error_401(openapi)
+        .error_500(openapi)
+        .register(router, openapi);
+
+    let router = OperationBuilder::post("/studio-artifact-ingest/v1/files")
+        .operation_id("studio_artifact_ingest.add_file")
+        .summary("Add a manually-uploaded file to the artifact graph")
+        .description(
+            "Stores a hand-added file as a `file` node (origin=manual) in the \
+             graph, scoped to a workspace — no connector or file-storage \
+             data-plane needed. Text content is kept for text files; binary \
+             uploads keep only metadata. Idempotent by (workspace, path).",
+        )
+        .tag("StudioArtifactIngest")
+        .authenticated()
+        .require_license_features::<License>([])
+        .json_request::<ManualFileRequest>(openapi, "File to store")
+        .handler(add_file)
+        .json_response_with_schema::<ManualFileResponse>(openapi, StatusCode::OK, "Stored file id")
+        .error_400(openapi)
         .error_401(openapi)
         .error_500(openapi)
         .register(router, openapi);

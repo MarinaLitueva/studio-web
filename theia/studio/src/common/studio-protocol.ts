@@ -202,6 +202,19 @@ export interface StudioRuntimeClient {
     onRepositoriesChanged(repositories: readonly StudioRepositoryDescriptor[]): void;
     onWorkspaceSnapshotChanged?(snapshot: WorkspaceSnapshot): void;
     onWorkspaceActivityEvent?(event: WorkspaceActivityEvent): void;
+    /** Open/reveal a workspace file in the running IDE (ADR-0010). Optional:
+     * only browser clients implement it; the event forwarder ignores it. */
+    onOpenInEditor?(request: StudioOpenInEditorRequest): void;
+}
+
+export interface StudioOpenInEditorRequest {
+    readonly relativePath: string;
+    readonly preview?: boolean;
+}
+
+export interface StudioOpenInEditorResult {
+    readonly opened: boolean;
+    readonly resolvedRelativePath?: string;
 }
 
 export interface StudioRetryOperationRequest {

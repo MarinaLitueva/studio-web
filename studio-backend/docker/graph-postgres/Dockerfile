@@ -42,3 +42,17 @@ COPY --from=pgvector-build /usr/lib/postgresql/19/lib/vector.so /usr/lib/postgre
 
 LABEL org.opencontainers.image.title="Constructor Studio graph PostgreSQL" \
       org.opencontainers.image.description="CloudNativePG PostgreSQL 19 beta 3 operand with pinned pgvector"
+
+# ── Local / docker-compose runtime ──
+# The operand base has no entrypoint (Cmd is `bash`), so under plain compose it
+# would run bash and exit 0 without ever starting a server. Give it a real
+# postgres startup. In Kubernetes the CloudNativePG operator overrides both the
+# container command and runAsUser, so USER root + this ENTRYPOINT are ignored
+# there — this changes only how the SAME image behaves under docker-compose.
+USER root
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+EXPOSE 5432
+STOPSIGNAL SIGINT
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD []

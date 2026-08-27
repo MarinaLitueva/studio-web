@@ -32,7 +32,8 @@ describe('Studio Audit frontend delivery', () => {
         const client = new StudioRuntimeFrontendClient(
             gitOperations as never,
             audit as never,
-            {} as never
+            {} as never,
+            {} as never // OpenInEditorFrontendController (unused in this test)
         );
 
         client.onAuditEvent(entry);
