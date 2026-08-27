@@ -206,6 +206,13 @@ credstore = { package = "cf-gears-credstore", git = "https://github.com/construc
 static_credstore_plugin = { package = "cf-gears-static-credstore-plugin", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
 simple_user_settings = { package = "cf-gears-simple-user-settings", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
 file_storage = { package = "cf-gears-file-storage", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
+# File-parser is resolved through its SDK when a compatible parser gear is
+# registered by the runtime. Keep the heavy parser implementation out of this
+# binary: its current document-parser dependency set does not compile when the
+# `quick-xml` encoding feature is unified by Cargo.
+file_parser_sdk = { package = "cf-gears-file-parser-sdk", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
+# Needed to hand raw file bytes to the file-parser SDK (ParseBytesRequest.bytes).
+bytes = "1"
 kube = { version = "4.2.0", default-features = false, features = ["client", "runtime", "rustls-tls"] }
 k8s-openapi = { version = "0.28.0", features = ["v1_32"] }
 rustls = "0.23.43"

@@ -1,0 +1,441 @@
+//! Catalog orchestration: crates.io → typed GTS nodes → graph store.
+//!
+//! A sync lists every crate under the configured keyword, fetches each crate's
+//! detail (with its version history), normalizes them to `gear` and
+//! `crate_version` nodes joined by `has_version`, and upserts them into a graph
+//! store. Like artifact-ingest it prefers the real graph-storage gear and falls
+//! back to an in-memory store so the pipeline still runs (and the portal still
+//! shows a catalog) when the graph feature is off.
+
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use anyhow::anyhow;
+use async_trait::async_trait;
+#[cfg(feature = "graph")]
+use serde_json::Value;
+use serde_json::json;
+use toolkit_security::SecurityContext;
+use uuid::Uuid;
+
+use super::cratesio::{CrateDetail, CratesIoClient};
+use super::gts::{self, GtsEdge, GtsNode};
+use super::tasks::{TaskRecord, TaskRegistry};
+
+/// Pause between crates.io detail calls — crates.io asks callers to stay near
+/// ~1 request/second. One gear = one detail call, so this paces the whole sync.
+const THROTTLE: Duration = Duration::from_millis(250);
+
+// ── Graph sink ────────────────────────────────────────────────────────────
+
+/// Where catalog nodes and edges are written and read. Two implementations: the
+/// real graph-storage gear, and an in-memory fallback.
+#[async_trait]
+pub(crate) trait CatalogSink: Send + Sync {
+    async fn register_types(&self, ctx: &SecurityContext) -> anyhow::Result<()>;
+    async fn upsert(
+        &self,
+        ctx: &SecurityContext,
+        nodes: &[GtsNode],
+        edges: &[GtsEdge],
+    ) -> anyhow::Result<()>;
+    async fn list(
+        &self,
+        ctx: &SecurityContext,
+        type_filter: Option<&str>,
+    ) -> anyhow::Result<Vec<GtsNode>>;
+}
+
+/// In-memory store, keyed by instance id so a re-sync upserts. Resets on
+/// restart; the catalog is cheap to re-sync.
+#[derive(Default)]
+pub(crate) struct MemorySink {
+    nodes: Mutex<HashMap<String, GtsNode>>,
+}
+
+#[async_trait]
+impl CatalogSink for MemorySink {
+    async fn register_types(&self, _ctx: &SecurityContext) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    async fn upsert(
+        &self,
+        _ctx: &SecurityContext,
+        nodes: &[GtsNode],
+        _edges: &[GtsEdge],
+    ) -> anyhow::Result<()> {
+        let mut map = self
+            .nodes
+            .lock()
+            .map_err(|_| anyhow!("catalog store lock poisoned"))?;
+        for n in nodes {
+            map.insert(n.instance_id.clone(), n.clone());
+        }
+        Ok(())
+    }
+
+    async fn list(
+        &self,
+        _ctx: &SecurityContext,
+        type_filter: Option<&str>,
+    ) -> anyhow::Result<Vec<GtsNode>> {
+        let map = self
+            .nodes
+            .lock()
+            .map_err(|_| anyhow!("catalog store lock poisoned"))?;
+        Ok(map
+            .values()
+            .filter(|n| type_filter.is_none_or(|t| n.type_id.contains(t)))
+            .cloned()
+            .collect())
+    }
+}
+
+/// Human name for a node, from the curated payload. Used by the graph backend.
+#[cfg(feature = "graph")]
+fn node_name(value: &Value) -> String {
+    for key in ["title", "name"] {
+        if let Some(s) = value.get(key).and_then(Value::as_str) {
+            return s.to_string();
+        }
+    }
+    String::new()
+}
+
+/// Free text for lexical search: name plus description/taxonomy/version fields.
+#[cfg(feature = "graph")]
+fn search_text(value: &Value) -> Option<String> {
+    let mut parts: Vec<String> = Vec::new();
+    for key in [
+        "title",
+        "name",
+        "description",
+        "num",
+        "crate",
+        "license",
+        "rust_version",
+        "kind",
+    ] {
+        if let Some(s) = value.get(key).and_then(Value::as_str) {
+            parts.push(s.to_string());
+        }
+    }
+    for arr_key in ["keywords", "categories"] {
+        if let Some(arr) = value.get(arr_key).and_then(Value::as_array) {
+            for v in arr {
+                if let Some(s) = v.as_str() {
+                    parts.push(s.to_string());
+                }
+            }
+        }
+    }
+    let joined = parts.join(" ");
+    if joined.trim().is_empty() {
+        None
+    } else {
+        Some(joined)
+    }
+}
+
+/// The real graph-storage backend. Behind the `graph` feature (the gear is).
+#[cfg(feature = "graph")]
+pub(crate) struct GraphSink {
+    client: Arc<dyn crate::graph_storage::sdk::GraphStorageClientV1>,
+}
+
+#[cfg(feature = "graph")]
+impl GraphSink {
+    pub(crate) fn new(client: Arc<dyn crate::graph_storage::sdk::GraphStorageClientV1>) -> Self {
+        Self { client }
+    }
+}
+
+#[cfg(feature = "graph")]
+#[async_trait]
+impl CatalogSink for GraphSink {
+    async fn register_types(&self, ctx: &SecurityContext) -> anyhow::Result<()> {
+        for t in gts::ALL_NODE_TYPES {
+            self.client
+                .register_type(ctx, &gts::graph_type_id(t), "node", None)
+                .await
+                .map_err(|e| anyhow!("register type {t}: {e}"))?;
+        }
+        for t in gts::ALL_EDGE_TYPES {
+            self.client
+                .register_type(ctx, &gts::graph_type_id(t), "edge", None)
+                .await
+                .map_err(|e| anyhow!("register edge type {t}: {e}"))?;
+        }
+        Ok(())
+    }
+
+    async fn upsert(
+        &self,
+        ctx: &SecurityContext,
+        nodes: &[GtsNode],
+        edges: &[GtsEdge],
+    ) -> anyhow::Result<()> {
+        use crate::graph_storage::sdk::{EdgeInput, NodeInput};
+        if nodes.is_empty() && edges.is_empty() {
+            return Ok(());
+        }
+        let node_inputs: Vec<NodeInput> = nodes
+            .iter()
+            .map(|n| NodeInput {
+                node_key: n.instance_id.clone(),
+                type_id: gts::graph_type_id(n.type_id),
+                name: node_name(&n.value),
+                search_text: search_text(&n.value),
+                payload: Some(n.value.clone()),
+                embedding: None,
+            })
+            .collect();
+        let edge_inputs: Vec<EdgeInput> = edges
+            .iter()
+            .map(|e| EdgeInput {
+                type_id: gts::graph_type_id(e.type_id),
+                from: e.from.clone(),
+                to: e.to.clone(),
+                payload: None,
+            })
+            .collect();
+        // One atomic ingest: the gear upserts nodes then wires the edges to the
+        // keys just written, so a gear and its versions commit together.
+        self.client
+            .ingest(ctx, &node_inputs, &edge_inputs)
+            .await
+            .map_err(|e| anyhow!("graph-storage ingest: {e}"))?;
+        Ok(())
+    }
+
+    async fn list(
+        &self,
+        ctx: &SecurityContext,
+        type_filter: Option<&str>,
+    ) -> anyhow::Result<Vec<GtsNode>> {
+        const PAGE: u32 = 500;
+        let types: Vec<&'static str> = gts::ALL_NODE_TYPES
+            .into_iter()
+            .filter(|t| type_filter.is_none_or(|f| t.contains(f)))
+            .collect();
+        let mut out: Vec<GtsNode> = Vec::new();
+        for our_type in types {
+            let graph_type = gts::graph_type_id(our_type);
+            let mut cursor: Option<String> = None;
+            loop {
+                let page = self
+                    .client
+                    .list_nodes(ctx, Some(&graph_type), cursor.as_deref(), PAGE, true)
+                    .await
+                    .map_err(|e| anyhow!("graph-storage list_nodes: {e}"))?;
+                for view in page.items {
+                    let type_id = gts::our_type_from_graph(&view.type_id).unwrap_or(our_type);
+                    out.push(GtsNode {
+                        type_id,
+                        instance_id: view.node_key,
+                        value: view.payload.unwrap_or_else(|| json!({})),
+                    });
+                }
+                match page.next_cursor {
+                    Some(c) => cursor = Some(c),
+                    None => break,
+                }
+            }
+        }
+        Ok(out)
+    }
+}
+
+// ── Service ─────────────────────────────────────────────────────────────────
+
+pub struct CatalogService {
+    crates: CratesIoClient,
+    sink: Arc<dyn CatalogSink>,
+    tasks: Arc<TaskRegistry>,
+    keyword: String,
+}
+
+impl CatalogService {
+    pub fn new(sink: Arc<dyn CatalogSink>, keyword: String) -> Self {
+        Self {
+            crates: CratesIoClient::new(),
+            sink,
+            tasks: Arc::new(TaskRegistry::default()),
+            keyword,
+        }
+    }
+
+    pub fn task(&self, id: &str) -> Option<TaskRecord> {
+        self.tasks.get(id)
+    }
+
+    /// Enqueue a background catalog sync and return its task id.
+    pub fn enqueue_sync(self: &Arc<Self>, ctx: SecurityContext) -> String {
+        let id = Uuid::new_v4().to_string();
+        self.tasks.create(&id);
+        let svc = Arc::clone(self);
+        let task_id = id.clone();
+        tokio::spawn(async move {
+            match svc.run_sync(&ctx, Some(&task_id)).await {
+                Ok((gears, versions, stored)) => {
+                    svc.tasks
+                        .succeed(&task_id, gears as u32, versions as u32, stored as u32)
+                }
+                Err(e) => svc.tasks.fail(&task_id, &format!("{e:#}")),
+            }
+        });
+        id
+    }
+
+    /// List every crate under the keyword, fetch each one's detail, and upsert a
+    /// gear node + its version nodes (joined by `has_version`) into the graph.
+    /// Flushed per gear so objects appear as the sync runs. Returns
+    /// (gears, versions, stored-nodes).
+    pub async fn run_sync(
+        &self,
+        ctx: &SecurityContext,
+        task_id: Option<&str>,
+    ) -> anyhow::Result<(usize, usize, usize)> {
+        self.sink.register_types(ctx).await?;
+        self.report(task_id, "listing gears…", 0, 0, 0);
+
+        let summaries = self.crates.list_by_keyword(&self.keyword).await?;
+        let total = summaries.len();
+        tracing::info!(keyword = %self.keyword, gears = total, "gears-catalog: listed crates");
+
+        let mut versions_total = 0usize;
+        let mut stored = 0usize;
+        for (i, s) in summaries.iter().enumerate() {
+            self.report(
+                task_id,
+                &format!("fetching {} ({}/{})", s.name, i + 1, total),
+                i as u32,
+                versions_total as u32,
+                stored as u32,
+            );
+
+            let detail = match self.crates.crate_detail(&s.name).await {
+                Ok(d) => d,
+                Err(e) => {
+                    tracing::warn!(crate = %s.name, error = %e, "gears-catalog: detail fetch failed — skipping");
+                    continue;
+                }
+            };
+
+            let (nodes, edges, vers) = build_gear(&detail);
+            versions_total += vers;
+            self.sink.upsert(ctx, &nodes, &edges).await?;
+            stored += nodes.len();
+
+            self.report(
+                task_id,
+                &format!("stored {} ({}/{})", s.name, i + 1, total),
+                (i + 1) as u32,
+                versions_total as u32,
+                stored as u32,
+            );
+            // Be gentle with crates.io (≈1 req/s guidance; detail is one call).
+            tokio::time::sleep(THROTTLE).await;
+        }
+
+        tracing::info!(
+            gears = total,
+            versions = versions_total,
+            stored,
+            "gears-catalog: sync stored"
+        );
+        Ok((total, versions_total, stored))
+    }
+
+    /// Read back catalog nodes, optionally filtered by type substring
+    /// (`gear`, `crate_version`).
+    pub async fn list_nodes(
+        &self,
+        ctx: &SecurityContext,
+        type_filter: Option<&str>,
+    ) -> anyhow::Result<Vec<GtsNode>> {
+        self.sink.list(ctx, type_filter).await
+    }
+
+    fn report(&self, task_id: Option<&str>, message: &str, gears: u32, versions: u32, stored: u32) {
+        if let Some(id) = task_id {
+            self.tasks.report(id, message, gears, versions, stored);
+        }
+    }
+}
+
+/// Build a gear node, its version nodes and the `has_version` edges from one
+/// crate's detail. Returns (nodes, edges, version-count).
+fn build_gear(detail: &CrateDetail) -> (Vec<GtsNode>, Vec<GtsEdge>, usize) {
+    let name = detail.krate.name.clone();
+    let gear_id = gts::gear_instance_id(&name);
+
+    let gear_value = json!({
+        "title": name,
+        "name": name,
+        "kind": classify_kind(&name),
+        "description": detail.krate.description,
+        "max_version": detail.krate.max_version,
+        "newest_version": detail.krate.newest_version,
+        "max_stable_version": detail.krate.max_stable_version,
+        "num_versions": detail.krate.num_versions,
+        "downloads": detail.krate.downloads,
+        "recent_downloads": detail.krate.recent_downloads,
+        "created_at": detail.krate.created_at,
+        "updated_at": detail.krate.updated_at,
+        "repository": detail.krate.repository,
+        "documentation": detail.krate.documentation,
+        "homepage": detail.krate.homepage,
+        "keywords": detail.keywords,
+        "categories": detail.categories,
+    });
+
+    let mut nodes: Vec<GtsNode> = Vec::with_capacity(detail.versions.len() + 1);
+    let mut edges: Vec<GtsEdge> = Vec::with_capacity(detail.versions.len());
+    nodes.push(gts::gear_node(&name, gear_value));
+
+    for v in &detail.versions {
+        let published_by = v
+            .published_by
+            .as_ref()
+            .and_then(|p| p.name.clone().or_else(|| p.login.clone()));
+        let vvalue = json!({
+            "title": format!("{name}@{}", v.num),
+            "crate": name,
+            "num": v.num,
+            "created_at": v.created_at,
+            "updated_at": v.updated_at,
+            "yanked": v.yanked,
+            "yank_message": v.yank_message,
+            "license": v.license,
+            "rust_version": v.rust_version,
+            "edition": v.edition,
+            "crate_size": v.crate_size,
+            "downloads": v.downloads,
+            "has_lib": v.has_lib,
+            "published_by": published_by,
+        });
+        let vnode = gts::crate_version_node(&name, &v.num, vvalue);
+        edges.push(gts::has_version_edge(&gear_id, &vnode.instance_id));
+        nodes.push(vnode);
+    }
+
+    let vers = detail.versions.len();
+    (nodes, edges, vers)
+}
+
+/// Classify a crate by name so the UI can group them: gear / sdk / plugin /
+/// toolkit. Purely cosmetic — the graph keeps the full name.
+fn classify_kind(name: &str) -> &'static str {
+    if name.contains("toolkit") {
+        "toolkit"
+    } else if name.ends_with("-sdk") {
+        "sdk"
+    } else if name.contains("-plugin") {
+        "plugin"
+    } else {
+        "gear"
+    }
+}

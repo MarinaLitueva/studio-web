@@ -363,10 +363,14 @@ pub fn manual_file_node(
     path: &str,
     size: u64,
     text: Option<String>,
+    workspace_path: Option<String>,
 ) -> GtsNode {
     // Identity is keyed on the narrowest tenant it belongs to (the project when
     // present, else the workspace) plus the path, so re-uploading the same name
     // upserts within that tenant. `repo` groups it under that same tenant.
+    // `workspace_path`, when set, is where the content was materialized inside
+    // the IDE's workspace checkout (`_artifacts/<name>`), so the portal can open
+    // it in the editor as a real file.
     let scope = project_id.unwrap_or(workspace_id);
     GtsNode {
         type_id: FILE_TYPE,
@@ -379,6 +383,7 @@ pub fn manual_file_node(
             "origin": "manual",
             "workspace_id": workspace_id,
             "project_id": project_id,
+            "workspace_path": workspace_path,
             "has_text": text.is_some(),
             "text": text,
         }),

@@ -28,6 +28,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use axum::Router;
 use credstore_sdk::CredStoreClientV1;
+use file_parser_sdk::FileParserClientV1;
 use toolkit::api::OpenApiRegistry;
 use toolkit::client_hub::ClientScope;
 use toolkit::contracts::RestApiCapability;
@@ -36,6 +37,7 @@ use tracing::{info, warn};
 use types_registry_sdk::{RegisterResult, TypesRegistryClient};
 
 use crate::connectors::driver::ConnectorDriver;
+use embed::Embedder;
 use graph::InMemoryGraphStore;
 use service::IngestService;
 
@@ -100,10 +102,10 @@ fn resolve_dir(env: &str) -> Option<PathBuf> {
     if raw.is_empty() {
         return None;
     }
-    if let Some(rest) = raw.strip_prefix("~/")
-        && let Ok(home) = std::env::var("HOME")
-    {
-        return Some(PathBuf::from(home).join(rest));
+    if let Some(rest) = raw.strip_prefix("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            return Some(PathBuf::from(home).join(rest));
+        }
     }
     Some(PathBuf::from(raw))
 }
@@ -171,15 +173,48 @@ impl RestApiCapability for StudioArtifactIngestGear {
                 None => None,
             };
 
-            // Embedding seam: NoopEmbedder computes nothing (dimensions 0) — the
-            // ingest/search pipe is wired end to end, a real 384-dim model drops
-            // in here later without touching the flow.
-            let embedder: Arc<dyn embed::Embedder> = Arc::new(embed::NoopEmbedder);
+            // Embedding seam: a real OpenAI-compatible embedder when configured
+            // (STUDIO_EMBED_*), so search becomes semantic (hybrid); otherwise
+            // NoopEmbedder (dimensions 0) and search stays lexical. Turning on
+            // semantic search is pure configuration — no code change.
+            let embedder: Arc<dyn embed::Embedder> = match embed::OpenAiEmbedder::from_env() {
+                Some(e) => {
+                    info!(
+                        dimensions = e.dimensions(),
+                        "studio-artifact-ingest: embeddings endpoint configured — semantic (hybrid) search enabled"
+                    );
+                    Arc::new(e)
+                }
+                None => {
+                    info!(
+                        "studio-artifact-ingest: no embeddings endpoint (STUDIO_EMBED_*) — search stays lexical"
+                    );
+                    Arc::new(embed::NoopEmbedder)
+                }
+            };
+
+            // File-parser gear: extracts text from binary documents (PDF/docx/…)
+            // so their content is indexed for search. Optional — when the gear
+            // is not linked/available, binary files stay metadata-only.
+            let file_parser = match ctx.client_hub().get::<dyn FileParserClientV1>() {
+                Ok(c) => {
+                    info!(
+                        "studio-artifact-ingest: file-parser gear wired — binary documents will be text-extracted"
+                    );
+                    Some(c)
+                }
+                Err(e) => {
+                    warn!(error = %e, "studio-artifact-ingest: file-parser unavailable — binary documents stay metadata-only");
+                    None
+                }
+            };
+
             Some(Arc::new(IngestService::new(
                 credstore,
                 drivers,
                 graph,
                 embedder,
+                file_parser,
                 workspaces_root,
                 work_root,
             )))

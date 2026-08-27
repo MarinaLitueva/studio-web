@@ -21,6 +21,19 @@ export interface User {
   display_name?: string;
 }
 
+/** Keycloak-backed identity visible only in the platform administration area. */
+export interface PlatformIdentity {
+  id: string;
+  username: string;
+  email?: string;
+  display_name?: string;
+  identity_provider?: string;
+  first_seen_at_epoch_ms?: number;
+  status: "platform_admin" | "assigned" | "unassigned";
+  home_tenant_id?: string;
+  home_tenant_name?: string;
+}
+
 export interface Page<T> {
   items: T[];
   page_info?: { next_cursor: string | null; prev_cursor: string | null; limit: number };
@@ -185,6 +198,45 @@ export interface ArtifactNode {
     updated_at?: string | null;
     // User nodes:
     login?: string;
+    [key: string]: unknown;
+  };
+}
+
+/** One node from the gears catalog — a `gear` crate or a `crate_version`. The
+ *  payload shape differs by type; read it loosely. */
+export interface CatalogNode {
+  type_id: string;
+  instance_id: string;
+  value: {
+    // Gear nodes:
+    name?: string;
+    kind?: string;
+    description?: string | null;
+    max_version?: string | null;
+    newest_version?: string | null;
+    max_stable_version?: string | null;
+    num_versions?: number | null;
+    downloads?: number | null;
+    recent_downloads?: number | null;
+    repository?: string | null;
+    documentation?: string | null;
+    homepage?: string | null;
+    keywords?: string[];
+    categories?: string[];
+    // Crate-version nodes:
+    crate?: string;
+    num?: string;
+    yanked?: boolean | null;
+    yank_message?: string | null;
+    license?: string | null;
+    rust_version?: string | null;
+    edition?: string | null;
+    crate_size?: number | null;
+    has_lib?: boolean | null;
+    published_by?: string | null;
+    created_at?: string | null;
+    updated_at?: string | null;
+    title?: string;
     [key: string]: unknown;
   };
 }
@@ -410,6 +462,10 @@ export const api = {
 
   tenantUsers: (token: string, tenantId: string) =>
     request<Page<User>>(`/account-management/v1/tenants/${tenantId}/users`, token),
+
+  /** Platform-admin-only directory, including identities without a valid tenant. */
+  platformIdentities: (token: string) =>
+    request<{ items: PlatformIdentity[] }>("/studio-identity/v1/users", token),
 
   inviteUser: (
     token: string,
@@ -782,6 +838,32 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+
+  /* ── studio-gears-catalog gear: crates.io → graph (our published gears) ── */
+  /** Enqueue a background sync of the crates.io keyword into the graph. */
+  syncGears: (token: string) =>
+    request<{ task_id: string; status: string }>("/studio-gears-catalog/v1/sync", token, {
+      method: "POST",
+    }),
+  /** Poll a background catalog sync task. */
+  gearsCatalogTask: (token: string, taskId: string) =>
+    request<{
+      task_id: string;
+      status: "queued" | "running" | "succeeded" | "failed";
+      message?: string | null;
+      gears: number;
+      versions: number;
+      stored: number;
+    }>(`/studio-gears-catalog/v1/tasks/${encodeURIComponent(taskId)}`, token),
+  /** Read back the ingested gear crates. */
+  listGears: (token: string) =>
+    request<{ nodes: CatalogNode[] }>("/studio-gears-catalog/v1/gears", token),
+  /** Read back crate versions, optionally filtered to one crate. */
+  listGearVersions: (token: string, crate?: string) =>
+    request<{ nodes: CatalogNode[] }>(
+      `/studio-gears-catalog/v1/versions${crate ? `?crate=${encodeURIComponent(crate)}` : ""}`,
+      token,
+    ),
 
   /* ── studio-session gear: per-workspace Theia IDE containers ── */
   createStudioSession: (

@@ -7,8 +7,10 @@
 mod artifact_ingest; // pull issues/PRs from a connector source into the graph as GTS nodes
 mod connectors; // source connectors: driver plugins + tenant connection catalogue
 mod credstore_pg; // persistent credstore value store (issue #66)
+mod gears_catalog; // connector to crates.io: catalogue our published gears + versions in the graph
 #[cfg(feature = "graph")]
 mod graph_storage; // knowledge graph: typed nodes/edges, traversal, hybrid search
+mod identity_directory; // platform-admin view of assigned and unassigned Keycloak identities
 // keycloak-idp-plugin is the official cf-gears-keycloak-idp-plugin (linked in
 // registered_gears.rs). The former in-crate implementation was removed once the
 // official plugin went green — see docs/keycloak-idp-migration.md.

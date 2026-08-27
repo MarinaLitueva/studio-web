@@ -12,11 +12,13 @@
 //! testable on its own.
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::anyhow;
+use bytes::Bytes;
 use credstore_sdk::{CredStoreClientV1, SecretRef};
+use file_parser_sdk::{Detection, FileParserClientV1, ParseBytesRequest};
 use toolkit_security::SecurityContext;
 use uuid::Uuid;
 
@@ -42,10 +44,31 @@ const MAX_COMMITS: usize = 20_000;
 /// makes a mid-sync failure partial rather than all-or-nothing.
 const NODE_CHUNK: usize = 1_000;
 const EDGE_CHUNK: usize = 5_000;
+/// Upper bound on a binary document we hand to the file-parser gear. Extraction
+/// cost and the resulting text both scale with size; 15 MiB covers real specs
+/// and slide decks without letting a giant asset stall a sync.
+const MAX_PARSE_BYTES: u64 = 15 * 1024 * 1024;
 
-/// The text an embedder sees for a node — mirrors the fields lexical search
-/// composes (title/path/body/message/…), so a vector hit and a keyword hit
-/// agree on what the node "is about".
+/// True when a path looks like a document the file-parser can turn into text —
+/// office formats, PDFs, e-books and rich text. Plain-text formats already come
+/// through the walk as `text`, and opaque binaries (images, archives, media)
+/// have no text to extract, so both are skipped.
+fn is_parseable_doc(path: &str) -> bool {
+    const DOC_EXT: &[&str] = &[
+        "pdf", "docx", "doc", "xlsx", "xls", "pptx", "ppt", "odt", "ods", "odp", "rtf", "epub",
+    ];
+    let ext = path.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    DOC_EXT.contains(&ext.as_str())
+}
+
+/// Cap on the file-content slice fed to the embedder. Embedding models have a
+/// token limit (~8k tokens ≈ ~32k chars for the common ones); stay well under.
+const MAX_EMBED_TEXT_CHARS: usize = 8_000;
+
+/// The text an embedder sees for a node — the fields lexical search composes
+/// (title/path/body/message/…) plus a bounded slice of a file's `text` content,
+/// so a semantic hit and a keyword hit agree on what the node "is about" and
+/// vector search reaches *inside* files, not just their names.
 fn node_text(n: &GtsNode) -> String {
     let v = &n.value;
     let mut parts: Vec<String> = Vec::new();
@@ -60,6 +83,18 @@ fn node_text(n: &GtsNode) -> String {
     ] {
         if let Some(s) = v.get(key).and_then(serde_json::Value::as_str) {
             parts.push(s.to_string());
+        }
+    }
+    // File content (connector-cloned, hand-added, or file-parser-extracted),
+    // bounded to the model's input budget on a char boundary.
+    if let Some(s) = v.get("text").and_then(serde_json::Value::as_str) {
+        if !s.trim().is_empty() {
+            let end = s
+                .char_indices()
+                .map(|(i, _)| i)
+                .nth(MAX_EMBED_TEXT_CHARS)
+                .unwrap_or(s.len());
+            parts.push(s[..end].to_string());
         }
     }
     parts.join("\n")
@@ -81,6 +116,10 @@ pub struct IngestService {
     /// until a real model is wired — its `dimensions() == 0` short-circuits the
     /// embedding step, so ingest and search behave exactly as before.
     embedder: Arc<dyn Embedder>,
+    /// The file-parser gear, when linked: extracts text (Markdown) from binary
+    /// documents (PDF/docx/…) so their content is indexed for search. `None`
+    /// leaves binary files as metadata-only, exactly as before.
+    file_parser: Option<Arc<dyn FileParserClientV1>>,
     /// The studio-session workspaces root (`STUDIO_WORKSPACES_ROOT`). When a
     /// sync names a workspace + repo dir and the session gear has already
     /// cloned it here, ingest reads that checkout instead of cloning its own —
@@ -118,6 +157,7 @@ impl IngestService {
         drivers: HashMap<String, Arc<dyn ConnectorDriver>>,
         graph: Arc<dyn GraphStore>,
         embedder: Arc<dyn Embedder>,
+        file_parser: Option<Arc<dyn FileParserClientV1>>,
         workspaces_root: Option<PathBuf>,
         work_root: Option<PathBuf>,
     ) -> Self {
@@ -126,6 +166,7 @@ impl IngestService {
             drivers,
             graph,
             embedder,
+            file_parser,
             workspaces_root,
             work_root,
             tasks: Arc::new(TaskRegistry::default()),
@@ -376,7 +417,7 @@ impl IngestService {
         // the project tenant when opened from a project. Prefer `project_id`
         // for the checkout path; fall back to `workspace_id` for a
         // workspace-level open.
-        let on_disk: Option<(Vec<clone::WalkedFile>, Option<String>)> = if let Some(dir) =
+        let on_disk: Option<(PathBuf, Vec<clone::WalkedFile>, Option<String>)> = if let Some(dir) =
             self.shared_checkout_dir(project_id.or(workspace_id), repo_dir)
         {
             self.progress(task_id, "reading workspace files…");
@@ -388,7 +429,7 @@ impl IngestService {
                         repo = repo_full_path,
                         "studio-artifact-ingest: reading the workspace checkout failed — skipping files"
                     );
-                    Some((Vec::new(), None))
+                    Some((PathBuf::new(), Vec::new(), None))
                 }
             }
         } else if let Some(work_root) = self.work_root.clone() {
@@ -411,7 +452,7 @@ impl IngestService {
                         repo = repo_full_path,
                         "studio-artifact-ingest: clone failed — skipping files"
                     );
-                    Some((Vec::new(), None))
+                    Some((PathBuf::new(), Vec::new(), None))
                 }
             }
         } else {
@@ -419,19 +460,26 @@ impl IngestService {
         };
 
         match on_disk {
-            Some((list, commit)) => {
+            Some((dir, list, commit)) => {
                 for wf in list.into_iter().take(MAX_FILES) {
                     files += 1;
                     let file_id = gts::file_instance_id(connector_id, repo_full_path, &wf.path);
                     edges.push(gts::contains_edge(&repo_id, &file_id));
                     file_paths.insert(wf.path.clone());
+                    // Text files carry their content already; for a binary
+                    // document (no text) ask the file-parser gear to extract it,
+                    // so its content is indexed for search too.
+                    let text = match wf.text {
+                        Some(t) => Some(t),
+                        None => self.parse_binary_text(ctx, &dir, &wf.path, wf.size).await,
+                    };
                     nodes.push(gts::file_node_cloned(
                         &repo_id,
                         connector_id,
                         repo_full_path,
                         &wf.path,
                         wf.size,
-                        wf.text,
+                        text,
                         commit.as_deref(),
                     ));
                 }
@@ -695,7 +743,7 @@ impl IngestService {
         repo_full_path: &str,
         base_url: &str,
         token: &str,
-    ) -> anyhow::Result<(Vec<clone::WalkedFile>, Option<String>)> {
+    ) -> anyhow::Result<(PathBuf, Vec<clone::WalkedFile>, Option<String>)> {
         let clone_url = driver.clone_url(base_url, repo_full_path)?;
         let (username, password) = driver.clone_credentials(token);
         let username = username.to_string();
@@ -714,7 +762,7 @@ impl IngestService {
                 None,
             )?;
             let walked = clone::walk(&res.dir)?;
-            Ok((walked, res.commit))
+            Ok((res.dir, walked, res.commit))
         })
         .await
         .map_err(|e| anyhow!("clone task did not finish: {e}"))?
@@ -753,14 +801,47 @@ impl IngestService {
     async fn walk_checkout(
         &self,
         dir: PathBuf,
-    ) -> anyhow::Result<(Vec<clone::WalkedFile>, Option<String>)> {
+    ) -> anyhow::Result<(PathBuf, Vec<clone::WalkedFile>, Option<String>)> {
         tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
             let commit = clone::head_commit(&dir);
             let walked = clone::walk(&dir)?;
-            Ok((walked, commit))
+            Ok((dir, walked, commit))
         })
         .await
         .map_err(|e| anyhow!("workspace read did not finish: {e}"))?
+    }
+
+    /// Extract text from a binary document via the file-parser gear, so its
+    /// content is indexed for search. Best-effort: `None` when no parser is
+    /// wired, the file is not a parseable document, it is empty/too large, it
+    /// cannot be read, or extraction yields nothing. `dir` is the checkout root
+    /// and `rel` the repo-relative path.
+    async fn parse_binary_text(
+        &self,
+        ctx: &SecurityContext,
+        dir: &Path,
+        rel: &str,
+        size: u64,
+    ) -> Option<String> {
+        let parser = self.file_parser.as_ref()?;
+        if size == 0 || size > MAX_PARSE_BYTES || !is_parseable_doc(rel) {
+            return None;
+        }
+        let bytes = tokio::fs::read(dir.join(rel)).await.ok()?;
+        let req = ParseBytesRequest {
+            filename: Some(rel.to_string()),
+            content_type: None,
+            bytes: Bytes::from(bytes),
+            detection: Detection::Auto,
+        };
+        match parser.parse_bytes(ctx, req).await {
+            Ok(p) if !p.markdown.trim().is_empty() => Some(p.markdown),
+            Ok(_) => None,
+            Err(e) => {
+                tracing::warn!(error = %e, path = rel, "studio-artifact-ingest: file-parser extraction failed — leaving file metadata-only");
+                None
+            }
+        }
     }
 
     fn progress(&self, task_id: Option<&str>, message: &str) {
@@ -835,7 +916,7 @@ impl IngestService {
         &self,
         ctx: &SecurityContext,
         task_id: Option<&str>,
-        nodes: &mut [GtsNode],
+        nodes: &mut Vec<GtsNode>,
         flushed: &mut usize,
         workspace_id: Option<&str>,
         project_id: Option<&str>,
@@ -879,7 +960,7 @@ impl IngestService {
         let Some(dir) = self.shared_checkout_dir(Some(workspace_id), Some(repo_dir)) else {
             return Ok(Vec::new());
         };
-        let (walked, _commit) = self.walk_checkout(dir).await?;
+        let (_dir, walked, _commit) = self.walk_checkout(dir).await?;
         Ok(walked
             .into_iter()
             .filter_map(|f| f.text.map(|t| (f.path, t)))
@@ -932,6 +1013,11 @@ impl IngestService {
 
     /// Upsert a single manually-added file into the graph as a `file` node
     /// (no connector). Idempotent by (workspace, path). Returns the node id.
+    ///
+    /// For a text file, the content is also materialized into the IDE's
+    /// workspace checkout under `_artifacts/<name>` (the same volume repos clone
+    /// into), so the portal can open it in the editor as a real file — the node
+    /// records that `workspace_path`.
     pub async fn upsert_manual_file(
         &self,
         ctx: &SecurityContext,
@@ -942,12 +1028,62 @@ impl IngestService {
         text: Option<String>,
     ) -> anyhow::Result<String> {
         use super::gts;
-        let node = gts::manual_file_node(workspace_id, project_id, path, size, text);
+        // Scope dir == the node's identity scope == the checkout key: the
+        // project tenant when present, else the workspace.
+        let scope = project_id.unwrap_or(workspace_id);
+        let workspace_path = match text.as_deref() {
+            Some(t) => self.materialize_artifact_file(scope, path, t).await,
+            None => None,
+        };
+        let node =
+            gts::manual_file_node(workspace_id, project_id, path, size, text, workspace_path);
         let id = node.instance_id.clone();
         self.graph
             .upsert_nodes(ctx, std::slice::from_ref(&node))
             .await?;
         Ok(id)
+    }
+
+    /// Write a hand-added text file into the workspace checkout under
+    /// `{workspaces_root}/{scope}/_artifacts/<name>` — the same volume the IDE
+    /// bind-mounts as `/workspace` — so `openInEditor("_artifacts/<name>")`
+    /// finds it. Returns that repo-relative path on success. Best-effort:
+    /// `None` when no workspaces root is configured, the name is unsafe, or the
+    /// write fails (the graph node is still stored either way).
+    async fn materialize_artifact_file(
+        &self,
+        scope: &str,
+        path: &str,
+        text: &str,
+    ) -> Option<String> {
+        let root = self.workspaces_root.as_ref()?;
+        let scope = scope.trim();
+        if scope.is_empty() || scope.contains('/') || scope.contains('\\') || scope.contains("..") {
+            return None;
+        }
+        // Sanitize the name to a safe, checkout-relative path: strip leading
+        // slashes, reject any `..`/empty segment, normalize separators.
+        let rel = path
+            .trim()
+            .trim_start_matches(['/', '\\'])
+            .replace('\\', "/");
+        if rel.is_empty() || rel.split('/').any(|s| s.is_empty() || s == "..") {
+            return None;
+        }
+        let target = root.join(scope).join("_artifacts").join(&rel);
+        if let Some(parent) = target.parent() {
+            if let Err(e) = tokio::fs::create_dir_all(parent).await {
+                tracing::warn!(error = %e, dir = %parent.display(), "studio-artifact-ingest: could not create _artifacts dir — file not materialized");
+                return None;
+            }
+        }
+        match tokio::fs::write(&target, text).await {
+            Ok(()) => Some(format!("_artifacts/{rel}")),
+            Err(e) => {
+                tracing::warn!(error = %e, path = %target.display(), "studio-artifact-ingest: manual file materialization failed — editor open unavailable");
+                None
+            }
+        }
     }
 
     /// Persist spec-quality detector results the portal has parsed: one finding

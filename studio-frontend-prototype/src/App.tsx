@@ -4,8 +4,10 @@ import { env as runtimeEnv } from "./env";
 import { errText, matches } from "./format";
 import { ProjectsPortfolio } from "./projects";
 import { PeopleView } from "./people";
+import { IdentityDirectory } from "./identity-directory";
 import { StudioAI } from "./studio-ai";
 import { SpecQuality } from "./spec-quality";
+import { GearsCatalog } from "./gears-catalog";
 import {
   ACCESS_MODELS,
   defaultAccessConfig,
@@ -30,6 +32,8 @@ import {
   type Tenant,
   type WorkspaceSettings,
 } from "./api";
+
+const PLATFORM_ROOT_TENANT_ID = "00000000-0000-0000-0000-000000000001";
 
 // Portal (личный кабинет): sign in with a bearer token, then an app shell
 // with a sidebar — Projects / People / Integrations / Profile.
@@ -78,19 +82,6 @@ type StudioTarget = {
   /** True when this is a nested project (no workspaceSettings of its own). */
   standalone?: boolean;
 };
-
-/** Platform tenant administration (organizations, raw workspace list).
- *
- *  Off by default — concept v2 hides the organization level. Kept one
- *  `localStorage.setItem("studio.platformAdmin", "on")` away because the
- *  hierarchy is still real and someone has to be able to see it. */
-function platformAdminEnabled(): boolean {
-  try {
-    return localStorage.getItem("studio.platformAdmin") === "on";
-  } catch {
-    return false;
-  }
-}
 
 /* ── Filters (right panel) ── */
 
@@ -325,6 +316,7 @@ type View =
   | "chats"
   | "files"
   | "connectors"
+  | "gears"
   | "system"
   | "profile";
 
@@ -390,6 +382,12 @@ function NavIcon({ name }: { name: string }) {
         <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1" />
       </>
     ),
+    package: (
+      <>
+        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+        <path d="M3.3 7 12 12l8.7-5M12 22V12" />
+      </>
+    ),
     scan: (
       <>
         <rect x="4" y="4" width="16" height="16" rx="2" />
@@ -443,12 +441,24 @@ const NAV_SECTIONS: {
   // page (the "Analyze" project tab), where it runs over that project's
   // ingested artifacts.
   {
-    title: "Monitor",
-    items: [{ id: "system", icon: "cog", label: "System" }],
+    title: "Platform",
+    items: [
+      // Our published gears (crates.io → graph), and the system observability
+      // surface.
+      { id: "gears", icon: "package", label: "Gears" },
+      { id: "system", icon: "cog", label: "System" },
+    ],
   },
 ];
 
-type AdminView = "people" | "access" | "connectors" | "secrets" | "tenants" | "workspaces";
+type AdminView =
+  | "people"
+  | "identities"
+  | "access"
+  | "connectors"
+  | "secrets"
+  | "tenants"
+  | "workspaces";
 
 /** Administration that survives concept v2: people, the shared catalogue,
  *  credentials. The tenant hierarchy (organizations, the raw workspace list)
@@ -464,8 +474,49 @@ const ADMIN_NAV: { id: AdminView; icon: string; label: string }[] = [
 ];
 
 const PLATFORM_NAV: { id: AdminView; icon: string; label: string }[] = [
+  { id: "identities", icon: "users", label: "All identities" },
   { id: "workspaces", icon: "grid", label: "Project tenants" },
 ];
+
+function OrganizationAccessGate({
+  loading,
+  onRetry,
+  onLogout,
+}: {
+  loading: boolean;
+  onRetry: () => void;
+  onLogout: () => void;
+}) {
+  return (
+    <div className="login-page">
+      <div className="login-panel">
+        <div className="logo login-logo">CS</div>
+        <h1 className="login-title">
+          {loading ? "Checking organization access" : "Waiting for organization access"}
+        </h1>
+        <p className="hint">
+          {loading
+            ? "Your identity is verified. Studio is checking your organization memberships."
+            : "Your GitHub sign-in succeeded, but you are not a member of a Studio organization yet."}
+        </p>
+        {!loading && (
+          <p className="hint">
+            Ask a Studio administrator or an organization owner to invite you. Signing in does not
+            grant access automatically.
+          </p>
+        )}
+        <div className="inline">
+          <button className="primary" disabled={loading} onClick={onRetry}>
+            Check again
+          </button>
+          <button className="ghost" onClick={onLogout}>
+            Sign out
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () => void }) {
   const [view, setView] = useState<View>("projects");
@@ -495,7 +546,6 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
   // Concept v2 resolves it implicitly; the picker only appears under the flag.
   const [adminOrgId, setAdminOrgId] = useState<string | null>(null);
   const [adminOrgMenu, setAdminOrgMenu] = useState(false);
-  const showPlatform = platformAdminEnabled();
   const openAdmin = (v: AdminView = "people", orgId?: string) => {
     setAdminOpen(true);
     setAdminView(v);
@@ -521,10 +571,14 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
     }
   }, [sidebarCollapsed]);
   const [home, setHome] = useState<Tenant | null>(null);
+  const [accessState, setAccessState] = useState<"loading" | "ready" | "unassigned">(
+    "loading",
+  );
+  const showPlatform = home?.id === PLATFORM_ROOT_TENANT_ID;
   const [orgs, setOrgs] = useState<Tenant[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  // Guards the one-time default-organization seed on a from-scratch deploy (see
-  // refresh): only try once per session so a failing create can't loop.
+  // Temporary platform-admin fallback until every installation bootstraps its
+  // default organization server-side. Never runs for an external identity.
   const seededOrgRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [studio, setStudio] = useState<StudioTarget | null>(null);
@@ -825,17 +879,22 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
   const refresh = useCallback(async () => {
     setError(null);
     try {
-      // The home tenant comes from the validated token. If it no longer
-      // exists (deleted), say so plainly instead of raising a raw 404.
+      // Authentication and organization membership are separate. During the
+      // ADR-0011 migration an external identity can carry a legacy home id
+      // without a live tenant. That is an unassigned identity, not a broken org.
       const homeTenant = await api.tenant(token, me.subject_tenant_id).catch((e) => {
         if (e instanceof ApiError && e.status === 404) {
-          throw new Error(
-            `Your home tenant (${me.subject_tenant_id}) no longer exists — it was probably deleted. ` +
-              `Re-create it or sign in as a user whose home tenant is alive.`,
-          );
+          setHome(null);
+          setOrgs([]);
+          setWorkspaces([]);
+          setAccessState("unassigned");
+          return null;
         }
         throw e;
       });
+      if (!homeTenant) return;
+
+      setAccessState("ready");
       const page = await api
         .tenantChildren(token, me.subject_tenant_id)
         .catch((e) => (e instanceof ApiError && e.status === 404 ? { items: [] } : Promise.reject(e)));
@@ -843,17 +902,11 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
       const children = page.items ?? [];
       let orgList = children.filter((t) => t.tenant_type === TENANT_TYPES.organization);
 
-      // From-scratch bootstrap: the backend seeds only the platform root tenant,
-      // and a workspace must hang off an ORGANIZATION (the AM type barrier
-      // rejects a workspace directly under the platform root). So on the very
-      // first login — a fresh database with no organization yet — create a
-      // default one under the home tenant, mirroring demo.sh's step 3. This is
-      // what lets a clean deploy create workspaces and projects right away
-      // instead of dead-ending on an empty org list. Idempotent: only when
-      // there are zero orgs, and only once per session.
+      // Transitional fallback: only the deliberately provisioned platform-root
+      // administrator may create the default organization on a fresh database.
       if (
         orgList.length === 0 &&
-        homeTenant.tenant_type !== TENANT_TYPES.organization &&
+        homeTenant.id === PLATFORM_ROOT_TENANT_ID &&
         !seededOrgRef.current
       ) {
         seededOrgRef.current = true;
@@ -935,6 +988,16 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
       cancelled = true;
     };
   }, [token, crumb.projectId]);
+
+  if (accessState !== "ready") {
+    return (
+      <OrganizationAccessGate
+        loading={accessState === "loading"}
+        onRetry={() => void refresh()}
+        onLogout={onLogout}
+      />
+    );
+  }
 
   return (
     <div className="shell">
@@ -1366,6 +1429,9 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
         {error && <div className="error">{error}</div>}
         {adminOpen ? (
           <>
+            {adminView === "identities" && (
+              <IdentityDirectory token={token} query={filters.query} />
+            )}
             {adminView === "tenants" && (
               <OrganizationsView
                 token={token}
@@ -1515,6 +1581,7 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
         {/* The tenant hierarchy renders only inside the Admin area, under the flag. */}
         {view === "chats" && <ChatsView token={token} filters={filters} />}
         {view === "files" && <FilesView token={token} filters={filters} />}
+        {view === "gears" && <GearsCatalog token={token} />}
         {view === "system" && <SystemView token={token} filters={filters} />}
         {view === "profile" && <ProfileView me={me} home={home} token={token} />}
           </>
@@ -1575,7 +1642,7 @@ function FilterPanel({
 
   const count = activeFilterCount(view, filters);
   const set = (patch: Partial<Filters>) => onChange({ ...filters, ...patch });
-  const noFilters = view === "profile" || view === "dashboard";
+  const noFilters = view === "profile" || view === "dashboard" || view === "gears";
   const hasSearch = !noFilters && view !== "system";
 
   if (!open) {
@@ -3628,6 +3695,18 @@ function ArtifactsView({
   );
 }
 
+/** Ask every embedded Studio (Theia) iframe to open a file in its editor. The
+ *  IDE's portal-bridge maps `studio.openInEditor` onto the editor open against
+ *  the workspace roots (ADR-0010). `path` is checkout-relative — a repo file's
+ *  path, or a manual file's `_artifacts/<name>`. No-op when no session is open. */
+function openInStudioEditor(path?: string): void {
+  if (!path) return;
+  document.querySelectorAll<HTMLIFrameElement>("iframe.space-frame").forEach((f) => {
+    const origin = f.dataset.origin;
+    if (origin) f.contentWindow?.postMessage({ type: "studio.openInEditor", path }, origin);
+  });
+}
+
 /** The ingested-artifacts viewer: issues and pull requests pulled from the
  *  attached sources by the artifact-ingest gear and read back from the graph
  *  store. Reloads whenever `refreshKey` changes (i.e. after a Sync). */
@@ -3675,20 +3754,6 @@ function IngestedArtifacts({
       .forEach((f) => {
         const origin = f.dataset.origin;
         if (origin) f.contentWindow?.postMessage({ type: "studio.openGraph" }, origin);
-      });
-  };
-
-  // Ask the embedded Studio (Theia) to open a repository file in its editor.
-  // The IDE's portal-bridge maps `studio.openInEditor` onto the editor open
-  // against the first workspace root (ADR-0010 openInEditor). `path` is the
-  // repo-relative path stored on the file node.
-  const openInEditor = (path?: string) => {
-    if (!path) return;
-    document
-      .querySelectorAll<HTMLIFrameElement>("iframe.space-frame")
-      .forEach((f) => {
-        const origin = f.dataset.origin;
-        if (origin) f.contentWindow?.postMessage({ type: "studio.openInEditor", path }, origin);
       });
   };
 
@@ -3752,7 +3817,7 @@ function IngestedArtifacts({
                   {typeof v.path === "string" && v.path && (
                     <button
                       className="ghost"
-                      onClick={() => openInEditor(v.path)}
+                      onClick={() => openInStudioEditor(v.path)}
                       title="Open this file in the embedded Studio editor"
                     >
                       Open in editor
@@ -3824,7 +3889,7 @@ function ProjectFiles({
   parentWorkspaceId?: string;
 }) {
   const [files, setFiles] = useState<
-    { id: string; path: string; size?: number; has_text?: boolean }[] | null
+    { id: string; path: string; size?: number; has_text?: boolean; workspace_path?: string }[] | null
   >(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -3848,6 +3913,7 @@ function ProjectFiles({
             path: typeof v.path === "string" ? v.path : n.instance_id,
             size: typeof v.size === "number" ? v.size : undefined,
             has_text: v.has_text === true,
+            workspace_path: typeof v.workspace_path === "string" ? v.workspace_path : undefined,
           };
         });
       setFiles(mine);
@@ -3919,6 +3985,15 @@ function ProjectFiles({
                   {f.has_text ? " · text" : " · metadata only"}
                 </div>
               </div>
+              {f.workspace_path && (
+                <button
+                  className="ghost"
+                  onClick={() => openInStudioEditor(f.workspace_path)}
+                  title="Open this file in the embedded Studio editor (materialized into the workspace)"
+                >
+                  Open in editor
+                </button>
+              )}
             </li>
           ))}
         </ul>
