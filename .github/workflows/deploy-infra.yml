@@ -143,7 +143,9 @@ jobs:
           template="deploy/k8s/cloudnative-pg/${{ inputs.environment }}-cluster.template.yaml"
           graph_image="$IMAGE_PREFIX/graph-postgres:$INFRA_TAG"
           sed "s#\${GRAPH_POSTGRES_IMAGE}#$graph_image#g" "$template" \
-            | kubectl apply --dry-run=server -n "$NAMESPACE" -f - >/dev/null
+            | kubectl apply --server-side --force-conflicts \
+                --field-manager=studio-infra-deployer \
+                --dry-run=server -n "$NAMESPACE" -f - >/dev/null
 
           values="deploy/helm/values-${{ inputs.environment }}.example.yaml"
           common_args=(
@@ -166,6 +168,7 @@ jobs:
           graph_image="$IMAGE_PREFIX/graph-postgres:$INFRA_TAG"
           sed "s#\${GRAPH_POSTGRES_IMAGE}#$graph_image#g" "$template" \
             | kubectl apply --server-side \
+                --force-conflicts \
                 --field-manager=studio-infra-deployer \
                 -n "$NAMESPACE" -f -
 
