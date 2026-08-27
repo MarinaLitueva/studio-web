@@ -9,7 +9,7 @@
 //! Only compiled with the `graph` feature (the gear itself is behind it).
 
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 use toolkit_security::SecurityContext;
 
@@ -421,7 +421,14 @@ impl GraphStore for GraphStorageBackend {
             loop {
                 let page = self
                     .client
-                    .list_edges(ctx, id, Direction::Outgoing, cursor.as_deref(), LIST_PAGE, false)
+                    .list_edges(
+                        ctx,
+                        id,
+                        Direction::Outgoing,
+                        cursor.as_deref(),
+                        LIST_PAGE,
+                        false,
+                    )
                     .await
                     .map_err(|e| anyhow::anyhow!("graph-storage list_edges: {e}"))?;
                 for e in page.items {

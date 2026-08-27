@@ -197,7 +197,9 @@ impl GraphStore for InMemoryGraphStore {
                 .lock()
                 .map_err(|_| anyhow::anyhow!("graph store lock poisoned"))?;
             map.values()
-                .filter(|n| needle.is_empty() || n.value.to_string().to_lowercase().contains(&needle))
+                .filter(|n| {
+                    needle.is_empty() || n.value.to_string().to_lowercase().contains(&needle)
+                })
                 .take(limit as usize)
                 .cloned()
                 .collect()
