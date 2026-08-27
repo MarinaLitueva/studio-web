@@ -76,6 +76,20 @@ pub struct StudioSessionConfig {
     /// session still starts, that agent just stays unauthenticated.
     #[serde(default = "default_agent_secrets")]
     pub agent_secrets: Vec<AgentSecret>,
+
+    /// Enable the Theia backend-control bridge (ADR-0010): mint a per-session
+    /// S2S control token, inject it into the container as
+    /// `STUDIO_THEIA_S2S_TOKEN`, and let the studio-theia gear discover the
+    /// session's internal control endpoint. Default off; the Theia node must
+    /// also serve the control API for calls to succeed.
+    #[serde(default)]
+    pub theia_control_enabled: bool,
+
+    /// Host studio-backend uses to reach a Loopback session's control API
+    /// (Docker MVP). Default `127.0.0.1` (backend on the host); set to
+    /// `host.docker.internal` when the backend itself runs in a container.
+    #[serde(default = "default_control_reach_host")]
+    pub control_reach_host: String,
 }
 
 impl Default for StudioSessionConfig {
@@ -97,6 +111,8 @@ impl Default for StudioSessionConfig {
             max_session_secs: default_max_session_secs(),
             git_mode: default_git_mode(),
             agent_secrets: default_agent_secrets(),
+            theia_control_enabled: false,
+            control_reach_host: default_control_reach_host(),
         }
     }
 }
@@ -158,6 +174,9 @@ fn default_max_session_secs() -> u64 {
 }
 fn default_git_mode() -> String {
     "disabled".into()
+}
+fn default_control_reach_host() -> String {
+    "127.0.0.1".into()
 }
 
 /// One `environment variable <- credstore reference` binding.

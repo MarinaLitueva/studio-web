@@ -131,6 +131,37 @@ pub struct RemotePullRequest {
     pub updated_at: Option<String>,
 }
 
+/// One comment on an issue or pull request. GitHub returns comments for both
+/// from a single repo-wide endpoint; `target_number` is the issue/PR number the
+/// comment belongs to, so the ingest can link it to that node.
+#[derive(Debug, Clone)]
+pub struct RemoteComment {
+    /// Provider-native id, stringified — the stable key for the GTS instance.
+    pub id: String,
+    /// Number of the issue/PR this comment is on.
+    pub target_number: i64,
+    pub author: Option<String>,
+    pub body: Option<String>,
+    pub url: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+/// One commit in a repository.
+#[derive(Debug, Clone)]
+pub struct RemoteCommit {
+    /// Full commit sha — the stable key (content-addressed).
+    pub sha: String,
+    pub message: Option<String>,
+    /// Author login, when the provider maps the commit to an account.
+    pub author: Option<String>,
+    /// Author display name from the commit metadata.
+    pub author_name: Option<String>,
+    pub url: Option<String>,
+    /// Authored-at RFC 3339 timestamp from the commit metadata.
+    pub created_at: Option<String>,
+}
+
 /// A repository tree read at a ref, for the knowledge-graph sync.
 #[derive(Debug, Clone)]
 pub struct RepoTree {
@@ -259,6 +290,37 @@ pub trait ConnectorDriver: Send + Sync + 'static {
         number: i64,
     ) -> anyhow::Result<Vec<String>> {
         let _ = (auth, repo_full_path, number);
+        Ok(Vec::new())
+    }
+
+    /// Comments on issues and pull requests in one repository. `since` (RFC
+    /// 3339) narrows to comments updated at or after that instant; `page` is
+    /// 1-based and `per_page` caps one page. Defaulted to empty (not an error)
+    /// so a driver without comments simply contributes none to the graph.
+    async fn list_comments(
+        &self,
+        auth: &ConnectionAuth,
+        repo_full_path: &str,
+        since: Option<&str>,
+        page: u32,
+        per_page: u32,
+    ) -> anyhow::Result<Vec<RemoteComment>> {
+        let _ = (auth, repo_full_path, since, page, per_page);
+        Ok(Vec::new())
+    }
+
+    /// Commits in one repository. Same paging + `since` contract as
+    /// [`Self::list_issues`]. Defaulted to empty so a non-source driver
+    /// contributes no commit nodes.
+    async fn list_commits(
+        &self,
+        auth: &ConnectionAuth,
+        repo_full_path: &str,
+        since: Option<&str>,
+        page: u32,
+        per_page: u32,
+    ) -> anyhow::Result<Vec<RemoteCommit>> {
+        let _ = (auth, repo_full_path, since, page, per_page);
         Ok(Vec::new())
     }
 

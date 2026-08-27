@@ -9,7 +9,9 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use super::graph::{GtsEdge, GtsNode};
-use crate::connectors::driver::{RemoteFile, RemoteIssue, RemotePullRequest};
+use crate::connectors::driver::{
+    RemoteComment, RemoteCommit, RemoteFile, RemoteIssue, RemotePullRequest,
+};
 
 /// Fixed namespace for uuid5 instance ids (studio artifact graph).
 const INSTANCE_NS: Uuid = Uuid::from_u128(0xcf57_0000_0000_4000_8000_0000_0000_0001);
@@ -19,14 +21,24 @@ pub const ISSUE_TYPE: &str = "gts.cf.studio.artifact.issue.v1~";
 pub const PULL_REQUEST_TYPE: &str = "gts.cf.studio.artifact.pull_request.v1~";
 pub const FILE_TYPE: &str = "gts.cf.studio.artifact.file.v1~";
 pub const USER_TYPE: &str = "gts.cf.studio.artifact.user.v1~";
+/// A spec-quality finding about a document (bloat / traceability / leak /
+/// purpose). Materialized from a detector result by the portal.
+pub const SPEC_FINDING_TYPE: &str = "gts.cf.studio.artifact.spec_finding.v1~";
+/// A comment on an issue or pull request.
+pub const COMMENT_TYPE: &str = "gts.cf.studio.artifact.comment.v1~";
+/// A commit in a repository.
+pub const COMMIT_TYPE: &str = "gts.cf.studio.artifact.commit.v1~";
 
 /// Every artifact node type, for registering and enumerating.
-pub const ALL_NODE_TYPES: [&str; 5] = [
+pub const ALL_NODE_TYPES: [&str; 8] = [
     REPO_TYPE,
     ISSUE_TYPE,
     PULL_REQUEST_TYPE,
     FILE_TYPE,
     USER_TYPE,
+    SPEC_FINDING_TYPE,
+    COMMENT_TYPE,
+    COMMIT_TYPE,
 ];
 
 // ── Relation (edge) types ── namespace `rel`. Endpoints are node instance ids.
@@ -38,10 +50,26 @@ pub const REL_CONTAINS: &str = "gts.cf.studio.rel.contains.v1~";
 pub const REL_AUTHORED_BY: &str = "gts.cf.studio.rel.authored_by.v1~";
 /// pull_request → file (a file the PR changed).
 pub const REL_MODIFIES: &str = "gts.cf.studio.rel.modifies.v1~";
+/// document ↔ document — near-duplicate found by the bloat detector.
+pub const REL_DUPLICATES: &str = "gts.cf.studio.rel.duplicates.v1~";
+/// document → document — a traceability link from the traceability detector.
+pub const REL_TRACES_TO: &str = "gts.cf.studio.rel.traces_to.v1~";
+/// spec_finding → document — the document a finding is about.
+pub const REL_FINDING_ON: &str = "gts.cf.studio.rel.finding_on.v1~";
+/// comment → issue / pull_request — the artifact a comment is on.
+pub const REL_COMMENT_ON: &str = "gts.cf.studio.rel.comment_on.v1~";
 
 /// Every relation type, for registering in the graph.
-pub const ALL_EDGE_TYPES: [&str; 4] =
-    [REL_ARTIFACT_OF, REL_CONTAINS, REL_AUTHORED_BY, REL_MODIFIES];
+pub const ALL_EDGE_TYPES: [&str; 8] = [
+    REL_ARTIFACT_OF,
+    REL_CONTAINS,
+    REL_AUTHORED_BY,
+    REL_MODIFIES,
+    REL_DUPLICATES,
+    REL_TRACES_TO,
+    REL_FINDING_ON,
+    REL_COMMENT_ON,
+];
 
 /// The type id the graph-storage gear stores this artifact type under. The gear
 /// keeps its own type table and its ids omit the `gts.` scheme token (its own
@@ -86,6 +114,21 @@ pub fn type_schemas() -> Vec<Value> {
             FILE_TYPE,
             "File",
             "A file in the repository tree pulled from the connector API.",
+        ),
+        (
+            SPEC_FINDING_TYPE,
+            "SpecFinding",
+            "A spec-quality finding (bloat/traceability/leak/purpose) about a document.",
+        ),
+        (
+            COMMENT_TYPE,
+            "Comment",
+            "A comment on an issue or pull request pulled from the connector API.",
+        ),
+        (
+            COMMIT_TYPE,
+            "Commit",
+            "A commit in the repository pulled from the connector API.",
         ),
     ]
     .into_iter()
@@ -233,10 +276,113 @@ pub fn user_node(connector_id: &str, provider: &str, login: &str) -> GtsNode {
     }
 }
 
+/// A comment on an issue or pull request. `title` is a short snippet so the
+/// graph node name is readable; `body` carries the full text.
+pub fn comment_node(
+    repo_id: &str,
+    connector_id: &str,
+    repo_full_path: &str,
+    c: RemoteComment,
+) -> GtsNode {
+    let snippet = c.body.as_deref().map(|b| {
+        let s: String = b.chars().take(80).collect();
+        if b.chars().count() > 80 {
+            format!("{s}…")
+        } else {
+            s
+        }
+    });
+    GtsNode {
+        type_id: COMMENT_TYPE,
+        instance_id: anon_id(&[connector_id, repo_full_path, "comment", &c.id]),
+        value: json!({
+            "repo": repo_id,
+            "external_id": c.id,
+            "target_number": c.target_number,
+            "author": c.author,
+            "title": snippet,
+            "body": c.body,
+            "url": c.url,
+            "created_at": c.created_at,
+            "updated_at": c.updated_at,
+        }),
+    }
+}
+
+/// A commit node. `title` is the first line of the message (the subject line).
+pub fn commit_node(
+    repo_id: &str,
+    connector_id: &str,
+    repo_full_path: &str,
+    c: RemoteCommit,
+) -> GtsNode {
+    let subject = c
+        .message
+        .as_deref()
+        .map(|m| m.lines().next().unwrap_or("").to_string());
+    let short_sha: String = c.sha.chars().take(7).collect();
+    GtsNode {
+        type_id: COMMIT_TYPE,
+        instance_id: anon_id(&[connector_id, repo_full_path, "commit", &c.sha]),
+        value: json!({
+            "repo": repo_id,
+            "sha": c.sha,
+            "short_sha": short_sha,
+            "title": subject,
+            "message": c.message,
+            "author": c.author,
+            "author_name": c.author_name,
+            "url": c.url,
+            "created_at": c.created_at,
+        }),
+    }
+}
+
+/// comment → issue / pull_request (the artifact the comment is on).
+pub fn comment_on_edge(comment_id: &str, target_id: &str) -> GtsEdge {
+    GtsEdge {
+        type_id: REL_COMMENT_ON,
+        from: comment_id.to_string(),
+        to: target_id.to_string(),
+    }
+}
+
 /// The instance id a File node has for `path` — so an edge can reference a file
 /// without rebuilding its node (identity is keyed on path, same as `file_node`).
 pub fn file_instance_id(connector_id: &str, repo_full_path: &str, path: &str) -> String {
     anon_id(&[connector_id, repo_full_path, "file", path])
+}
+
+/// A manually-uploaded file node (no connector/repo). Keyed on the workspace and
+/// path, so re-uploading the same name upserts. `origin: "manual"` distinguishes
+/// it from connector-ingested files; `repo` is set to the workspace id so the
+/// graph still has something to group it under.
+pub fn manual_file_node(
+    workspace_id: &str,
+    project_id: Option<&str>,
+    path: &str,
+    size: u64,
+    text: Option<String>,
+) -> GtsNode {
+    // Identity is keyed on the narrowest tenant it belongs to (the project when
+    // present, else the workspace) plus the path, so re-uploading the same name
+    // upserts within that tenant. `repo` groups it under that same tenant.
+    let scope = project_id.unwrap_or(workspace_id);
+    GtsNode {
+        type_id: FILE_TYPE,
+        instance_id: anon_id(&[scope, "manual_file", path]),
+        value: json!({
+            "repo": scope,
+            "path": path,
+            "is_dir": false,
+            "size": size,
+            "origin": "manual",
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "has_text": text.is_some(),
+            "text": text,
+        }),
+    }
 }
 
 /// issue / pull_request → repo.
@@ -272,5 +418,69 @@ pub fn modifies_edge(pr_id: &str, file_id: &str) -> GtsEdge {
         type_id: REL_MODIFIES,
         from: pr_id.to_string(),
         to: file_id.to_string(),
+    }
+}
+
+// ── Spec-quality findings (materialized from detector results) ──
+
+/// Deterministic finding instance id — idempotent per (detector, subject doc),
+/// so re-running a detector upserts the same finding rather than duplicating.
+pub fn spec_finding_instance_id(detector: &str, subject_id: &str) -> String {
+    anon_id(&["spec_finding", detector, subject_id])
+}
+
+/// A spec-quality finding node about `subject_id` (a document node instance id).
+/// `title` mirrors the summary so the graph node name reads as the verdict.
+pub fn spec_finding_node(
+    detector: &str,
+    subject_id: &str,
+    path: Option<&str>,
+    severity: Option<&str>,
+    summary: Option<&str>,
+    score: Option<f64>,
+    details: Value,
+) -> GtsNode {
+    GtsNode {
+        type_id: SPEC_FINDING_TYPE,
+        instance_id: spec_finding_instance_id(detector, subject_id),
+        value: json!({
+            "detector": detector,
+            "subject": subject_id,
+            "path": path,
+            "severity": severity,
+            "title": summary,
+            "summary": summary,
+            "score": score,
+            "details": details,
+        }),
+    }
+}
+
+/// spec_finding → document (the document a finding is about).
+pub fn finding_on_edge(finding_id: &str, subject_id: &str) -> GtsEdge {
+    GtsEdge {
+        type_id: REL_FINDING_ON,
+        from: finding_id.to_string(),
+        to: subject_id.to_string(),
+    }
+}
+
+/// document ↔ document (bloat near-duplicate). Endpoints are ordered so the pair
+/// upserts once regardless of which direction the caller sends.
+pub fn duplicates_edge(a: &str, b: &str) -> GtsEdge {
+    let (from, to) = if a <= b { (a, b) } else { (b, a) };
+    GtsEdge {
+        type_id: REL_DUPLICATES,
+        from: from.to_string(),
+        to: to.to_string(),
+    }
+}
+
+/// document → document (a traceability link).
+pub fn traces_to_edge(from: &str, to: &str) -> GtsEdge {
+    GtsEdge {
+        type_id: REL_TRACES_TO,
+        from: from.to_string(),
+        to: to.to_string(),
     }
 }

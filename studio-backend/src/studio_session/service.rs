@@ -77,6 +77,11 @@ pub struct Session {
     /// this one session; NOT the caller's platform token. Empty for
     /// sessions adopted from an older image (gate disabled there anyway).
     pub session_token: String,
+    /// Per-session S2S control token for the Theia backend bridge (ADR-0010).
+    /// Minted only when `theia_control_enabled`; empty otherwise and for
+    /// adopted sessions. Never handed to the browser — distinct from
+    /// `session_token`.
+    pub control_token: String,
 }
 
 pub struct SessionService {
@@ -412,6 +417,15 @@ impl SessionService {
             let b = Uuid::new_v4().simple().to_string();
             format!("{a}{b}")
         };
+        // Distinct per-session token for the Theia backend-control bridge
+        // (ADR-0010). Only minted when the bridge is enabled; empty otherwise.
+        let control_token = if self.cfg.theia_control_enabled {
+            let a = Uuid::new_v4().simple().to_string();
+            let b = Uuid::new_v4().simple().to_string();
+            format!("{a}{b}")
+        } else {
+            String::new()
+        };
 
         let mut env = vec![
             format!("STUDIO_WORKSPACE_ID={workspace_id}"),
@@ -425,6 +439,11 @@ impl SessionService {
             // it when forwarding, so in-IDE clients use gateway-rooted paths.
             "STUDIO_GATEWAY_URL=http://host.docker.internal:8090/cf".to_string(),
         ];
+        // Hand the container its S2S control token so the Theia node can
+        // authenticate studio-backend's control calls (ADR-0010).
+        if self.cfg.theia_control_enabled {
+            env.push(format!("STUDIO_THEIA_S2S_TOKEN={control_token}"));
+        }
         // Provider keys for the native Theia agents (Codex, Claude Code).
         env.extend(self.agent_env(ctx).await);
         // Workspace root repository (cloned by the entrypoint into an empty
@@ -512,6 +531,7 @@ impl SessionService {
             state: SessionState::Starting,
             created_at_epoch_secs: now_secs(),
             session_token,
+            control_token,
             sources: root_repo
                 .iter()
                 .map(|_| "workspace root (git)".to_string())
@@ -722,6 +742,70 @@ impl SessionService {
             .map(|s| s.address.clone())
     }
 
+    /// Resolve the internal Theia control endpoint for the caller's live
+    /// session on `workspace_id` (ADR-0010). `None` unless the bridge is
+    /// enabled, a live session exists for this tenant+workspace, and it carries
+    /// a control token. The control API is served by the Theia node on the
+    /// session's own port under an internal, S2S-token-gated path (Docker MVP);
+    /// a dedicated internal port / Service is the production hardening.
+    #[allow(dead_code)]
+    pub async fn control_endpoint(
+        &self,
+        ctx: &SecurityContext,
+        workspace_id: Uuid,
+    ) -> Option<crate::studio_session::sdk::TheiaControlEndpoint> {
+        if !self.cfg.theia_control_enabled {
+            return None;
+        }
+        let tenant_id = ctx.subject_tenant_id();
+        let sessions = self.sessions.read().await;
+        let session = sessions.values().find(|s| {
+            s.workspace_id == workspace_id
+                && s.tenant_id == tenant_id
+                && s.state != SessionState::Stopped
+        })?;
+        if session.control_token.is_empty() {
+            return None;
+        }
+        let base_url = match &session.address {
+            SessionAddress::Loopback { port } => {
+                format!("http://{}:{port}", self.cfg.control_reach_host)
+            }
+            SessionAddress::Service { host, port } => format!("http://{host}:{port}"),
+        };
+        Some(crate::studio_session::sdk::TheiaControlEndpoint {
+            session_id: session.id,
+            base_url,
+            token: session.control_token.clone(),
+        })
+    }
+
+    /// Reverse-resolve a per-session S2S control token to its session's
+    /// trusted `(tenant, workspace)` coordinates. The token is minted per
+    /// session (256 random bits, carried on `X-CFS-Theia-Token`), so this is
+    /// the studio-theia ingress's authentication primitive: it bypasses
+    /// `SecurityContext` because it is what mints one. `None` for an empty,
+    /// unknown, stopped, or forged token, or when the bridge is disabled.
+    /// (Plain `==` matches repo style; a constant-time compare is a cheap
+    /// future hardening.)
+    pub async fn resolve_control_token(
+        &self,
+        token: &str,
+    ) -> Option<crate::studio_session::sdk::SessionIdentity> {
+        if !self.cfg.theia_control_enabled || token.is_empty() {
+            return None;
+        }
+        let sessions = self.sessions.read().await;
+        sessions
+            .values()
+            .find(|s| s.state != SessionState::Stopped && s.control_token == token)
+            .map(|s| crate::studio_session::sdk::SessionIdentity {
+                session_id: s.id,
+                tenant_id: s.tenant_id,
+                workspace_id: s.workspace_id,
+            })
+    }
+
     pub async fn list(&self, tenant_id: Uuid) -> Vec<Session> {
         self.sessions
             .read()
@@ -790,6 +874,7 @@ impl SessionService {
                     },
                     sources: Vec::new(),
                     session_token: a.session_token,
+                    control_token: String::new(),
                 },
             );
             count += 1;

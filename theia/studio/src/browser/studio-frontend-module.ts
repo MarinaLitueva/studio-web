@@ -24,6 +24,8 @@ import { MarkdownEditorWidget } from './markdown-editor/markdown-editor-widget';
 import { GraphOpenHandler } from './graph-open-handler';
 import { ObjectDetailsWidget } from './object-details-widget';
 import { WorkspaceGraphContribution } from './workspace-graph-contribution';
+import { ArtifactGraphContribution } from './artifact-graph-contribution';
+import { ArtifactGraphWidget } from './artifact-graph-widget';
 import { WorkspaceGraphFrontendController, WorkspaceGraphWidget } from './workspace-graph-widget';
 import { WorkspaceGraphService, workspaceGraphServicePath } from '../common/graph-model';
 import { AnalyzeApplicationShellProvider, AnalyzeFrontendController } from './analyze-controller';
@@ -34,6 +36,7 @@ import { AuditContribution } from './audit-contribution';
 import { AuditFrontendController } from './audit-controller';
 import { StudioRuntimeFrontendClient } from './studio-runtime-client';
 import { WorkspaceSourcesFrontendController } from './workspace-sources-controller';
+import { OpenInEditorFrontendController } from './open-in-editor-controller';
 import { WorkspaceSourcesContribution } from './workspace-sources-contribution';
 import { WorkspaceSourcesWidget } from './workspace-sources-widget';
 import { WorkspaceSourceRootDecorator, WorkspaceSourceRootService } from './workspace-source-root-decorator';
@@ -58,6 +61,7 @@ export default new ContainerModule((bind, unbind, isBound, rebind) => {
     bind(FrontendApplicationContribution).toService(ExplorerModeContribution);
     bind(GitOperationsFrontendController).toSelf().inSingletonScope();
     bind(AuditFrontendController).toSelf().inSingletonScope();
+    bind(OpenInEditorFrontendController).toSelf().inSingletonScope();
     bind(WorkspaceSourcesFrontendController).toSelf().inSingletonScope();
     bind(WorkspaceSourceRootService).toSelf().inSingletonScope();
     bind(WorkspaceSourceRootDecorator).toSelf().inSingletonScope();
@@ -143,6 +147,12 @@ export default new ContainerModule((bind, unbind, isBound, rebind) => {
     bind(WidgetFactory).toDynamicValue(ctx => ({
         id: WorkspaceGraphWidget.ID,
         createWidget: () => ctx.container.get<WorkspaceGraphWidget>(WorkspaceGraphWidget)
+    })).inSingletonScope();
+    bindViewContribution(bind, ArtifactGraphContribution);
+    bind(ArtifactGraphWidget).toSelf();
+    bind(WidgetFactory).toDynamicValue(ctx => ({
+        id: ArtifactGraphWidget.ID,
+        createWidget: () => ctx.container.get<ArtifactGraphWidget>(ArtifactGraphWidget)
     })).inSingletonScope();
     bind(WidgetFactory).toDynamicValue(ctx => ({
         id: AnalyzeWidget.ID,

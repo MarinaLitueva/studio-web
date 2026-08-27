@@ -508,9 +508,20 @@ gears:
   # cf.studio.project.config.v1~ tenant metadata, so there is no separate
   # project gear or studio_projects database.
 
+  # ── ADR-0010: backend <-> Theia bridge ──
+  # Dormant unless enabled. With this on, the ingress mounts and the event sink
+  # (LoggingEventSink here) logs every forwarded Theia event. Requires the
+  # backend built `--features theia-bridge` (see docker-compose.yml).
+  studio-theia:
+    config:
+      enabled: true
+
   studio-session:
     config:
-      image: "ghcr.io/constructorfabric/studio-web/cf-studio-theia:edge"
+      # Locally-built Theia image that carries studio-event-forwarder.ts (the
+      # ghcr `edge` tag predates it). Build it first:
+      #   docker build -f theia/Dockerfile -t cf-studio-theia:local theia
+      image: "cf-studio-theia:local"
       always_pull: false
       workspaces_root: "/srv/cf-studio-workspaces"
       bind_host: "127.0.0.1"
@@ -519,6 +530,14 @@ gears:
       port_range_end: 41099
       max_session_secs: 14400
       git_mode: "disabled"
+      # ADR-0010: mint the per-session S2S control token and inject
+      # STUDIO_THEIA_S2S_TOKEN + STUDIO_GATEWAY_URL into the session container,
+      # so the forwarder self-arms and the studio-theia gear can dial the node.
+      theia_control_enabled: true
+      # The backend runs in a container; session containers publish their ports
+      # on the HOST, so 127.0.0.1 would be the backend itself. Reach siblings
+      # via the host gateway (Docker Desktop provides this name automatically).
+      control_reach_host: "host.docker.internal"
 
   # OpenAI-compatible endpoint the IDE's built-in Theia AI talks to (the
   # in-container chat, not the Codex/Claude Code agents — those call their

@@ -143,6 +143,12 @@ services:
     build:
       context: .
       dockerfile: studio-backend/Dockerfile.src
+      # ADR-0010: link the studio-theia gear (backend<->Theia bridge). Additive
+      # to the default features (llm + graph). The event sink is LoggingEventSink
+      # unless you also build `--features theia-event-broker` (needs event-broker
+      # linked), so this profile republishes nothing and needs no broker infra.
+      args:
+        CARGO_FEATURES: "--features theia-bridge"
     container_name: studio-backend
     # Auto-recover without manual retry: if the backend exits (e.g. it loses
     # postgres/keycloak mid-boot, or a first-boot race) keep restarting it until
