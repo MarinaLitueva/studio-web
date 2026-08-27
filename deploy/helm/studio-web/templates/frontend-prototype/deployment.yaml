@@ -1,0 +1,38 @@
+{{- if .Values.frontendPrototype.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "studio-web.fullname" . }}-frontend-prototype
+  labels: {{- include "studio-web.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.frontendPrototype.replicas }}
+  strategy: { type: RollingUpdate, rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } }
+  selector:
+    matchLabels: {{- include "studio-web.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: frontend-prototype
+  template:
+    metadata:
+      labels: {{- include "studio-web.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: frontend-prototype
+    spec:
+      serviceAccountName: {{ include "studio-web.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: frontend-prototype
+          image: "{{ .Values.frontendPrototype.image.repository }}:{{ required "frontendPrototype.image.tag is required when the prototype is enabled" .Values.frontendPrototype.image.tag }}"
+          securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          ports: [{ name: http, containerPort: {{ .Values.frontendPrototype.port }} }]
+          env:
+            - name: BACKEND_HOST
+              value: "{{ include "studio-web.fullname" . }}-backend:80"
+            - name: STUDIO_OIDC_ISSUER
+              valueFrom: { secretKeyRef: { name: {{ .Values.backend.auth.existingSecret }}, key: issuer_url } }
+            - name: STUDIO_OIDC_CLIENT_ID
+              valueFrom: { secretKeyRef: { name: {{ .Values.backend.auth.existingSecret }}, key: client_id } }
+          readinessProbe: { httpGet: { path: {{ printf "%s/" .Values.frontendPrototype.path | quote }}, port: http }, initialDelaySeconds: 3, periodSeconds: 10 }
+          livenessProbe: { httpGet: { path: {{ printf "%s/" .Values.frontendPrototype.path | quote }}, port: http }, initialDelaySeconds: 10, periodSeconds: 20 }
+          resources: {{- toYaml .Values.frontendPrototype.resources | nindent 12 }}
+{{- end }}

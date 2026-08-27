@@ -19,6 +19,7 @@ on:
           - all
           - backend
           - frontend
+          - prototype
       image_tag:
         description: Full sha-<commit> snapshot or v* release tag
         type: string
@@ -128,24 +129,32 @@ jobs:
 
           backend_tag="$(current_tag backend)"
           frontend_tag="$(current_tag frontend)"
+          # The first prototype deployment has no existing Deployment yet.
+          # Service releases publish frontend and prototype with the same tag,
+          # so the current frontend tag is the safe bootstrap value.
+          prototype_tag="$(current_tag frontend-prototype 2>/dev/null || printf '%s' "$frontend_tag")"
           keycloak_tag="$(current_tag keycloak)"
 
           case "${{ inputs.component }}" in
             all)
               backend_tag="$IMAGE_TAG"
               frontend_tag="$IMAGE_TAG"
+              prototype_tag="$IMAGE_TAG"
               ;;
             backend) backend_tag="$IMAGE_TAG" ;;
             frontend) frontend_tag="$IMAGE_TAG" ;;
+            prototype) prototype_tag="$IMAGE_TAG" ;;
             *) echo "Unsupported component" >&2; exit 1 ;;
           esac
 
           docker manifest inspect "$IMAGE_PREFIX/studio-backend:$backend_tag" >/dev/null
           docker manifest inspect "$IMAGE_PREFIX/studio-frontend:$frontend_tag" >/dev/null
+          docker manifest inspect "$IMAGE_PREFIX/studio-frontend-prototype:$prototype_tag" >/dev/null
           docker manifest inspect "$IMAGE_PREFIX/cf-studio-keycloak:$keycloak_tag" >/dev/null
 
           echo "backend_tag=$backend_tag" >> "$GITHUB_OUTPUT"
           echo "frontend_tag=$frontend_tag" >> "$GITHUB_OUTPUT"
+          echo "prototype_tag=$prototype_tag" >> "$GITHUB_OUTPUT"
           echo "keycloak_tag=$keycloak_tag" >> "$GITHUB_OUTPUT"
 
           for secret in \
@@ -167,6 +176,7 @@ jobs:
             -f "$values"
             --set-string "backend.image.tag=${{ steps.versions.outputs.backend_tag }}"
             --set-string "frontend.image.tag=${{ steps.versions.outputs.frontend_tag }}"
+            --set-string "frontendPrototype.image.tag=${{ steps.versions.outputs.prototype_tag }}"
             --set-string "keycloak.image.tag=${{ steps.versions.outputs.keycloak_tag }}"
           )
 
@@ -184,6 +194,7 @@ jobs:
             -f "deploy/helm/values-${{ inputs.environment }}.example.yaml" \
             --set-string "backend.image.tag=${{ steps.versions.outputs.backend_tag }}" \
             --set-string "frontend.image.tag=${{ steps.versions.outputs.frontend_tag }}" \
+            --set-string "frontendPrototype.image.tag=${{ steps.versions.outputs.prototype_tag }}" \
             --set-string "keycloak.image.tag=${{ steps.versions.outputs.keycloak_tag }}" \
             --force-conflicts \
             --rollback-on-failure \
@@ -198,9 +209,10 @@ jobs:
           host="${{ steps.target.outputs.host }}"
 
           case "${{ inputs.component }}" in
-            all) components=(backend frontend) ;;
+            all) components=(backend frontend frontend-prototype) ;;
             backend) components=(backend) ;;
             frontend) components=(frontend) ;;
+            prototype) components=(frontend-prototype) ;;
           esac
 
           for component in "${components[@]}"; do
@@ -212,6 +224,10 @@ jobs:
 
           curl --fail --silent --show-error --retry 6 --retry-all-errors \
             "https://$host/" >/dev/null
+          if [ "${{ inputs.component }}" = all ] || [ "${{ inputs.component }}" = prototype ]; then
+            curl --fail --silent --show-error --retry 6 --retry-all-errors \
+              "https://$host/prototype/" >/dev/null
+          fi
           curl --fail --silent --show-error --retry 6 --retry-all-errors \
             "https://$host/cf/health" >/dev/null
 

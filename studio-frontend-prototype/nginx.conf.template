@@ -17,9 +17,24 @@ server {
     # k8s runAsNonRoot-compatible) — non-root can't bind 80.
     listen 8080;
     server_name _;
+    # TLS terminates at Traefik, so nginx sees HTTP internally. Keep redirects
+    # relative to avoid downgrading https://.../prototype to an http:// URL.
+    absolute_redirect off;
 
     root /usr/share/nginx/html;
     index index.html;
+
+    # Kubernetes exposes this image at /prototype/. Strip that mount prefix
+    # before resolving files from the image root. The bundle uses relative
+    # asset URLs, so compose can still serve the identical image at `/`.
+    location = /prototype {
+        return 308 /prototype/;
+    }
+
+    location ^~ /prototype/ {
+        rewrite ^/prototype/(.*)$ /$1 break;
+        try_files $uri $uri/ /index.html;
+    }
 
     # SPA fallback
     location / {

@@ -94,6 +94,21 @@ frontend:
   autoscaling:
     enabled: false
 
+# Experimental pre-FrontX portal. It is a separate immutable image and is
+# exposed under the existing Studio hostname at /prototype/, so no DNS record
+# or additional certificate is required.
+frontendPrototype:
+  enabled: false
+  path: /prototype
+  image:
+    repository: ghcr.io/constructorfabric/studio-web/studio-frontend-prototype
+    tag: ""                # REQUIRED when enabled: fixed service release tag
+  replicas: 1
+  port: 8080
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 250m, memory: 256Mi }
+
 ingress:
   enabled: true
   className: "nginx"

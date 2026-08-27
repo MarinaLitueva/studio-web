@@ -18,6 +18,7 @@ jobs:
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
+      prototype: ${{ steps.filter.outputs.prototype }}
       infra: ${{ steps.filter.outputs.infra }}
       deployment: ${{ steps.filter.outputs.deployment }}
     steps:
@@ -25,15 +26,15 @@ jobs:
       - uses: dorny/paths-filter@v4
         id: filter
         with:
-          # studio-frontend-prototype/ is deliberately NOT filtered: the
-          # prototype playground no longer gates Test — release.yml builds and
-          # tests it when it publishes the studio-frontend-prototype image.
           filters: |
             backend:
               - 'studio-backend/**'
               - '.github/workflows/**'
             frontend:
               - 'studio-frontend/**'
+              - '.github/workflows/**'
+            prototype:
+              - 'studio-frontend-prototype/**'
               - '.github/workflows/**'
             infra:
               - 'studio-backend/docker/graph-postgres/**'
@@ -106,6 +107,34 @@ jobs:
         with:
           name: studio-frontend-dist
           path: studio-frontend/dist
+          retention-days: 7
+
+  # The prototype is independently deployable at /prototype/, so changes to
+  # it must now pass Test before an immutable image may be published.
+  prototype:
+    needs: changes
+    if: needs.changes.outputs.prototype == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: studio-frontend-prototype
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: studio-frontend-prototype/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Test
+        run: npm test
+      - name: Build
+        run: npm run build
+      - uses: actions/upload-artifact@v6
+        with:
+          name: studio-frontend-prototype-dist
+          path: studio-frontend-prototype/dist
           retention-days: 7
 
   infra:

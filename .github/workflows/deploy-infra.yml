@@ -129,8 +129,12 @@ jobs:
             printf '%s' "${image##*:}"
           }
 
-          echo "backend_tag=$(current_tag backend)" >> "$GITHUB_OUTPUT"
-          echo "frontend_tag=$(current_tag frontend)" >> "$GITHUB_OUTPUT"
+          backend_tag="$(current_tag backend)"
+          frontend_tag="$(current_tag frontend)"
+          prototype_tag="$(current_tag frontend-prototype 2>/dev/null || printf '%s' "$frontend_tag")"
+          echo "backend_tag=$backend_tag" >> "$GITHUB_OUTPUT"
+          echo "frontend_tag=$frontend_tag" >> "$GITHUB_OUTPUT"
+          echo "prototype_tag=$prototype_tag" >> "$GITHUB_OUTPUT"
 
       - name: Render and validate infrastructure changes
         shell: bash
@@ -146,6 +150,7 @@ jobs:
             -f "$values"
             --set-string "backend.image.tag=${{ steps.versions.outputs.backend_tag }}"
             --set-string "frontend.image.tag=${{ steps.versions.outputs.frontend_tag }}"
+            --set-string "frontendPrototype.image.tag=${{ steps.versions.outputs.prototype_tag }}"
             --set-string "keycloak.image.tag=$INFRA_TAG"
           )
           helm lint deploy/helm/studio-web "${common_args[@]}"
@@ -178,6 +183,7 @@ jobs:
             -f "deploy/helm/values-${{ inputs.environment }}.example.yaml" \
             --set-string "backend.image.tag=${{ steps.versions.outputs.backend_tag }}" \
             --set-string "frontend.image.tag=${{ steps.versions.outputs.frontend_tag }}" \
+            --set-string "frontendPrototype.image.tag=${{ steps.versions.outputs.prototype_tag }}" \
             --set-string "keycloak.image.tag=$INFRA_TAG" \
             --force-conflicts \
             --rollback-on-failure \

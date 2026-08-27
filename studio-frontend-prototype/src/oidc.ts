@@ -15,6 +15,13 @@ import { env } from "./env";
 const ISSUER: string = env.oidcIssuer ?? "https://localhost:8443/realms/studio";
 const CLIENT_ID: string = env.oidcClientId ?? "studio-portal";
 
+// Vite's relative base (`./`) lets one image run at `/` in compose and at
+// `/prototype/` in Kubernetes. Resolve it against the current document so the
+// OIDC callback and post-logout redirect return to the same mount point.
+function applicationUrl(): string {
+  return new URL(import.meta.env.BASE_URL, window.location.href).toString();
+}
+
 const VERIFIER_KEY = "studio.oidc.verifier";
 const REFRESH_KEY = "studio.oidc.refresh";
 const ID_TOKEN_KEY = "studio.oidc.id";
@@ -64,7 +71,7 @@ export async function startSsoLogin(idpHint?: string): Promise<void> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
   const params = new URLSearchParams({
     client_id: CLIENT_ID,
-    redirect_uri: `${window.location.origin}/`,
+    redirect_uri: applicationUrl(),
     response_type: "code",
     scope: "openid",
     code_challenge: b64url(new Uint8Array(digest)),
@@ -94,7 +101,7 @@ export async function completeSsoLogin(): Promise<SsoSession | null> {
       grant_type: "authorization_code",
       client_id: CLIENT_ID,
       code,
-      redirect_uri: `${window.location.origin}/`,
+      redirect_uri: applicationUrl(),
       code_verifier: verifier,
     }),
   });
@@ -155,7 +162,7 @@ export function endSsoSession(): boolean {
   if (!hadSso) return false;
   const params = new URLSearchParams({
     client_id: CLIENT_ID,
-    post_logout_redirect_uri: `${window.location.origin}/`,
+    post_logout_redirect_uri: applicationUrl(),
   });
   // With the hint Keycloak logs out and redirects straight back; without it
   // (e.g. storage was wiped) it shows its own logout confirmation page.

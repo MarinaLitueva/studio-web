@@ -31,6 +31,11 @@ frontend:
   autoscaling:
     enabled: false
 
+frontendPrototype:
+  enabled: true
+  image:
+    tag: "sha-REPLACE_ME"
+
 keycloak:
   enabled: true
   replicas: 2
