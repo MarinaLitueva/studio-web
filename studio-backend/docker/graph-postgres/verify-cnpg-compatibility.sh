@@ -6,7 +6,7 @@ image=${1:?usage: verify-cnpg-compatibility.sh IMAGE}
 # CloudNativePG's instance manager replaces the image entrypoint. Validate the
 # operand contract and then exercise the two database features graph-storage
 # actually depends on, instead of treating a successful docker build as proof.
-docker run --rm --entrypoint sh "$image" -ec '
+docker run --rm --user 26:26 --entrypoint sh "$image" -ec '
   test "$(id -u)" != 0
   for binary in postgres initdb pg_ctl pg_controldata pg_basebackup du; do
     command -v "$binary" >/dev/null
@@ -15,7 +15,7 @@ docker run --rm --entrypoint sh "$image" -ec '
   test -r /usr/lib/postgresql/19/lib/vector.so
 '
 
-docker run --rm --entrypoint sh "$image" -ec '
+docker run --rm --user 26:26 --entrypoint sh "$image" -ec '
   data=$(mktemp -d)
   socket=$(mktemp -d)
   cleanup() {
