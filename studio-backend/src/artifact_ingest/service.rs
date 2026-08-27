@@ -835,7 +835,7 @@ impl IngestService {
         &self,
         ctx: &SecurityContext,
         task_id: Option<&str>,
-        nodes: &mut Vec<GtsNode>,
+        nodes: &mut [GtsNode],
         flushed: &mut usize,
         workspace_id: Option<&str>,
         project_id: Option<&str>,
