@@ -9,7 +9,7 @@ use axum::extract::{Path, Query};
 use axum::{Extension, Router};
 use serde_json::Value;
 use toolkit::api::canonical_prelude::*;
-use toolkit::api::operation_builder::{LicenseFeature, CORE_GLOBAL_BASE_LICENSE_FEATURE};
+use toolkit::api::operation_builder::{CORE_GLOBAL_BASE_LICENSE_FEATURE, LicenseFeature};
 use toolkit::api::{OpenApiRegistry, OperationBuilder};
 use toolkit_canonical_errors::resource_error;
 use toolkit_security::SecurityContext;
@@ -596,7 +596,14 @@ async fn add_file(
         .size
         .unwrap_or_else(|| req.text.as_ref().map(|t| t.len() as u64).unwrap_or(0));
     let instance_id = svc
-        .upsert_manual_file(&ctx, &workspace_id, project_id.as_deref(), &path, size, req.text)
+        .upsert_manual_file(
+            &ctx,
+            &workspace_id,
+            project_id.as_deref(),
+            &path,
+            size,
+            req.text,
+        )
         .await
         .map_err(|e| CanonicalError::internal(format!("{e:#}")).create())?;
     Ok(Json(ManualFileResponse { instance_id }))
