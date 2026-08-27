@@ -45,7 +45,7 @@ pub struct CatalogSyncEnqueued {
 /// The state of a background catalog sync task.
 #[derive(Debug)]
 #[toolkit_macros::api_dto(response)]
-pub struct TaskStatusResponse {
+pub struct CatalogTaskStatusResponse {
     pub task_id: String,
     /// `queued` | `running` | `succeeded` | `failed`.
     pub status: String,
@@ -99,13 +99,13 @@ async fn task_status(
     Extension(_ctx): Extension<SecurityContext>,
     Extension(catalog): Extension<Catalog>,
     Path(id): Path<String>,
-) -> ApiResult<JsonBody<TaskStatusResponse>> {
+) -> ApiResult<JsonBody<CatalogTaskStatusResponse>> {
     let rec = catalog.0.task(&id).ok_or_else(|| {
         StudioGearsCatalogError::not_found("no such sync task")
             .with_resource(id.clone())
             .create()
     })?;
-    Ok(Json(TaskStatusResponse {
+    Ok(Json(CatalogTaskStatusResponse {
         task_id: rec.id,
         status: rec.status.as_str().to_string(),
         message: rec.message,
@@ -194,7 +194,11 @@ pub fn register_routes(
         .require_license_features::<License>([])
         .path_param("id", "Sync task id")
         .handler(task_status)
-        .json_response_with_schema::<TaskStatusResponse>(openapi, StatusCode::OK, "Task status")
+        .json_response_with_schema::<CatalogTaskStatusResponse>(
+            openapi,
+            StatusCode::OK,
+            "Task status",
+        )
         .error_401(openapi)
         .error_404(openapi)
         .error_500(openapi)
