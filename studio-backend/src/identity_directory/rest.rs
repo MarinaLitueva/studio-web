@@ -23,7 +23,7 @@ impl LicenseFeature for License {}
 
 #[derive(Debug)]
 #[toolkit_macros::api_dto(response)]
-pub struct IdentityDto {
+pub struct PlatformIdentityDto {
     pub id: String,
     pub username: String,
     pub email: Option<String>,
@@ -38,12 +38,12 @@ pub struct IdentityDto {
 
 #[derive(Debug)]
 #[toolkit_macros::api_dto(response)]
-pub struct IdentityListDto {
-    pub items: Vec<IdentityDto>,
+pub struct PlatformIdentityListDto {
+    pub items: Vec<PlatformIdentityDto>,
 }
 
-fn to_dto(identity: DirectoryIdentity) -> IdentityDto {
-    IdentityDto {
+fn to_dto(identity: DirectoryIdentity) -> PlatformIdentityDto {
+    PlatformIdentityDto {
         id: identity.id,
         username: identity.username,
         email: identity.email,
@@ -59,7 +59,7 @@ fn to_dto(identity: DirectoryIdentity) -> IdentityDto {
 async fn list_identities(
     Extension(ctx): Extension<SecurityContext>,
     Extension(service): Extension<Option<Arc<IdentityDirectoryService>>>,
-) -> ApiResult<JsonBody<IdentityListDto>> {
+) -> ApiResult<JsonBody<PlatformIdentityListDto>> {
     if ctx.subject_tenant_id() != PLATFORM_ROOT_TENANT_ID {
         return Err(IdentityDirectoryError::permission_denied()
             .with_reason("PLATFORM_ADMIN_REQUIRED")
@@ -81,7 +81,7 @@ async fn list_identities(
         .into_iter()
         .map(to_dto)
         .collect();
-    Ok(Json(IdentityListDto { items }))
+    Ok(Json(PlatformIdentityListDto { items }))
 }
 
 pub fn register_routes(
@@ -100,7 +100,11 @@ pub fn register_routes(
         .authenticated()
         .require_license_features::<License>([])
         .handler(list_identities)
-        .json_response_with_schema::<IdentityListDto>(openapi, StatusCode::OK, "Identity directory")
+        .json_response_with_schema::<PlatformIdentityListDto>(
+            openapi,
+            StatusCode::OK,
+            "Identity directory",
+        )
         .error_401(openapi)
         .error_403(openapi)
         .error_500(openapi)
