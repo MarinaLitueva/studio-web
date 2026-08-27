@@ -1,11 +1,12 @@
 // @cpt-dod:cpt-studiofrontend-dod-connection-create-secret:p1
 import { createSlice, type ReducerPayload } from '@gears-frontx/react';
+import type { Refusal } from '@constructor-studio/mfe-shared';
 import { EMPTY_DRAFT, type ConnectionDraft } from '../model/connectionDraft';
 
 export interface ConnectState {
   draft: ConnectionDraft;
   submitting: boolean;
-  error: string | null;
+  error: Refusal | null;
 }
 
 const SLICE_KEY = 'connections/connect' as const;
@@ -16,7 +17,7 @@ const initialState: ConnectState = {
   error: null,
 };
 
-const { slice, resetForm, editDraft, submitStarted, submitFailed } = createSlice({
+const { slice, resetForm, editDraft, submitStarted, submitSucceeded, submitFailed } = createSlice({
   name: SLICE_KEY,
   initialState,
   reducers: {
@@ -35,7 +36,11 @@ const { slice, resetForm, editDraft, submitStarted, submitFailed } = createSlice
       state.submitting = true;
       state.error = null;
     },
-    submitFailed: (state: ConnectState, action: ReducerPayload<string>) => {
+    submitSucceeded: (state: ConnectState) => {
+      state.submitting = false;
+      state.error = null;
+    },
+    submitFailed: (state: ConnectState, action: ReducerPayload<Refusal>) => {
       state.submitting = false;
       state.error = action.payload;
     },
@@ -43,7 +48,7 @@ const { slice, resetForm, editDraft, submitStarted, submitFailed } = createSlice
 });
 
 export const connectSlice = slice;
-export { resetForm, editDraft, submitStarted, submitFailed };
+export { resetForm, editDraft, submitStarted, submitSucceeded, submitFailed };
 export const CONNECT_SLICE_KEY = SLICE_KEY;
 
 declare module '@gears-frontx/react' {

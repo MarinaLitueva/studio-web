@@ -2,9 +2,7 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRegistry, useApiQuery } from '@gears-frontx/react';
-import { ConnectorsApiService } from '../api/ConnectorsApiService';
-import type { ConnectionDto } from '../api/connectorTypes';
-import { useOrganization, type OrganizationRef } from './organization';
+import { type ConnectionDto, ConnectorsApiService, type OrganizationRef, useOrganization } from '@constructor-studio/mfe-shared';
 
 export interface ConnectionRow {
   connection: ConnectionDto;
@@ -33,11 +31,7 @@ export function useConnectionList(query: string): ConnectionListView {
   const { org, loading: orgLoading } = useOrganization();
 
   // @cpt-begin:cpt-studiofrontend-algo-connection-list-read:p2:inst-2
-  const {
-    data: providerData,
-    isLoading: providersLoading,
-    isError: providersFailed,
-  } = useApiQuery(connectors.providers);
+  const { data: providerData, isLoading: providersLoading } = useApiQuery(connectors.providers);
   // @cpt-end:cpt-studiofrontend-algo-connection-list-read:p2:inst-2
 
   // @cpt-begin:cpt-studiofrontend-algo-connection-list-read:p2:inst-1
@@ -73,7 +67,7 @@ export function useConnectionList(query: string): ConnectionListView {
   return {
     rows,
     loading: orgLoading || providersLoading || connectionsLoading,
-    failed: providersFailed || connectionsFailed,
+    failed: connectionsFailed,
     org,
     total: all.length,
   };

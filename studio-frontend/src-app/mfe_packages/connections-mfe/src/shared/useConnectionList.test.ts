@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { matchesQuery, type ConnectionRow } from './useConnectionList';
-import type { ConnectionDto } from '../api/connectorTypes';
+import { type ConnectionDto } from '@constructor-studio/mfe-shared';
 
 /**
  * The filter is the only logic in the hook worth isolating: the two reads

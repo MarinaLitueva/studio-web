@@ -2,7 +2,12 @@
 // @cpt-algo:cpt-studiofrontend-algo-connection-list-health:p2
 import { useQuery } from '@tanstack/react-query';
 import { apiRegistry } from '@gears-frontx/react';
-import { ConnectorsApiService } from '../api/ConnectorsApiService';
+import {
+  ConnectorsApiService,
+  refusalText,
+  violationOfType,
+  type Violation,
+} from '@constructor-studio/mfe-shared';
 import type { ConnectionHealth } from '../model/connection';
 
 /** Long enough that a re-render is free; short enough that a fix shows up. */
@@ -17,45 +22,10 @@ export interface ConnectionHealthView {
   failed: boolean;
 }
 
-interface Violation {
-  type?: unknown;
-  description?: unknown;
-}
-
-/**
- * The gears answer errors as RFC 7807, carrying their own vocabulary in
- * `context.violations[]` — each entry a `{ type, subject, description }`.
- */
-function violations(error: unknown): readonly Violation[] {
-  if (typeof error !== 'object' || error === null) return [];
-  const data = (error as { response?: { data?: unknown } }).response?.data;
-  if (typeof data !== 'object' || data === null) return [];
-  const context = (data as { context?: unknown }).context;
-  if (typeof context !== 'object' || context === null) return [];
-  const list = (context as { violations?: unknown }).violations;
-  return Array.isArray(list) ? (list as Violation[]) : [];
-}
-
-function credentialRefusal(error: unknown): Violation | null {
-  return violations(error).find((entry) => entry.type === CREDENTIAL_UNUSABLE) ?? null;
-}
-
-function text(value: unknown): string | null {
-  return typeof value === 'string' && value.trim() ? value : null;
-}
-
-function refusalText(error: unknown, refusal: Violation): string | null {
-  const described = text(refusal.description);
-  if (described) return described;
-  if (typeof error !== 'object' || error === null) return null;
-  const data = (error as { response?: { data?: unknown } }).response?.data;
-  if (typeof data === 'string') return text(data);
-  if (typeof data === 'object' && data !== null) {
-    const record = data as { detail?: unknown; message?: unknown };
-    const message = text(record.detail) ?? text(record.message);
-    if (message) return message;
-  }
-  return text((error as { message?: unknown }).message);
+function reasonFor(error: unknown, refusal: Violation): string | null {
+  const described = refusal.description;
+  if (typeof described === 'string' && described.trim()) return described;
+  return refusalText(error);
 }
 
 export function useConnectionHealth(
@@ -74,6 +44,7 @@ export function useConnectionHealth(
     retry: false,
     staleTime: HEALTH_STALE_TIME,
     gcTime: HEALTH_STALE_TIME,
+    refetchOnWindowFocus: false,
   });
   // @cpt-end:cpt-studiofrontend-algo-connection-list-health:p2:inst-1
   // @cpt-end:cpt-studiofrontend-algo-connection-list-health:p2:inst-2
@@ -85,7 +56,7 @@ export function useConnectionHealth(
   // @cpt-end:cpt-studiofrontend-algo-connection-list-health:p2:inst-4
 
   if (isError) {
-    const refusal = credentialRefusal(error);
+    const refusal = violationOfType(error, CREDENTIAL_UNUSABLE);
 
     // @cpt-begin:cpt-studiofrontend-algo-connection-list-health:p2:inst-5
     // @cpt-begin:cpt-studiofrontend-algo-connection-list-health:p2:inst-6
@@ -97,7 +68,7 @@ export function useConnectionHealth(
     // @cpt-begin:cpt-studiofrontend-algo-connection-list-health:p2:inst-8
     return {
       health: 'unusable',
-      reason: refusalText(error, refusal),
+      reason: reasonFor(error, refusal),
       loading: false,
       failed: false,
     };

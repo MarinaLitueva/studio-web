@@ -22,7 +22,7 @@ interface ConnectionsTableProps {
   tenantId: string;
 }
 
-const Row: React.FC<{ row: ConnectionRow; tenantId: string }> = ({ row, tenantId }) => {
+const Row: React.FC<{ row: ConnectionRow; tenantId: string }> = React.memo(({ row, tenantId }) => {
   const t = useConnectionListText();
   const { connection, providerName } = row;
 
@@ -58,7 +58,7 @@ const Row: React.FC<{ row: ConnectionRow; tenantId: string }> = ({ row, tenantId
       {/* @cpt-end:cpt-studiofrontend-algo-connection-list-read:p2:inst-5 */}
     </TableRow>
   );
-};
+});
 
 Row.displayName = 'ConnectionRow';
 

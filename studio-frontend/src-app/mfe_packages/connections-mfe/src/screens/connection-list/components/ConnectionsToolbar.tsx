@@ -2,7 +2,7 @@ import React from 'react';
 import { Search } from 'lucide-react';
 import { Button, Input, Skeleton } from '@gears-frontx/ui-kit';
 import { useConnectionListText } from '../../../i18n';
-import { useBridge } from '../../../shared/bridge';
+import { useMfeBridge } from '@gears-frontx/react';
 import { openConnectDialog } from '../../../actions/connectActions';
 import styles from '../ConnectionListScreen.module.css';
 
@@ -18,7 +18,7 @@ export const ConnectionsToolbar: React.FC<ConnectionsToolbarProps> = ({
   busy,
 }) => {
   const t = useConnectionListText();
-  const bridge = useBridge();
+  const bridge = useMfeBridge();
 
   return (
     <div className={styles.toolbar} role="toolbar" aria-label={t('toolbar_label')}>

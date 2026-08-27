@@ -3,6 +3,7 @@ import {
   CONNECTORS_API_BASE_URL,
   connectionTestPath,
   connectionsPath,
+  repositoriesPath,
 } from './ConnectorsApiService';
 
 /**
@@ -28,5 +29,23 @@ describe('studio-connector paths', () => {
     expect(connectionTestPath({ connectionId: 'c-1', tenantId: 'org-1' })).toBe(
       '/connections/c-1/test?tenant=org-1'
     );
+  });
+
+  it('encodes the connection id in the path segment, not just the query', () => {
+    // The copy this file replaced interpolated `connectionId` raw, so an id
+    // needing encoding produced a different path — and therefore a different
+    // cache key — from the one the sibling builders produce.
+    expect(repositoriesPath({ connectionId: 'c/1', tenantId: 'org-1' })).toBe(
+      '/connections/c%2F1/repositories?tenant=org-1'
+    );
+  });
+
+  it('omits an empty search rather than filtering on nothing', () => {
+    expect(repositoriesPath({ connectionId: 'c-1', tenantId: 'org-1', search: '' })).toBe(
+      '/connections/c-1/repositories?tenant=org-1'
+    );
+    expect(
+      repositoriesPath({ connectionId: 'c-1', tenantId: 'org-1', search: 'api', limit: 100 })
+    ).toBe('/connections/c-1/repositories?tenant=org-1&search=api&limit=100');
   });
 });

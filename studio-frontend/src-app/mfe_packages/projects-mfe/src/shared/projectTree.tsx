@@ -15,8 +15,7 @@ import {
 } from '../api/AccountsApiService';
 import { type Page, type TenantDto } from '../api/types';
 import { isProject, sortForTree } from '../model/project';
-import { OrganizationProvider, useOrganization, type OrganizationRef } from './organization';
-import { useBridge } from './bridge';
+import { OrganizationProvider, type OrganizationRef, useOrganization } from '@constructor-studio/mfe-shared';
 
 /**
  * The organization's tenant tree, fetched one node at a time.
@@ -57,31 +56,16 @@ import { useBridge } from './bridge';
 
 export interface TreeRow {
   tenant: TenantDto;
-  /** 0 = direct child of the organization. */
   level: number;
-  /** Has children AM would return — the chevron is drawn from this. */
   expandable: boolean;
   expanded: boolean;
-  /** Open, and its page has not arrived yet: the row below is a skeleton. */
   pending: boolean;
 }
 
 export interface ProjectTree {
   org: OrganizationRef | null;
-  /** Depth-first, expansion honoured: exactly the rows a table should draw. */
   rows: TreeRow[];
-  /**
-   * The same walk with every loaded branch revealed, whatever its expansion
-   * state. Search filters this one: a row the user has already seen must not
-   * vanish because its parent happens to be collapsed.
-   */
   searchRows: TreeRow[];
-  /**
-   * The projects that share a tenant's parent, current one included — what the
-   * top bar's switcher offers while that project is open. Empty for a tenant
-   * whose parent page is not loaded, which cannot happen for a row the user just
-   * clicked: its branch had to be open for the row to exist.
-   */
   siblingProjects: (tenantId: string) => TenantDto[];
   toggle: (tenantId: string) => void;
   loading: boolean;
@@ -156,13 +140,6 @@ export function buildRows(
 
 /**
  * Re-orders siblings without flattening the tree.
- *
- * `rows` is a depth-first walk carrying a `level` per row, so a row's subtree is
- * simply the run that follows it at a deeper level. Sorting the flat array
- * directly would tear children away from their parent; this sorts each sibling
- * group and re-emits every subtree behind the row it belongs to.
- *
- * Exported for tests, and pure: the input array is never mutated.
  */
 export function sortRows(
   rows: readonly TreeRow[],
@@ -202,16 +179,6 @@ function useChildrenPage(
     accounts.children(childrenPageParams(parentId))
   );
 
-  // Dispatches on settle, not on a truthy body: `WithOrg` gates its screen on
-  // the org's own key appearing in the reducer, and a success that returned no
-  // body (`RestProtocol` hands back `response.data` verbatim) would otherwise
-  // leave that key undefined with nothing left in flight — a spinner with no
-  // end. Recording the empty page keeps the two in agreement.
-  //
-  // The gate is `isPending`, not `isLoading`. `isLoading` is
-  // `isPending && isFetching`, so an offline request — pending, `fetchStatus`
-  // 'paused' — reads as settled and would record an empty page, turning the
-  // spinner into a permanent "no projects".
   useEffect(() => {
     if (isPending || isError) return;
     if (data) warnIfTruncated(parentId, data);
@@ -275,17 +242,6 @@ const WithOrg: React.FC<{ org: OrganizationRef; children: ReactNode }> = ({ org,
       searchRows,
       siblingProjects,
       toggle,
-      // Only the organization's own page gates the screen; a node still in
-      // flight shows as a row without children rather than as a spinner.
-      //
-      // `isLoading` alone is not that gate. The page reaches `rows` through the
-      // reducer, dispatched from an effect, so there is one commit where the
-      // query has settled but `childrenByParent` is still empty — and the list
-      // screen reads that commit as "this organization has no projects" and
-      // paints its empty state for a frame before the table replaces it.
-      // Waiting for the org's own key closes the gap without claiming to wait
-      // for anything else: a genuinely empty organization records an empty page
-      // under that key, so it still resolves to the empty state, just once.
       loading: isLoading || (!isError && childrenByParent[org.id] === undefined),
       failed: isError,
     }),
@@ -306,7 +262,7 @@ const WithOrg: React.FC<{ org: OrganizationRef; children: ReactNode }> = ({ org,
 
 /**
  * The tree exists only once an organization does. The answer comes from the
- * shell as a shared property (`shared/organization`) — the wizard needs the same
+ * shell as a shared property (`@constructor-studio/mfe-shared`) — the wizard needs the same
  * answer and runs in a different module graph, so neither root can hand it to
  * the other, but both can be told.
  */
@@ -323,16 +279,8 @@ const TreeForOrganization: React.FC<{ children: ReactNode }> = ({ children }) =>
   return <WithOrg org={org}>{children}</WithOrg>;
 };
 
-/**
- * The bridge comes from context here: this screen is rendered inside
- * `ProjectsRoot`'s `BridgeProvider`. The wizard, whose organization provider
- * sits above its own bridge provider, passes it as a prop instead.
- */
-export const ProjectTreeProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const bridge = useBridge();
-  return (
-    <OrganizationProvider bridge={bridge}>
-      <TreeForOrganization>{children}</TreeForOrganization>
-    </OrganizationProvider>
-  );
-};
+export const ProjectTreeProvider: React.FC<{ children: ReactNode }> = ({ children }) => (
+  <OrganizationProvider>
+    <TreeForOrganization>{children}</TreeForOrganization>
+  </OrganizationProvider>
+);

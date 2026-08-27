@@ -27,17 +27,38 @@ interface ProviderMountOptions {
   };
 }
 
+/** Strips the `:<timestamp>` suffix `BridgeFactory.createBridge` appends.
+ * TODO: drop the fallback once the wrapper in @gears-frontx/mfes forwards the
+ * third argument.
+ * */
+function extensionIdFromInstanceId(instanceId: string | undefined): string | undefined {
+  if (typeof instanceId !== 'string' || instanceId === '') return undefined;
+  return instanceId.replace(/:\d+$/, '');
+}
+
+function mountedMfePair(
+  bridge: ChildMfeBridge,
+  mountContext?: MfeMountContext
+): { readonly extensionId: string; readonly domainId: string } | undefined {
+  const domainId = mountContext?.domainId ?? bridge.domainId;
+  const extensionId =
+    mountContext?.extensionId ?? extensionIdFromInstanceId(bridge.instanceId);
+
+  if (typeof domainId !== 'string' || typeof extensionId !== 'string') return undefined;
+  return { extensionId, domainId };
+}
+
 function resolveProviderMountOptions(
   app: FrontXApp,
   bridge: ChildMfeBridge,
   mountContext?: MfeMountContext
 ): ProviderMountOptions {
-  const extensionId = mountContext?.extensionId;
-  const domainId = mountContext?.domainId;
-  const isMountedMfe = typeof extensionId === 'string' && typeof domainId === 'string';
+  const pair = mountedMfePair(bridge, mountContext);
+  const declaresMountedMfe =
+    typeof mountContext?.extensionId === 'string' && typeof mountContext?.domainId === 'string';
 
   if (
-    isMountedMfe &&
+    declaresMountedMfe &&
     !resolveFrontXQueryClient(app) &&
     !hasFrontXQueryClientActivator(app)
   ) {
@@ -47,10 +68,7 @@ function resolveProviderMountOptions(
   }
 
   return {
-    mfeBridge:
-      isMountedMfe
-        ? { bridge, extensionId, domainId }
-        : undefined,
+    mfeBridge: pair ? { bridge, extensionId: pair.extensionId, domainId: pair.domainId } : undefined,
   };
 }
 
@@ -105,48 +123,6 @@ export interface ThemeAwareReactLifecycleOptions {
 
 /**
  * Abstract base class for React-based MFE lifecycle implementations.
- *
- * Styling strategy: every stylesheet the mounted tree needs is resolved to a
- * constructed `CSSStyleSheet` and adopted BEFORE the first render, so the
- * container reaches the document already painted correctly. Four sources, in
- * cascade order:
- *
- * 1. the MFE's own compiled CSS, taken over from the `<link>`s
- *    `MfeHandlerMF.injectRemoteStylesheets` appended just before this call;
- * 2. the host document's stylesheets (the full compiled Tailwind, including MFE
- *    utilities — the shell's content paths cover `src-app/mfe_packages/**`);
- * 3. `BASE_RESETS`;
- * 4. whatever `additionalStyles()` returns.
- *
- * That order is the DOM order these sheets used to have, so moving them to
- * adoption re-ranks nothing. It has to be all four or none: adopted sheets are
- * appended after a shadow root's own `styleSheets` and therefore beat every
- * `<style>` in it regardless of insertion order. See `shadowStyles.ts` for the
- * measurements behind this, and for the `<style>`/`<link>` fallback used where
- * constructed sheets do not exist (jsdom, hence every vitest run).
- *
- * `mount` is synchronous, and there is no window to speak of: the sheets are
- * fetched at bootstrap by `prewarmShadowStyles` and read back synchronously
- * here. That is deliberate rather than incidental. `DefaultMountManager` holds
- * `mountState: 'mounting'` across an awaited `mount` while its
- * `unmountExtension` early-returns on anything but `'mounted'`, and
- * `DefaultExtensionMounter` records the extension only after that await, so an
- * awaited `mount` puts the extension in a state no teardown path can see. An
- * awaiting `mount` is legal by the `MfeEntryLifecycle` contract and simply
- * unsafe against this runtime, so this one does not await at all.
- *
- * When the cache is cold — a click that beats the bootstrap fetch — this takes
- * the DOM-node fallback for that one mount and warms the cache on the way out,
- * rather than adopting a partial set. Partial adoption is the one thing that
- * would be worse than the flash: a `<link>` left in the root ranks before every
- * adopted sheet. See `shadowStyles.ts`.
- *
- * Theme CSS variables are delivered via CSS inheritance from `:root` (Shadow
- * DOM) or via MountManager injection (iframe). MFE lifecycles do NOT need to
- * subscribe to theme changes or call applyThemeToShadowRoot.
- *
- * Concrete subclasses must provide:
- * - `renderContent(bridge)` - screen component rendering
  */
 // @cpt-dod:cpt-frontx-dod-mfe-isolation-author-state-lifecycle:p1
 export abstract class ThemeAwareReactLifecycle implements MfeEntryLifecycle<ChildMfeBridge> {

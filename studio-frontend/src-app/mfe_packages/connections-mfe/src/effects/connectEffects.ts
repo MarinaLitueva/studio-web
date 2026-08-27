@@ -4,28 +4,23 @@
 
 // @cpt-dod:cpt-studiofrontend-dod-connection-create-write:p1
 // @cpt-dod:cpt-studiofrontend-dod-connection-create-verify:p1
+// @cpt-dod:cpt-studiofrontend-dod-connection-create-announce:p1
 // @cpt-algo:cpt-studiofrontend-algo-connection-create-write:p2
 // @cpt-flow:cpt-studiofrontend-flow-connection-create:p1
-import { apiRegistry, eventBus, type AppDispatch } from '@gears-frontx/react';
-import { ConnectorsApiService } from '../api/ConnectorsApiService';
+import {
+  apiRegistry,
+  eventBus,
+  invalidateQueryCacheForApp,
+  type AppDispatch,
+  type FrontXApp,
+} from '@gears-frontx/react';
+import { ConnectorsApiService, refusalFrom } from '@constructor-studio/mfe-shared';
 import { isDraftUsable, toCreateBody } from '../model/connectionDraft';
-import { submitFailed, submitStarted } from '../slices/connectSlice';
+import { submitFailed, submitStarted, submitSucceeded } from '../slices/connectSlice';
 import '../events/connectEvents';
 
-function refusalText(error: unknown): string | null {
-  if (typeof error !== 'object' || error === null) return null;
-  const data = (error as { response?: { data?: unknown } }).response?.data;
-  if (typeof data === 'string' && data.trim()) return data;
-  if (typeof data === 'object' && data !== null) {
-    const record = data as { message?: unknown; detail?: unknown };
-    const message = record.message ?? record.detail;
-    if (typeof message === 'string' && message.trim()) return message;
-  }
-  const message = (error as { message?: unknown }).message;
-  return typeof message === 'string' && message.trim() ? message : null;
-}
 
-export function initConnectEffects(dispatch: AppDispatch): void {
+export function initConnectEffects(dispatch: AppDispatch, app: FrontXApp): void {
   eventBus.on('mfe/connections/create-requested', ({ orgId, draft }) => {
     const connectors = apiRegistry.getService(ConnectorsApiService);
 
@@ -40,7 +35,15 @@ export function initConnectEffects(dispatch: AppDispatch): void {
         // @cpt-begin:cpt-studiofrontend-algo-connection-create-write:p2:inst-4
         const created = await connectors.createConnection.fetch(toCreateBody(draft, orgId));
         // @cpt-end:cpt-studiofrontend-algo-connection-create-write:p2:inst-4
+        dispatch(submitSucceeded());
+
         // @cpt-begin:cpt-studiofrontend-algo-connection-create-write:p2:inst-7
+        void invalidateQueryCacheForApp(app, connectors.connections({ tenantId: orgId })).catch(
+          (error: unknown) => {
+            console.error('[connections] created, but the listing was not invalidated', error);
+          }
+        );
+
         eventBus.emit('mfe/connections/created', {
           id: created.connection.id,
           label: created.connection.label,
@@ -49,7 +52,7 @@ export function initConnectEffects(dispatch: AppDispatch): void {
       } catch (error) {
         // @cpt-begin:cpt-studiofrontend-algo-connection-create-write:p2:inst-5
         // @cpt-begin:cpt-studiofrontend-algo-connection-create-write:p2:inst-6
-        dispatch(submitFailed(refusalText(error) ?? 'error_generic'));
+        dispatch(submitFailed(refusalFrom(error, 'error_generic')));
         // @cpt-end:cpt-studiofrontend-algo-connection-create-write:p2:inst-5
         // @cpt-end:cpt-studiofrontend-algo-connection-create-write:p2:inst-6
       }

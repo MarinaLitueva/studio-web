@@ -1,14 +1,14 @@
 /**
- * Which organization this MFE is working in — told by the shell, not derived.
+ * Which organization the MFE is working in — told by the shell, not derived.
  */
 
+// @cpt-dod:cpt-studiofrontend-dod-project-create-org-scope:p1
 // @cpt-dod:cpt-studiofrontend-dod-connection-create-scope:p1
 import React, { createContext, useContext, type ReactNode } from 'react';
-import type { ChildMfeBridge } from '@gears-frontx/react';
+import { useSharedProperty } from '@gears-frontx/react';
 import { STUDIO_SHARED_PROPERTY_CONTEXT_ORGANIZATION } from './hostProperties';
-import { useBridgeProperty } from './useBridgeProperty';
 
-/** All the shell publishes, and all any screen here reads. */
+/** All the shell publishes, and all any screen reads. */
 export interface OrganizationRef {
   id: string;
   name: string;
@@ -24,6 +24,7 @@ const EMPTY: OrganizationState = { org: null, loading: false, failed: false };
 
 const OrganizationContext = createContext<OrganizationState>(EMPTY);
 
+/** Null `org` with `loading` false means: the shell says there is none. */
 export function useOrganization(): OrganizationState {
   return useContext(OrganizationContext);
 }
@@ -34,14 +35,8 @@ function isOrganizationRef(value: unknown): value is OrganizationRef {
   return typeof ref.id === 'string' && !!ref.id && typeof ref.name === 'string';
 }
 
-export const OrganizationProvider: React.FC<{
-  bridge: ChildMfeBridge | null;
-  children: ReactNode;
-}> = ({ bridge, children }) => {
-  const published = useBridgeProperty<unknown>(
-    bridge,
-    STUDIO_SHARED_PROPERTY_CONTEXT_ORGANIZATION
-  );
+export const OrganizationProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const published = useSharedProperty<unknown>(STUDIO_SHARED_PROPERTY_CONTEXT_ORGANIZATION);
 
   const value: OrganizationState =
     published === undefined

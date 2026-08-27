@@ -1,20 +1,14 @@
 /**
- * Wire shapes of the studio-connector gear — the second gear this MFE talks to,
- * kept apart from `types.ts` because that file is account-management's
- * vocabulary and these are not tenants.
+ * Wire shapes of the studio-connector gear. Kept apart from any MFE's own
+ * vocabulary: these are connections and repositories, not tenants.
  */
 
-/**
- * A driver the backend can talk to. `GET /studio-connector/v1/providers`.
- * Read for one field: the properly-cased name for a tab caption — the wire key
- * is `github`, the design says `GitHub`, and casing that by hand gets it wrong.
- */
 export interface ProviderDto {
   provider: string;
   display_name: string;
-  category: string;
   default_base_url: string;
   instance_id: string;
+  category: string;
   credential_label: string;
   credential_hint: string;
 }
@@ -23,7 +17,7 @@ export interface ProviderListDto {
   items: ProviderDto[];
 }
 
-/** A configured source host. `GET /studio-connector/v1/connections`. */
+/** A configured source host. `GET /connections`. */
 export interface ConnectionDto {
   id: string;
   owner_tenant_id: string;
@@ -40,9 +34,22 @@ export interface ConnectionListDto {
   items: ConnectionDto[];
 }
 
-/**
- * A repository reachable through one connection.
- */
+/** The answer to both `POST /connections` and `POST /connections/{id}/test`. */
+export interface ConnectionTestDto {
+  connection: ConnectionDto;
+  account: string;
+  display_name?: string | null;
+}
+
+export interface CreateConnectionBody {
+  provider: string;
+  label: string;
+  base_url?: string;
+  token: string;
+  scope: string;
+  owner_tenant_id: string;
+}
+
 export interface RemoteRepoDto {
   id: string;
   name: string;

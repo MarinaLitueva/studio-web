@@ -30,7 +30,10 @@ vi.mock('./api/AccountsApiService', () => ({
   AccountsApiService: class AccountsApiService {},
 }));
 
-vi.mock('./api/ConnectorsApiService', () => ({
+// The connector client is shared with the other MFE now; `init.ts` imports it
+// from the package, and nothing else in this test's graph pulls the package at
+// runtime (the wire types are type-only imports and erase).
+vi.mock('@constructor-studio/mfe-shared', () => ({
   ConnectorsApiService: class ConnectorsApiService {},
 }));
 

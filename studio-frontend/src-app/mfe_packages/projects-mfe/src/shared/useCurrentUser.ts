@@ -4,9 +4,8 @@
  */
 
 // @cpt-dod:cpt-studiofrontend-dod-project-create-owner:p1
-import type { ChildMfeBridge } from '@gears-frontx/react';
-import { STUDIO_SHARED_PROPERTY_SESSION_PROFILE } from './hostProperties';
-import { useBridgeProperty } from './useBridgeProperty';
+import { useSharedProperty } from '@gears-frontx/react';
+import { STUDIO_SHARED_PROPERTY_SESSION_PROFILE } from '@constructor-studio/mfe-shared';
 import type { User } from '../api/types';
 
 interface SessionProfile {
@@ -26,8 +25,8 @@ function isProfile(value: unknown): value is SessionProfile {
   return typeof profile.id === 'string' && !!profile.id;
 }
 
-export function useCurrentUser(bridge: ChildMfeBridge | null): CurrentUser {
-  const published = useBridgeProperty<unknown>(bridge, STUDIO_SHARED_PROPERTY_SESSION_PROFILE);
+export function useCurrentUser(): CurrentUser {
+  const published = useSharedProperty<unknown>(STUDIO_SHARED_PROPERTY_SESSION_PROFILE);
   if (!isProfile(published)) return { id: null, asUser: null };
 
   return {

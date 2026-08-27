@@ -8,8 +8,11 @@ import {
   i18nRegistry,
 } from '@gears-frontx/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createMfeBridgeFixture } from '../../../__test-utils__/createMfeBridgeFixture';
-import { STUDIO_SHARED_PROPERTY_CONTEXT_ORGANIZATION } from './shared/hostProperties';
+import {
+  createMfeBridgeFixture,
+  mfeContextValue,
+} from '../../../__test-utils__/createMfeBridgeFixture';
+import { STUDIO_SHARED_PROPERTY_CONTEXT_ORGANIZATION } from '@constructor-studio/mfe-shared';
 import { CONNECTION_LIST_NAMESPACE } from './i18n';
 import en from './screens/connection-list/i18n/en.json';
 
@@ -139,8 +142,8 @@ describe('connections-mfe lifecycle', () => {
 
     expect(typeof renderContent).toBe('function');
     render(
-      <FrontXProvider app={initModule.mfeApp}>
-        {renderContent(bridge) as React.ReactNode}
+      <FrontXProvider app={initModule.mfeApp} mfeBridge={mfeContextValue(bridge)}>
+        {renderContent() as React.ReactNode}
       </FrontXProvider>
     );
 

@@ -23,7 +23,7 @@ import {
 import { useAppDispatch, useAppSelector } from '@gears-frontx/react';
 import { useProjectCreateText } from '../../../i18n';
 import { useSourceConnections } from '../../../shared/useConnections';
-import { useOrganization } from '../../../shared/organization';
+import { type RemoteRepoDto, useOrganization } from '@constructor-studio/mfe-shared';
 import { useRepositories } from '../../../shared/useRepositories';
 import { useDebounced } from '../../../shared/useDebounced';
 import {
@@ -33,7 +33,6 @@ import {
   selectConnection,
 } from '../../../slices/createSlice';
 import { MAX_SOURCES, repoKey, sourceKey } from '../../../model/projectDraft';
-import type { RemoteRepoDto } from '../../../api/connectorTypes';
 import styles from '../NewProjectWizard.module.css';
 
 const RepositoryTable: React.FC<{ connectionId: string; orgId: string }> = ({

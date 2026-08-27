@@ -4,7 +4,7 @@
 
 // @cpt-dod:cpt-studiofrontend-dod-connection-create-scope:p1
 // @cpt-algo:cpt-studiofrontend-algo-connection-create-write:p2
-import type { CreateConnectionBody } from '../api/connectorTypes';
+import { type CreateConnectionBody } from '@constructor-studio/mfe-shared';
 import { CONNECTION_SCOPE } from './connection';
 
 export interface ConnectionDraft {
@@ -22,7 +22,7 @@ export const EMPTY_DRAFT: ConnectionDraft = {
 };
 
 export function isDraftUsable(draft: ConnectionDraft): boolean {
-  return draft.provider !== '' && draft.label.trim() !== '' && draft.token !== '';
+  return draft.provider !== '' && draft.label.trim() !== '' && draft.token.trim() !== '';
 }
 
 export function toCreateBody(

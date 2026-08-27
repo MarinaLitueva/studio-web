@@ -26,7 +26,10 @@ vi.mock('@gears-frontx/react', () => ({
   authShared,
 }));
 
-vi.mock('./api/ConnectorsApiService', () => ({
+// The connector client is shared with the other MFE now; `init.ts` imports it
+// from the package, and nothing else in this test's graph pulls the package at
+// runtime (the wire types are type-only imports and erase).
+vi.mock('@constructor-studio/mfe-shared', () => ({
   ConnectorsApiService: class ConnectorsApiService {},
 }));
 
@@ -68,10 +71,15 @@ describe('connections-mfe init', () => {
       ['auth-shared-plugin'],
     ]));
     expect(build).toHaveBeenCalledTimes(1);
-    expect(registerSlice).toHaveBeenCalledWith(
-      { name: 'connections/connect' },
-      initConnectEffects
-    );
     expect(module.mfeApp).toBe(expectedApp);
+
+    // The effects initializer is wrapped rather than passed straight through:
+    // `registerSlice` hands it only a dispatch, and the write path needs the app
+    // to invalidate the shared cache after the form may already be unmounted.
+    expect(registerSlice).toHaveBeenCalledWith({ name: 'connections/connect' }, expect.any(Function));
+    const initEffects = registerSlice.mock.calls[0]?.[1] as (dispatch: unknown) => void;
+    const dispatch = vi.fn();
+    initEffects(dispatch);
+    expect(initConnectEffects).toHaveBeenCalledWith(dispatch, expectedApp);
   });
 });

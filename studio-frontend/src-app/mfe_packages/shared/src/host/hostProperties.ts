@@ -1,5 +1,6 @@
 /**
- * The shared-property ids this MFE reads from the shell.
+ * The shared-property ids the MFEs read from the shell. The shell is the only
+ * publisher; nothing here derives an answer of its own.
  */
 
 /** Tenant id of the open project, or `null` at organization scope. */

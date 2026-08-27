@@ -1,6 +1,10 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { FrontXProvider, createFrontXApp, i18nRegistry } from '@gears-frontx/react';
+import {
+  createMfeBridgeFixture,
+  mfeContextValue,
+} from '../../../../../../__test-utils__/createMfeBridgeFixture';
 import { CONNECTION_LIST_NAMESPACE } from '../../../i18n';
 import en from '../i18n/en.json';
 import { ConnectionsToolbar } from './ConnectionsToolbar';
@@ -19,9 +23,12 @@ async function mount(busy: boolean) {
   createFrontXApp({});
   const { mfeApp } = await import('../../../init');
   i18nRegistry.register(CONNECTION_LIST_NAMESPACE, 'en' as never, en);
+  // The toolbar reads the bridge to mount the overlay; below a real root that
+  // comes from `MfeProvider`, which `FrontXProvider` installs from `mfeBridge`.
+  const { bridge } = createMfeBridgeFixture({ domainId: 'screen', instanceId: 'inst' });
 
   render(
-    <FrontXProvider app={mfeApp}>
+    <FrontXProvider app={mfeApp} mfeBridge={mfeContextValue(bridge)}>
       <ConnectionsToolbar query="" onQueryChange={vi.fn()} busy={busy} />
     </FrontXProvider>
   );

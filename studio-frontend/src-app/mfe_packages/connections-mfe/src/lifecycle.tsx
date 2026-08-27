@@ -1,5 +1,4 @@
 import React from 'react';
-import type { ChildMfeBridge } from '@gears-frontx/react';
 import { anchorKitThemeOnShadowHost, ThemeAwareReactLifecycle } from '@gears-frontx/react';
 import kitTheme from '@gears-frontx/ui-kit/theme.css?inline';
 import { mfeApp } from './init';
@@ -27,8 +26,8 @@ class ScreensetLifecycle extends ThemeAwareReactLifecycle {
     super(mfeApp, { additionalStyles: [KIT_THEME_ON_HOST] });
   }
 
-  protected renderContent(bridge: ChildMfeBridge): React.ReactNode {
-    return <ConnectionsRoot bridge={bridge} />;
+  protected renderContent(): React.ReactNode {
+    return <ConnectionsRoot />;
   }
 }
 

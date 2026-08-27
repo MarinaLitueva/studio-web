@@ -5,7 +5,6 @@
 
 // @cpt-dod:cpt-studiofrontend-dod-project-create-overlay:p1
 import React from 'react';
-import type { ChildMfeBridge } from '@gears-frontx/react';
 import { anchorKitThemeOnShadowHost, ThemeAwareReactLifecycle } from '@gears-frontx/react';
 import kitTheme from '@gears-frontx/ui-kit/theme.css?inline';
 import { mfeApp } from './init';
@@ -19,8 +18,8 @@ class ProjectCreateLifecycle extends ThemeAwareReactLifecycle {
     super(mfeApp, { additionalStyles: [KIT_THEME_ON_HOST] });
   }
 
-  protected renderContent(bridge: ChildMfeBridge): React.ReactNode {
-    return <NewProjectWizard bridge={bridge} />;
+  protected renderContent(): React.ReactNode {
+    return <NewProjectWizard />;
   }
 }
 

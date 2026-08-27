@@ -1,7 +1,10 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { FrontXProvider, createFrontXApp, i18nRegistry } from '@gears-frontx/react';
-import { createMfeBridgeFixture } from '../../../../../__test-utils__/createMfeBridgeFixture';
+import {
+  createMfeBridgeFixture,
+  mfeContextValue,
+} from '../../../../../__test-utils__/createMfeBridgeFixture';
 import { CONNECT_SOURCE_NAMESPACE } from '../../i18n';
 import en from './i18n/en.json';
 import { ConnectSourceDialog } from './ConnectSourceDialog';
@@ -43,7 +46,7 @@ async function renderDialog(organization: unknown = { id: 'org-1', name: 'Acme' 
   createFrontXApp({});
   const { mfeApp } = await import('../../init');
   const { STUDIO_SHARED_PROPERTY_CONTEXT_ORGANIZATION } = await import(
-    '../../shared/hostProperties'
+    '@constructor-studio/mfe-shared'
   );
   const { bridge } = createMfeBridgeFixture({
     domainId: 'overlay',
@@ -58,8 +61,8 @@ async function renderDialog(organization: unknown = { id: 'org-1', name: 'Acme' 
   i18nRegistry.register(CONNECT_SOURCE_NAMESPACE, 'en' as never, en);
 
   render(
-    <FrontXProvider app={mfeApp}>
-      <ConnectSourceDialog bridge={bridge} />
+    <FrontXProvider app={mfeApp} mfeBridge={mfeContextValue(bridge)}>
+      <ConnectSourceDialog />
     </FrontXProvider>
   );
 

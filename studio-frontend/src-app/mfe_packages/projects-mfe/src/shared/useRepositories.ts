@@ -3,8 +3,7 @@
  */
 
 import { apiRegistry, useApiQuery } from '@gears-frontx/react';
-import { ConnectorsApiService, REPOSITORY_PAGE_LIMIT } from '../api/ConnectorsApiService';
-import type { RemoteRepoDto } from '../api/connectorTypes';
+import { ConnectorsApiService, REPOSITORY_PAGE_LIMIT, type RemoteRepoDto } from '@constructor-studio/mfe-shared';
 
 export interface RepositoriesView {
   repositories: readonly RemoteRepoDto[];

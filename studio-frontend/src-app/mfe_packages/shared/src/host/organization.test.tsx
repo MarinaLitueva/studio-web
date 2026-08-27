@@ -1,7 +1,8 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { createMfeBridgeFixture } from '../../../../__test-utils__/createMfeBridgeFixture';
+import { MfeProvider } from '@gears-frontx/react';
+import { createMfeBridgeFixture, mfeContextValue } from '@frontx-test-utils/createMfeBridgeFixture';
 import { STUDIO_SHARED_PROPERTY_CONTEXT_ORGANIZATION } from './hostProperties';
 import { OrganizationProvider, useOrganization } from './organization';
 
@@ -29,9 +30,11 @@ function mount(published?: unknown) {
         : { [STUDIO_SHARED_PROPERTY_CONTEXT_ORGANIZATION]: published as unknown as string },
   });
   render(
-    <OrganizationProvider bridge={bridge}>
-      <Probe />
-    </OrganizationProvider>
+    <MfeProvider value={mfeContextValue(bridge)}>
+      <OrganizationProvider>
+        <Probe />
+      </OrganizationProvider>
+    </MfeProvider>
   );
 }
 

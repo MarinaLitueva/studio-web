@@ -34,6 +34,10 @@ children = []
 codebase = [
   { path = "src-app/mfe_packages/projects-mfe/src", extensions = [".ts", ".tsx"] },
   { path = "src-app/mfe_packages/connections-mfe/src", extensions = [".ts", ".tsx"] },
+  # What both of the above share, extracted rather than copied. In scope because
+  # the code that moved there carries markers of its own — `organization.tsx`
+  # implements the org-scope DoD of both features.
+  { path = "src-app/mfe_packages/shared/src", extensions = [".ts", ".tsx"] },
 ]
 
 # Artifacts this repository owns live under docs/sdlc/. Deliberately narrow:
