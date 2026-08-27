@@ -101,10 +101,10 @@ fn search_text(value: &Value) -> String {
     }
     // Content next — this is what makes search look *inside* the artifact.
     for key in ["body", "text"] {
-        if let Some(s) = value.get(key).and_then(Value::as_str) {
-            if !s.trim().is_empty() {
-                parts.push(s.to_string());
-            }
+        if let Some(s) = value.get(key).and_then(Value::as_str)
+            && !s.trim().is_empty()
+        {
+            parts.push(s.to_string());
         }
     }
     let joined = parts.join(" ");
