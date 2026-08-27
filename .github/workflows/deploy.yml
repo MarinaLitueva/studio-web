@@ -196,6 +196,7 @@ jobs:
             --set-string "frontend.image.tag=${{ steps.versions.outputs.frontend_tag }}" \
             --set-string "frontendPrototype.image.tag=${{ steps.versions.outputs.prototype_tag }}" \
             --set-string "keycloak.image.tag=${{ steps.versions.outputs.keycloak_tag }}" \
+            --server-side=true \
             --force-conflicts \
             --rollback-on-failure \
             --wait \
