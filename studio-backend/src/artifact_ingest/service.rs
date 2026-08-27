@@ -274,8 +274,18 @@ impl IngestService {
         // land in the store as the sync runs. Flush the repo node right away.
         let mut flushed = 0usize;
         self.flush_and_report(
-            ctx, task_id, &mut nodes, &mut flushed, workspace_id, project_id,
-            "pulling issues…", 0, 0, 0, 0, 0,
+            ctx,
+            task_id,
+            &mut nodes,
+            &mut flushed,
+            workspace_id,
+            project_id,
+            "pulling issues…",
+            0,
+            0,
+            0,
+            0,
+            0,
         )
         .await?;
 
@@ -301,8 +311,18 @@ impl IngestService {
             // Flush this page of issues immediately — they show up in the graph
             // (and the live count climbs) before the whole sync completes.
             self.flush_and_report(
-                ctx, task_id, &mut nodes, &mut flushed, workspace_id, project_id,
-                "pulling issues…", issues, 0, 0, 0, 0,
+                ctx,
+                task_id,
+                &mut nodes,
+                &mut flushed,
+                workspace_id,
+                project_id,
+                "pulling issues…",
+                issues,
+                0,
+                0,
+                0,
+                0,
             )
             .await?;
         }
@@ -329,8 +349,18 @@ impl IngestService {
                 nodes.push(node);
             }
             self.flush_and_report(
-                ctx, task_id, &mut nodes, &mut flushed, workspace_id, project_id,
-                "pulling pull requests…", issues, pull_requests, 0, 0, 0,
+                ctx,
+                task_id,
+                &mut nodes,
+                &mut flushed,
+                workspace_id,
+                project_id,
+                "pulling pull requests…",
+                issues,
+                pull_requests,
+                0,
+                0,
+                0,
             )
             .await?;
         }
@@ -435,8 +465,18 @@ impl IngestService {
         // Flush the file nodes gathered from the checkout/tree before deriving
         // PR→file links (those are edges, whose endpoints must already exist).
         self.flush_and_report(
-            ctx, task_id, &mut nodes, &mut flushed, workspace_id, project_id,
-            "reading files…", issues, pull_requests, files, 0, 0,
+            ctx,
+            task_id,
+            &mut nodes,
+            &mut flushed,
+            workspace_id,
+            project_id,
+            "reading files…",
+            issues,
+            pull_requests,
+            files,
+            0,
+            0,
         )
         .await?;
 
@@ -505,8 +545,18 @@ impl IngestService {
                 nodes.push(node);
             }
             self.flush_and_report(
-                ctx, task_id, &mut nodes, &mut flushed, workspace_id, project_id,
-                "pulling comments…", issues, pull_requests, files, comments, 0,
+                ctx,
+                task_id,
+                &mut nodes,
+                &mut flushed,
+                workspace_id,
+                project_id,
+                "pulling comments…",
+                issues,
+                pull_requests,
+                files,
+                comments,
+                0,
             )
             .await?;
             if comments >= MAX_COMMENTS {
@@ -552,8 +602,18 @@ impl IngestService {
                 nodes.push(node);
             }
             self.flush_and_report(
-                ctx, task_id, &mut nodes, &mut flushed, workspace_id, project_id,
-                "pulling commits…", issues, pull_requests, files, comments, commits,
+                ctx,
+                task_id,
+                &mut nodes,
+                &mut flushed,
+                workspace_id,
+                project_id,
+                "pulling commits…",
+                issues,
+                pull_requests,
+                files,
+                comments,
+                commits,
             )
             .await?;
             if commits >= MAX_COMMITS {
@@ -579,8 +639,18 @@ impl IngestService {
         nodes.extend(users.into_values());
         self.progress(task_id, "storing…");
         self.flush_and_report(
-            ctx, task_id, &mut nodes, &mut flushed, workspace_id, project_id,
-            "storing…", issues, pull_requests, files, comments, commits,
+            ctx,
+            task_id,
+            &mut nodes,
+            &mut flushed,
+            workspace_id,
+            project_id,
+            "storing…",
+            issues,
+            pull_requests,
+            files,
+            comments,
+            commits,
         )
         .await?;
 
@@ -765,7 +835,7 @@ impl IngestService {
         &self,
         ctx: &SecurityContext,
         task_id: Option<&str>,
-        nodes: &mut Vec<GtsNode>,
+        nodes: &mut [GtsNode],
         flushed: &mut usize,
         workspace_id: Option<&str>,
         project_id: Option<&str>,

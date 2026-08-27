@@ -9,7 +9,7 @@
 //! Only compiled with the `graph` feature (the gear itself is behind it).
 
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 use toolkit_security::SecurityContext;
 
@@ -101,10 +101,10 @@ fn search_text(value: &Value) -> String {
     }
     // Content next — this is what makes search look *inside* the artifact.
     for key in ["body", "text"] {
-        if let Some(s) = value.get(key).and_then(Value::as_str) {
-            if !s.trim().is_empty() {
-                parts.push(s.to_string());
-            }
+        if let Some(s) = value.get(key).and_then(Value::as_str)
+            && !s.trim().is_empty()
+        {
+            parts.push(s.to_string());
         }
     }
     let joined = parts.join(" ");
@@ -421,7 +421,14 @@ impl GraphStore for GraphStorageBackend {
             loop {
                 let page = self
                     .client
-                    .list_edges(ctx, id, Direction::Outgoing, cursor.as_deref(), LIST_PAGE, false)
+                    .list_edges(
+                        ctx,
+                        id,
+                        Direction::Outgoing,
+                        cursor.as_deref(),
+                        LIST_PAGE,
+                        false,
+                    )
                     .await
                     .map_err(|e| anyhow::anyhow!("graph-storage list_edges: {e}"))?;
                 for e in page.items {

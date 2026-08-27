@@ -56,10 +56,10 @@ pub struct TaskRegistry {
 
 impl TaskRegistry {
     fn update<F: FnOnce(&mut TaskRecord)>(&self, id: &str, f: F) {
-        if let Ok(mut map) = self.inner.lock() {
-            if let Some(rec) = map.get_mut(id) {
-                f(rec);
-            }
+        if let Ok(mut map) = self.inner.lock()
+            && let Some(rec) = map.get_mut(id)
+        {
+            f(rec);
         }
     }
 

@@ -78,7 +78,9 @@ fn build_graph_store(ctx: &GearCtx) -> Arc<dyn graph::GraphStore> {
             .get::<dyn crate::graph_storage::sdk::GraphStorageClientV1>()
         {
             Ok(client) => {
-                info!("studio-artifact-ingest: using the graph-storage gear as the artifact graph store");
+                info!(
+                    "studio-artifact-ingest: using the graph-storage gear as the artifact graph store"
+                );
                 return Arc::new(graph_backend::GraphStorageBackend::new(client));
             }
             Err(e) => warn!(
@@ -98,10 +100,10 @@ fn resolve_dir(env: &str) -> Option<PathBuf> {
     if raw.is_empty() {
         return None;
     }
-    if let Some(rest) = raw.strip_prefix("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            return Some(PathBuf::from(home).join(rest));
-        }
+    if let Some(rest) = raw.strip_prefix("~/")
+        && let Ok(home) = std::env::var("HOME")
+    {
+        return Some(PathBuf::from(home).join(rest));
     }
     Some(PathBuf::from(raw))
 }
