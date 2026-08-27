@@ -1,7 +1,7 @@
 import React from 'react';
 import { Skeleton } from '@gears-frontx/ui-kit';
 import { displayName } from '../../../model/project';
-import { useOrganization } from '../../../shared/organization';
+import { useOrganization } from '@constructor-studio/mfe-shared';
 import { useUserById } from '../../../shared/users';
 import type { ProjectConfigState } from '../../../shared/useProjectConfig';
 import { useProjectListText } from '../../../i18n';
@@ -12,9 +12,6 @@ import styles from '../ProjectListScreen.module.css';
 /**
  * The project's owner: `owner_id` from its own metadata, named by one
  * point-lookup per distinct owner (`useUserById`).
- *
- * Name only for now. The kit has no Avatar yet, and the wizard's `UserRow`
- * holds the same placeholder; when it lands, one goes beside the name here.
  */
 export const OwnerInline: React.FC<{ state: ProjectConfigState }> = ({ state }) => {
   const t = useProjectListText();

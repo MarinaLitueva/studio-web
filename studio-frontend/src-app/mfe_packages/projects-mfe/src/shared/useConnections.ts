@@ -3,8 +3,7 @@
  */
 
 import { apiRegistry, useApiQuery } from '@gears-frontx/react';
-import { ConnectorsApiService } from '../api/ConnectorsApiService';
-import type { ConnectionDto } from '../api/connectorTypes';
+import { type ConnectionDto, ConnectorsApiService } from '@constructor-studio/mfe-shared';
 
 /** `ProviderDto.category` of a driver whose repositories can be browsed. */
 const SOURCE_CODE_CATEGORY = 'source_code';

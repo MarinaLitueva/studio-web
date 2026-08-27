@@ -269,7 +269,7 @@ lifecycle actions, with its own entry and lifecycle instance.
 - `cpt-studiofrontend-flow-project-create-abandon`
 
 **Touches**:
-- Entities: `mfe.json`, `wizardLifecycle`, `wizardActions`
+- Entities: `mfe.json`, `overlayLifecycle`, `wizardActions`
 
 ### A project always has an owner
 

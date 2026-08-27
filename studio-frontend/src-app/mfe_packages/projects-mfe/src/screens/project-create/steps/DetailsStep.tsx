@@ -16,7 +16,6 @@ import {
 import { useAppDispatch, useAppSelector } from '@gears-frontx/react';
 import { useProjectCreateText } from '../../../i18n';
 import { CREATE_SLICE_KEY, editDraft } from '../../../slices/createSlice';
-import { useBridge } from '../../../shared/bridge';
 import { useCurrentUser } from '../../../shared/useCurrentUser';
 import { displayName } from '../../../model/project';
 import type { ProjectMode } from '../../../api/types.ts';
@@ -29,12 +28,6 @@ function initials(user: User): string {
   return parts.map((p) => p[0]!.toUpperCase()).join('') || '?';
 }
 
-/**
- * The owner, as the mockup draws them: initials, name, address. `initials` is a
- * stand-in for the kit's Avatar, which does not exist yet — when it lands, this
- * and the list's Owner cell (`OwnerInline`) both drop their local version
- * instead of growing a second copy of the hue hash.
- */
 const UserRow: React.FC<{ user: User }> = ({ user }) => (
   <>
     <span className={styles.ownerAvatar} aria-hidden="true">
@@ -81,8 +74,7 @@ const MODES: readonly { value: ProjectMode; icon: React.ReactNode; titleKey: str
  */
 const OwnerField: React.FC = () => {
   const t = useProjectCreateText();
-  const bridge = useBridge();
-  const { asUser: me } = useCurrentUser(bridge);
+  const { asUser: me } = useCurrentUser();
 
   return (
     <div className={styles.field}>

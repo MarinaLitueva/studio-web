@@ -28,6 +28,7 @@ export default defineConfig({
       filename: 'remoteEntry.js',
       exposes: {
         './lifecycle': './src/lifecycle.tsx',
+        './overlayLifecycle': './src/overlayLifecycle.tsx',
       },
       // Empty shared config — MF 2.0's shared dep mechanism is bypassed.
       // Shared deps are externalized via rollupOptions.external and provided
@@ -44,7 +45,22 @@ export default defineConfig({
     modulePreload: false,
     /** Default Vite prod behavior; MfeHandlerMF integration test asserts compatibility. */
     minify: true,
-    cssCodeSplit: true,
+    /*
+     * OFF, and not a preference — the same trap projects-mfe documents. With
+     * two exposes Rollup lifts the components they share into a common chunk
+     * and emits that chunk's CSS as a third file, which `mf-manifest.json`
+     * attributes to neither expose; `exposeAssets.css` misses it and the
+     * handler never injects it into the shadow root. Here the shared chunk was
+     * named after `connectActions` and carried every ui-kit component rule, so
+     * both screens lost them at once: the search magnifier fell out of its
+     * field and sat above it, the inputs lost their border, and the Select
+     * trigger lost its width.
+     *
+     * It only became reachable when this MFE gained its second entry — with
+     * one expose there was nothing to hoist, which is why the template ships
+     * `true` and gets away with it.
+     */
+    cssCodeSplit: false,
     rollupOptions: {
       // Preserve bare specifiers for shared deps in the output chunks.
       // The handler rewrites these to blob URLs at runtime.

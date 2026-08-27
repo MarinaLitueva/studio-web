@@ -17,6 +17,7 @@
 // @cpt-flow:cpt-studiofrontend-flow-project-create-greenfield:p1
 // @cpt-flow:cpt-studiofrontend-flow-project-create-modernize:p1
 import { apiRegistry, eventBus, type AppDispatch } from '@gears-frontx/react';
+import { refusalFrom } from '@constructor-studio/mfe-shared';
 import { AccountsApiService } from '../api/AccountsApiService';
 import { PROJECT_CONFIG_TYPE, TENANT_TYPES, type ProjectConfig } from '../api/types';
 import {
@@ -49,26 +50,6 @@ function toProjectConfig(draft: ProjectDraft): ProjectConfig {
   return config;
 }
 
-/**
- * AM's refusals arrive as an axios error whose useful part is buried. Anything
- * we cannot read becomes the generic message rather than `[object Object]`.
- */
-function refusalText(error: unknown): string | null {
-  if (typeof error === 'object' && error !== null) {
-    const response = (error as { response?: { data?: unknown } }).response;
-    const data = response?.data;
-    if (typeof data === 'string' && data.trim()) return data;
-    if (typeof data === 'object' && data !== null) {
-      const message = (data as { message?: unknown; detail?: unknown }).message
-        ?? (data as { detail?: unknown }).detail;
-      if (typeof message === 'string' && message.trim()) return message;
-    }
-    const message = (error as { message?: unknown }).message;
-    if (typeof message === 'string' && message.trim()) return message;
-  }
-  return null;
-}
-
 export function initWizardEffects(dispatch: AppDispatch): void {
   eventBus.on('mfe/projects/create-requested', ({ orgId, draft }) => {
     const accounts = apiRegistry.getService(AccountsApiService);
@@ -94,7 +75,7 @@ export function initWizardEffects(dispatch: AppDispatch): void {
       } catch (error) {
         // @cpt-begin:cpt-studiofrontend-algo-project-create-write:p2:inst-3
         // @cpt-begin:cpt-studiofrontend-algo-project-create-write:p2:inst-4
-        dispatch(submitFailed(refusalText(error) ?? 'create-failed'));
+        dispatch(submitFailed(refusalFrom(error, 'error_create')));
         return;
         // @cpt-end:cpt-studiofrontend-algo-project-create-write:p2:inst-3
         // @cpt-end:cpt-studiofrontend-algo-project-create-write:p2:inst-4
@@ -111,7 +92,7 @@ export function initWizardEffects(dispatch: AppDispatch): void {
         // @cpt-begin:cpt-studiofrontend-algo-project-create-write:p2:inst-7
         console.error('[projects] project created, attributes not written', error);
         eventBus.emit('mfe/projects/created', { id: tenantId, name });
-        dispatch(submitFailed(refusalText(error) ?? 'attributes-failed'));
+        dispatch(submitFailed(refusalFrom(error, 'error_attributes')));
         return;
         // @cpt-end:cpt-studiofrontend-algo-project-create-write:p2:inst-6
         // @cpt-end:cpt-studiofrontend-algo-project-create-write:p2:inst-7

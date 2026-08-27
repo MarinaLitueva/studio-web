@@ -31,7 +31,7 @@ export default defineConfig({
         // Second entry, not a second MFE: the New project wizard mounts into
         // the shell's overlay domain while the screen entry stays mounted
         // behind the scrim, and one lifecycle singleton cannot hold two roots.
-        './wizardLifecycle': './src/wizardLifecycle.tsx',
+        './overlayLifecycle': './src/overlayLifecycle.tsx',
       },
       // Empty shared config — MF 2.0's shared dep mechanism is bypassed.
       // Shared deps are externalized via rollupOptions.external and provided

@@ -1,17 +1,10 @@
 import React, { useEffect, useRef } from 'react';
-import type { ChildMfeBridge } from '@gears-frontx/react';
-import { useAppDispatch, useAppSelector } from '@gears-frontx/react';
-import { BridgeProvider } from './shared/bridge';
-import { useHostChrome } from './shared/useHostChrome';
+import { useAppDispatch, useAppSelector, useSharedProperty } from '@gears-frontx/react';
+import { STUDIO_SHARED_PROPERTY_CONTEXT_PROJECT, useHostChrome } from '@constructor-studio/mfe-shared';
 import { ProjectListScreen } from './screens/project-list/ProjectListScreen';
 import { ProjectScreen } from './screens/project/ProjectScreen';
 import { NAV_SLICE_KEY, closeProject, openProject } from './slices/navSlice';
-import { STUDIO_SHARED_PROPERTY_CONTEXT_PROJECT } from './shared/hostProperties';
 import styles from './ProjectsRoot.module.css';
-
-interface ProjectsRootProps {
-  bridge: ChildMfeBridge;
-}
 
 /**
  * This MFE's screen-domain root. Not its only root any more: the New project
@@ -23,8 +16,8 @@ interface ProjectsRootProps {
  * Which screen shows is `projects/nav`, not a route — the shell has no router,
  * and ADR-0008 puts the project's own rail inside this frame.
  */
-export const ProjectsRoot: React.FC<ProjectsRootProps> = ({ bridge }) => {
-  const { containerRef, dataTheme } = useHostChrome(bridge);
+export const ProjectsRoot: React.FC = () => {
+  const { containerRef, dataTheme } = useHostChrome();
   const dispatch = useAppDispatch();
   const projectId = useAppSelector((state) => state[NAV_SLICE_KEY].projectId);
 
@@ -36,39 +29,17 @@ export const ProjectsRoot: React.FC<ProjectsRootProps> = ({ bridge }) => {
     projectIdRef.current = projectId;
   });
 
-  /**
-   * The shell's selection, applied to this MFE's own navigation — the half
-   * ADR-0008 left out. The top bar's switcher clicks are `app/context/*` events
-   * on the SHELL's eventBus, inaudible here; this property is what crosses.
-   *
-   * Two things the mechanism does NOT do, both load-bearing: it never fires on
-   * subscribe, so the current value is read separately (which doubles as the
-   * bridge-swap path), and it does not dedupe. Since the shell echoes back the
-   * opens this MFE started, an unguarded apply would re-dispatch `openProject`
-   * and reset the section to `overview` — clicking Team would bounce back.
-   */
-  useEffect(() => {
-    const apply = (raw: unknown): void => {
-      const next = typeof raw === 'string' && raw ? raw : null;
-      if (next === projectIdRef.current) return;
-      dispatch(next ? openProject(next) : closeProject());
-    };
+  const publishedProject = useSharedProperty(STUDIO_SHARED_PROPERTY_CONTEXT_PROJECT);
 
-    apply(bridge.getProperty(STUDIO_SHARED_PROPERTY_CONTEXT_PROJECT)?.value);
-    return bridge.subscribeToProperty(STUDIO_SHARED_PROPERTY_CONTEXT_PROJECT, (property) =>
-      apply(property.value)
-    );
-  }, [bridge, dispatch]);
+  useEffect(() => {
+    const next = typeof publishedProject === 'string' && publishedProject ? publishedProject : null;
+    if (next === projectIdRef.current) return;
+    dispatch(next ? openProject(next) : closeProject());
+  }, [publishedProject, dispatch]);
 
   return (
     <div ref={containerRef} className={styles.root} data-theme={dataTheme}>
-      <BridgeProvider bridge={bridge}>
-        {projectId ? (
-          <ProjectScreen bridge={bridge} projectId={projectId} />
-        ) : (
-          <ProjectListScreen />
-        )}
-      </BridgeProvider>
+      {projectId ? <ProjectScreen projectId={projectId} /> : <ProjectListScreen />}
     </div>
   );
 };

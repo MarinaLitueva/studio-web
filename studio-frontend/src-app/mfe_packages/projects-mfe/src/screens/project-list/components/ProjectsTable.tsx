@@ -11,7 +11,7 @@ import {
 } from '@gears-frontx/ui-kit';
 import { useFormatters } from '@gears-frontx/react';
 import { requestOpenProject } from '../../../actions/projectsActions';
-import { useBridge } from '../../../shared/bridge';
+import { useMfeBridge } from '@gears-frontx/react';
 import { isProject, isWorkspace } from '../../../model/project';
 import { useProjectTree, type TreeRow } from '../../../shared/projectTree';
 import { useProjectConfig } from '../../../shared/useProjectConfig';
@@ -71,7 +71,7 @@ const RowCells: React.FC<{
   const { tenant, level, expandable, expanded } = row;
   const project = isProject(tenant);
   const { formatRelative } = useFormatters();
-  const bridge = useBridge();
+  const bridge = useMfeBridge();
   const { siblingProjects } = useProjectTree();
 
   /** A project opens on click, a node with children toggles. */

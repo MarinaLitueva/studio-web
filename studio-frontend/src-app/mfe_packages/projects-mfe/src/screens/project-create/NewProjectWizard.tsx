@@ -10,17 +10,15 @@ import {
   eventBus,
   invalidateQueryCacheForApp,
   useFrontX,
+  useMfeBridge,
 } from '@gears-frontx/react';
-import type { ChildMfeBridge } from '@gears-frontx/react';
 import { useAppDispatch, useAppSelector } from '@gears-frontx/react';
 import { Button, Skeleton } from '@gears-frontx/ui-kit';
-import { BridgeProvider } from '../../shared/bridge';
-import { useHostChrome } from '../../shared/useHostChrome';
+import { OrganizationProvider, useHostChrome, useOrganization } from '@constructor-studio/mfe-shared';
 import { useProjectCreateScreenTranslations, useProjectCreateText } from '../../i18n';
 import { closeProjectWizard, requestProjectCreate } from '../../actions/wizardActions';
 import '../../events/wizardEvents';
 import { CREATE_SLICE_KEY, editDraft, goToStep, resetWizard } from '../../slices/createSlice';
-import { OrganizationProvider, useOrganization } from '../../shared/organization';
 import { useCurrentUser } from '../../shared/useCurrentUser';
 import { AccountsApiService, childrenPageParams } from '../../api/AccountsApiService';
 import { isFinalStep, nextStep, prevStep, stepFor, type WizardStepKey } from '../../model/wizardSteps';
@@ -35,21 +33,13 @@ const STEP_BODIES: Record<WizardStepKey, React.FC> = {
   repositories: RepositoriesStep,
 };
 
-/**
- * What a step contributes to the left of the footer buttons. Optional, and a
- * second map rather than a field on `WizardStep`: `wizardSteps` is pure logic
- * with no React in it, and it is worth keeping that way.
- */
 const STEP_FOOTER_NOTES: Partial<Record<WizardStepKey, React.FC>> = {
   repositories: RepositoriesFooterNote,
 };
 
-interface NewProjectWizardProps {
-  bridge: ChildMfeBridge;
-}
-
-const WizardBody: React.FC<NewProjectWizardProps> = ({ bridge }) => {
-  const { containerRef, dataTheme } = useHostChrome(bridge);
+const WizardBody: React.FC = () => {
+  const bridge = useMfeBridge();
+  const { containerRef, dataTheme } = useHostChrome();
   const { isLoaded, error: translationsFailed } = useProjectCreateScreenTranslations();
   const t = useProjectCreateText();
   const dispatch = useAppDispatch();
@@ -68,7 +58,7 @@ const WizardBody: React.FC<NewProjectWizardProps> = ({ bridge }) => {
     dispatch(resetWizard());
   }, [dispatch]);
 
-  const { id: currentUserId } = useCurrentUser(bridge);
+  const { id: currentUserId } = useCurrentUser();
   useEffect(() => {
     if (currentUserId && !draft.ownerId) dispatch(editDraft({ ownerId: currentUserId }));
   }, [currentUserId, draft.ownerId, dispatch]);
@@ -117,59 +107,53 @@ const WizardBody: React.FC<NewProjectWizardProps> = ({ bridge }) => {
 
   return (
     <div ref={containerRef} className={styles.wizard} data-theme={dataTheme}>
-      <BridgeProvider bridge={bridge}>
-        {showSkeleton ? (
-          <Skeleton className={styles.titleSkeleton} />
-        ) : (
-          <h2 className={styles.title}>{t(step.titleKey)}</h2>
-        )}
+      {showSkeleton ? (
+        <Skeleton className={styles.titleSkeleton} />
+      ) : (
+        <h2 className={styles.title}>{t(step.titleKey)}</h2>
+      )}
 
-        <div className={styles.body}>
-          {showSkeleton ? <Skeleton className={styles.bodySkeleton} /> : <Body />}
-        </div>
+      <div className={styles.body}>
+        {showSkeleton ? <Skeleton className={styles.bodySkeleton} /> : <Body />}
+      </div>
 
-        {(translationsFailed || error || (final && !orgId && !orgLoading)) && (
-          <p className={styles.error} role="alert">
-            {/*
-             * Last resort for exactly one case: the dictionary that would
-             * translate this message is the one that failed to arrive, so `t`
-             * would render the key. It takes priority over the other two for the
-             * same reason. Unlike `ProjectListScreen`, which has nothing to show
-             * but the message and replaces its content with it, the wizard keeps
-             * the form mounted — raw keys on the labels beat no wizard at all.
-             */}
-            {translationsFailed
-              ? 'Could not load this screen.'
-              : (error ?? t('error_no_org'))}
-          </p>
-        )}
+      {(translationsFailed || error || (final && !orgId && !orgLoading)) && (
+        <p className={styles.error} role="alert">
+          {translationsFailed
+            ? 'Could not load this screen.'
+            : error
+              ? error.kind === 'i18n'
+                ? t(error.key)
+                : error.text
+              : t('error_no_org')}
+        </p>
+      )}
 
-        <div className={styles.footer}>
-          {/* Left slot is the step's to fill — the pick counter on repositories. */}
-          <div className={styles.footerNote}>{FooterNote ? <FooterNote /> : null}</div>
-          <Button variant="ghost" size="sm" onClick={onSecondary} disabled={submitting}>
-            {back ? t('back') : t('cancel')}
-          </Button>
-          <Button
-            size="sm"
-            onClick={onPrimary}
-            disabled={
-              submitting || orgLoading || !step.isComplete(draft) || (final && !orgId)
-            }
-          >
-            {final ? t('create') : t('continue')}
-          </Button>
-        </div>
-      </BridgeProvider>
+      <div className={styles.footer}>
+        {/* Left slot is the step's to fill — the pick counter on repositories. */}
+        <div className={styles.footerNote}>{FooterNote ? <FooterNote /> : null}</div>
+        <Button variant="ghost" size="sm" onClick={onSecondary} disabled={submitting}>
+          {back ? t('back') : t('cancel')}
+        </Button>
+        <Button
+          size="sm"
+          onClick={onPrimary}
+          disabled={
+            submitting || orgLoading || !step.isComplete(draft) || (final && !orgId)
+          }
+        >
+          {final ? t('create') : t('continue')}
+        </Button>
+      </div>
     </div>
   );
 };
 
 WizardBody.displayName = 'WizardBody';
 
-export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ bridge }) => (
-  <OrganizationProvider bridge={bridge}>
-    <WizardBody bridge={bridge} />
+export const NewProjectWizard: React.FC = () => (
+  <OrganizationProvider>
+    <WizardBody />
   </OrganizationProvider>
 );
 

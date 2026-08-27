@@ -1,6 +1,5 @@
 import React from 'react';
-import type { ChildMfeBridge } from '@gears-frontx/react';
-import { apiRegistry, useApiQuery, useAppSelector } from '@gears-frontx/react';
+import { apiRegistry, useApiQuery, useAppSelector, useMfeBridge } from '@gears-frontx/react';
 import { Button, Skeleton } from '@gears-frontx/ui-kit';
 import { useProjectScreenTranslations, useProjectText } from '../../i18n';
 import { AccountsApiService } from '../../api/AccountsApiService';
@@ -12,11 +11,11 @@ import { PlaceholderSection } from './sections/PlaceholderSection';
 import styles from './ProjectScreen.module.css';
 
 interface ProjectScreenProps {
-  bridge: ChildMfeBridge;
   projectId: string;
 }
 
-export const ProjectScreen: React.FC<ProjectScreenProps> = ({ bridge, projectId }) => {
+export const ProjectScreen: React.FC<ProjectScreenProps> = ({ projectId }) => {
+  const bridge = useMfeBridge();
   const { isLoaded, error: translationsFailed } = useProjectScreenTranslations();
   const t = useProjectText();
   const accounts = apiRegistry.getService(AccountsApiService);

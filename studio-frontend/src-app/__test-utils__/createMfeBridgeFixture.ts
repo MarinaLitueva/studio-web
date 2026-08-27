@@ -1,4 +1,4 @@
-import type { ChildMfeBridge, SharedProperty } from '@gears-frontx/react';
+import type { ChildMfeBridge, MfeContextValue, SharedProperty } from '@gears-frontx/react';
 import { vi, type Mock } from 'vitest';
 
 // @cpt-dod:cpt-frontx-dod-react-bindings-mfe-hooks:p1
@@ -101,3 +101,15 @@ export function createMfeBridgeFixture(
   };
 }
 // @cpt-end:cpt-frontx-dod-react-bindings-mfe-hooks:p1:inst-create-mfe-bridge-fixture
+
+/**
+ * The context `ThemeAwareReactLifecycle` puts above a mounted root, for tests
+ * rendering a component that reads `useMfeBridge`/`useSharedProperty`. Pass it
+ * as `FrontXProvider`'s `mfeBridge`, or to `MfeProvider` directly.
+ */
+export function mfeContextValue(
+  bridge: ChildMfeBridge,
+  extensionId = 'test-extension'
+): MfeContextValue {
+  return { bridge, extensionId, domainId: bridge.domainId };
+}

@@ -1,37 +1,33 @@
 /**
- * MFE Bootstrap — executed once when any entry first loads.
- * Creates the minimal FrontX app, registers slices, effects, and API services.
- * Cache/runtime note:
- * - The host app owns the shared runtime via queryCache().
- * - Child apps join that shared QueryClient via queryCacheShared().
- * - Do not add queryCache(), createFrontXApp(), or QueryClientProvider here.
+ * MFE Bootstrap — executed once per loaded entry, NOT once per MFE.
  */
 // @cpt-dod:cpt-frontx-dod-mfe-isolation-internal-dataflow:p1
-// @cpt-dod:cpt-frontx-dod-unit-test-generation-and-agent-verification-blank-mfe-tests:p1
 // @cpt-flow:cpt-frontx-flow-mfe-isolation-mfe-bootstrap:p1
 
 import {
   createFrontX,
   registerSlice,
   apiRegistry,
+  authShared,
   effects,
-  mock,
+  i18n,
   queryCacheShared,
 } from '@gears-frontx/react';
-import { homeSlice } from './slices/homeSlice';
-import { initHomeEffects } from './effects/homeEffects';
-import { _BlankApiService } from './api/_BlankApiService';
+import { connectSlice } from './slices/connectSlice';
+import { initConnectEffects } from './effects/connectEffects';
+import { ConnectorsApiService } from '@constructor-studio/mfe-shared';
 
-// Register API services BEFORE build — mock plugin syncs during build(),
-// so services must already be present for mock activation to find them
-apiRegistry.register(_BlankApiService);
+// Register API services BEFORE build so plugin sync finds them.
+apiRegistry.register(ConnectorsApiService);
 apiRegistry.initialize();
 
-// Create only the local MFE app shell.
-// queryCacheShared() joins the host-owned QueryClient without reconfiguring it.
-const mfeApp = createFrontX().use(effects()).use(queryCacheShared()).use(mock()).build();
+const mfeApp = createFrontX()
+  .use(effects())
+  .use(i18n())
+  .use(queryCacheShared())
+  .use(authShared())
+  .build();
 
-// Register slices with effects (needs store from build())
-registerSlice(homeSlice, initHomeEffects);
+registerSlice(connectSlice, (dispatch) => initConnectEffects(dispatch, mfeApp));
 
 export { mfeApp };

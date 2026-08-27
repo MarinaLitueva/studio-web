@@ -1,0 +1,83 @@
+.dialog {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  width: 35rem;
+  height: min(34.5rem, calc(100vh - 8rem - 2px));
+  padding: var(--space-8);
+  font-family: var(--font-sans);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+  background: var(--card);
+  color: var(--foreground);
+}
+
+.title {
+  margin: 0 0 var(--space-5);
+  font-size: 1.6rem;
+  font-weight: 600;
+}
+
+.titleSkeleton {
+  margin: 0 0 var(--space-5);
+  height: var(--text-body-line-height);
+  width: 14ch;
+}
+
+.body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.bodySkeleton {
+  flex: 1;
+  min-height: 0;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.fieldLabel {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-size);
+  line-height: var(--text-mono-line-height);
+  font-weight: var(--text-mono-weight);
+  letter-spacing: var(--text-mono-tracking);
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.fieldHint {
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line-height);
+  color: var(--muted-foreground);
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.footerNote {
+  flex: 1;
+  font-size: var(--text-label-size);
+  color: var(--muted-foreground);
+}
+
+.error {
+  margin: 0;
+  font-size: var(--text-label-size);
+  color: var(--destructive);
+}
+
+.providerTrigger {
+  width: 100%;
+}

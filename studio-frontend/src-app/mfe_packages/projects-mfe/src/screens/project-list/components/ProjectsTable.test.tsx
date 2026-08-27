@@ -1,10 +1,11 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FrontXProvider, createFrontXApp, i18nRegistry } from '@gears-frontx/react';
-import { createMfeBridgeFixture } from '../../../../../../__test-utils__/createMfeBridgeFixture';
-import { BridgeProvider } from '../../../shared/bridge';
-import { OrganizationProvider } from '../../../shared/organization';
-import { STUDIO_SHARED_PROPERTY_CONTEXT_ORGANIZATION } from '../../../shared/hostProperties';
+import {
+  createMfeBridgeFixture,
+  mfeContextValue,
+} from '../../../../../../__test-utils__/createMfeBridgeFixture';
+import { OrganizationProvider, STUDIO_SHARED_PROPERTY_CONTEXT_ORGANIZATION } from '@constructor-studio/mfe-shared';
 import { PROJECT_LIST_NAMESPACE } from '../../../i18n';
 import en from '../i18n/en.json';
 import { ProjectsTable } from './ProjectsTable';
@@ -86,12 +87,10 @@ async function mount(rows: TreeRow[], onToggle: (tenantId: string) => void = () 
   i18nRegistry.register(PROJECT_LIST_NAMESPACE, 'en' as never, en);
 
   render(
-    <FrontXProvider app={mfeApp}>
-      <BridgeProvider bridge={bridge}>
-        <OrganizationProvider bridge={bridge}>
-          <ProjectsTable rows={rows} onToggle={onToggle} />
-        </OrganizationProvider>
-      </BridgeProvider>
+    <FrontXProvider app={mfeApp} mfeBridge={mfeContextValue(bridge)}>
+      <OrganizationProvider>
+        <ProjectsTable rows={rows} onToggle={onToggle} />
+      </OrganizationProvider>
     </FrontXProvider>
   );
   return mfeApp;

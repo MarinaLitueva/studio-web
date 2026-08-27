@@ -5,6 +5,7 @@
 // @cpt-dod:cpt-studiofrontend-dod-project-create-reset:p1
 // @cpt-dod:cpt-studiofrontend-dod-project-create-many-sources:p1
 import { createSlice, type ReducerPayload } from '@gears-frontx/react';
+import type { Refusal } from '@constructor-studio/mfe-shared';
 import {
   EMPTY_DRAFT,
   MAX_SOURCES,
@@ -20,7 +21,7 @@ export interface CreateState {
   connectionId: string | null;
   repoSearch: string;
   submitting: boolean;
-  error: string | null;
+  error: Refusal | null;
 }
 
 const SLICE_KEY = 'projects/create' as const;
@@ -91,7 +92,7 @@ const {
       state.submitting = true;
       state.error = null;
     },
-    submitFailed: (state: CreateState, action: ReducerPayload<string>) => {
+    submitFailed: (state: CreateState, action: ReducerPayload<Refusal>) => {
       state.submitting = false;
       state.error = action.payload;
     },

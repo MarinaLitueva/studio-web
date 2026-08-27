@@ -1,7 +1,10 @@
 import { act, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { FrontXProvider, createFrontXApp } from '@gears-frontx/react';
-import { createMfeBridgeFixture } from '../../../__test-utils__/createMfeBridgeFixture';
+import {
+  createMfeBridgeFixture,
+  mfeContextValue,
+} from '../../../__test-utils__/createMfeBridgeFixture';
 
 /**
  * Which screen shows is `projects/nav.projectId` and nothing else — there is no
@@ -21,8 +24,8 @@ describe('ProjectsRoot', () => {
     const { bridge } = createMfeBridgeFixture({ domainId: 'screen', instanceId: 'inst' });
 
     render(
-      <FrontXProvider app={mfeApp}>
-        <ProjectsRoot bridge={bridge} />
+      <FrontXProvider app={mfeApp} mfeBridge={mfeContextValue(bridge)}>
+        <ProjectsRoot />
       </FrontXProvider>
     );
 

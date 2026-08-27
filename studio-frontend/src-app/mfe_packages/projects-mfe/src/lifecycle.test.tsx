@@ -28,11 +28,10 @@ vi.mock('./init', () => ({
 }));
 
 // The root's own behaviour (bridge properties, store-driven view) is not this
-// test's subject: here it stands in for "whatever the lifecycle renders".
+// test's subject: here it stands in for "whatever the lifecycle renders". It
+// takes no props — the bridge reaches the tree through `MfeProvider` now.
 vi.mock('./ProjectsRoot', () => ({
-  ProjectsRoot: ({ bridge }: { bridge: TestBridge }) => (
-    <div data-testid="projects-root">{bridge.instanceId}</div>
-  ),
+  ProjectsRoot: () => <div data-testid="projects-root" />,
 }));
 
 describe('projects-mfe lifecycle', () => {
@@ -48,18 +47,14 @@ describe('projects-mfe lifecycle', () => {
     } satisfies TestApp);
   });
 
-  it('renders the projects root with the provided bridge', async () => {
+  it('renders the projects root', async () => {
     const module = await import('./lifecycle');
     const renderContent = Reflect.get(module.default, 'renderContent');
-    const { bridge } = createMfeBridgeFixture({
-      domainId: 'projects-domain',
-      instanceId: 'projects-instance',
-    });
 
     expect(typeof renderContent).toBe('function');
-    render(<>{renderContent(bridge) as React.ReactNode}</>);
+    render(<>{renderContent() as React.ReactNode}</>);
 
-    expect(screen.getByTestId('projects-root').textContent).toBe('projects-instance');
+    expect(screen.getByTestId('projects-root')).toBeTruthy();
   });
 
   it('inherits base mount behavior from ThemeAwareReactLifecycle', async () => {
