@@ -28,6 +28,10 @@ interface DocEntry {
   path: string;
   text: string;
   size: number;
+  /** Graph node instance id this document maps to (issue/PR/file), when it was
+   *  loaded from ingested artifacts. Lets detector results be written back to
+   *  the graph as findings/relations keyed on the real node. */
+  instanceId?: string;
 }
 
 interface TaskCreated {
@@ -223,6 +227,7 @@ function artifactsToDocs(nodes: ArtifactNode[]): DocEntry[] {
       path: `${dir}/${num}-${slug(title)}.md`,
       text,
       size: text.length,
+      instanceId: n.instance_id,
     });
   }
   return out.sort((a, b) => a.path.localeCompare(b.path));
@@ -233,12 +238,22 @@ function artifactsToDocs(nodes: ArtifactNode[]): DocEntry[] {
 export function SpecQuality({
   token,
   workspaceId,
+  parentWorkspaceId,
 }: {
   token: string;
   /** When rendered inside a project, the project id — lets the artifact loader
    *  label its source. Undefined = the standalone playground. */
   workspaceId?: string;
+  /** The parent workspace tenant. Together with `workspaceId` (the project),
+   *  scopes persisted finding nodes so the graph's scope filter keeps them. */
+  parentWorkspaceId?: string;
 }) {
+  // Tenants to tag persisted findings with — mirrors the sync tagging
+  // (workspace = parent, project = this project). Spread into every
+  // saveQualityFindings call so findings survive the graph's scope filter.
+  const scopeTags = workspaceId
+    ? { workspace_id: parentWorkspaceId ?? workspaceId, project_id: workspaceId }
+    : {};
   const [docs, setDocs] = useState<DocEntry[]>([]);
   const [detector, setDetector] = useState<Detector>("bloat");
   const [busy, setBusy] = useState(false);
@@ -413,6 +428,131 @@ export function SpecQuality({
     [docs, purposeFile],
   );
 
+  // Lazily-built index of ingested file nodes (repo path -> instance id), so
+  // file documents (loaded "From repository") resolve to their graph node too.
+  const fileIndexRef = useRef<Map<string, string> | null>(null);
+
+  // ── Materialize detector results into the artifact graph (ADR-0010) ──
+  // Best-effort: writes findings + derived relations back through the artifact-
+  // ingest gear. Keyed on document node instance ids, so it only acts on docs
+  // that came from ingested artifacts.
+
+  async function docInstanceIndex(): Promise<Map<string, string>> {
+    const map = new Map<string, string>();
+    for (const d of docs) if (d.instanceId) map.set(d.path, d.instanceId);
+    if (!fileIndexRef.current) {
+      try {
+        const { nodes } = await api.listArtifactNodes(token, "file");
+        const fi = new Map<string, string>();
+        for (const n of nodes) {
+          const p = (n.value as { path?: unknown })?.path;
+          if (typeof p === "string") fi.set(p, n.instance_id);
+        }
+        fileIndexRef.current = fi;
+      } catch {
+        fileIndexRef.current = new Map();
+      }
+    }
+    for (const [p, id] of fileIndexRef.current) if (!map.has(p)) map.set(p, id);
+    return map;
+  }
+
+  const resolveRef = (
+    ref: string,
+    byPath: Map<string, string>,
+    byBase: Map<string, string>,
+  ): string | undefined => byPath.get(ref) ?? byBase.get(basename(ref));
+
+  async function materializeSetwise(det: "bloat" | "traceability", view: TaskView): Promise<void> {
+    try {
+      const byPath = await docInstanceIndex();
+      const byBase = new Map<string, string>();
+      for (const [p, id] of byPath) byBase.set(basename(p), id);
+      const r = (view.result ?? {}) as Record<string, any>;
+
+      if (det === "bloat") {
+        const clusters: any[] = Array.isArray(r.clusters) ? r.clusters : [];
+        const seen = new Set<string>();
+        const duplicates: { from: string; to: string }[] = [];
+        for (const c of clusters) {
+          const occ: any[] = Array.isArray(c.occurrences) ? c.occurrences : [];
+          const ids = Array.from(
+            new Set(
+              occ.map((o) => resolveRef(String(o.file ?? ""), byPath, byBase)).filter(Boolean),
+            ),
+          ) as string[];
+          for (let i = 0; i < ids.length; i++)
+            for (let j = i + 1; j < ids.length; j++) {
+              const [a, b] = ids[i] < ids[j] ? [ids[i], ids[j]] : [ids[j], ids[i]];
+              const key = `${a}|${b}`;
+              if (!seen.has(key)) {
+                seen.add(key);
+                duplicates.push({ from: a, to: b });
+              }
+            }
+        }
+        if (duplicates.length) {
+          const res = await api.saveQualityFindings(token, { duplicates, ...scopeTags });
+          setProgress(`Saved to graph: ${res.edges} duplicate link(s).`);
+        }
+      } else {
+        const edgesRaw: any[] = r.edges || r.links || r.references || r.pairs || [];
+        const seen = new Set<string>();
+        const traces: { from: string; to: string }[] = [];
+        for (const e of edgesRaw) {
+          const from = resolveRef(String(e.from ?? e.source ?? e.src ?? e.a ?? ""), byPath, byBase);
+          const to = resolveRef(String(e.to ?? e.target ?? e.dst ?? e.b ?? ""), byPath, byBase);
+          if (!from || !to || from === to) continue;
+          const key = `${from}|${to}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          traces.push({ from, to });
+        }
+        if (traces.length) {
+          const res = await api.saveQualityFindings(token, { traces, ...scopeTags });
+          setProgress(`Saved to graph: ${res.edges} trace link(s).`);
+        }
+      }
+    } catch (e) {
+      console.warn("[spec-quality] materialize to graph failed", e);
+    }
+  }
+
+  async function materializeFinding(det: Detector, doc: DocEntry, view: TaskView): Promise<void> {
+    const subject = doc.instanceId;
+    if (!subject) return; // only artifact-backed docs map to a node
+    try {
+      const r = (view.result ?? {}) as Record<string, any>;
+      const gate = (r.gate ?? {}) as Record<string, any>;
+      let severity: string;
+      let score: number | undefined;
+      let summary: string;
+      if (det === "purpose") {
+        const ok = gate.ok ?? gate.passed;
+        severity = ok === false ? "gate-failed" : ok === true ? "gate-passed" : "analyzed";
+        score = typeof gate.leak_share === "number" ? gate.leak_share : undefined;
+        summary = `purpose ${severity}${r.n_sections != null ? `, ${r.n_sections} sections` : ""}`;
+      } else {
+        const share =
+          typeof gate.leak_share === "number"
+            ? gate.leak_share
+            : typeof r.leak_share === "number"
+              ? r.leak_share
+              : undefined;
+        const nSec = Array.isArray(r.sections) ? r.sections.length : undefined;
+        severity = share != null ? (share > 0.15 ? "high" : share > 0 ? "some" : "clean") : "analyzed";
+        score = share;
+        summary = `leak ${severity}${nSec != null ? `, ${nSec} sections` : ""}`;
+      }
+      await api.saveQualityFindings(token, {
+        findings: [{ detector: det, subject, path: doc.path, severity, summary, score, details: r }],
+        ...scopeTags,
+      });
+    } catch (e) {
+      console.warn("[spec-quality] finding save failed", e);
+    }
+  }
+
   function stop() {
     abortRef.current?.abort();
     setProgress("Stopping…");
@@ -452,6 +592,7 @@ export function SpecQuality({
           onTick: (t) => setProgress(`bloat: ${t.status}…`),
         });
         setResults((r) => ({ ...r, bloat: view }));
+        void materializeSetwise("bloat", view);
       } else if (runDet === "traceability") {
         setProgress("Running traceability over the doc-set…");
         // Optionally remap keys into the canonical features/ layout so the
@@ -473,6 +614,7 @@ export function SpecQuality({
           onTick: (t) => setProgress(`traceability: ${t.status}…`),
         });
         setResults((r) => ({ ...r, traceability: view }));
+        void materializeSetwise("traceability", view);
       } else {
         // purpose / leak — single doc, or batch over the filtered doc list.
         const targets = batchMode ? includedDocs : selectedPurposeDoc ? [selectedPurposeDoc] : [];
@@ -489,6 +631,7 @@ export function SpecQuality({
             onTick: (t) => setProgress(`${runDet} · ${basename(d.path)}: ${t.status}…`),
           });
           setResults((r) => ({ ...r, [runDet]: view }));
+          void materializeFinding(runDet, d, view);
         } else {
           const acc: BatchRow[] = [];
           let i = 0;
@@ -504,6 +647,7 @@ export function SpecQuality({
                 signal,
               });
               acc.push({ path: d.path, view });
+              void materializeFinding(runDet, d, view);
             } catch (e: any) {
               if (isCancel(e)) {
                 setStopped(true);

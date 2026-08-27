@@ -39,6 +39,13 @@ pub struct TaskRecord {
     pub issues: u32,
     pub pull_requests: u32,
     pub files: u32,
+    /// Live counts updated as the sync runs (not just on success), so the
+    /// portal can show progress — issue/PR/file counts fill in per phase, and
+    /// `stored` tracks how many nodes have actually been flushed to the graph
+    /// store so far (objects already queryable).
+    pub comments: u32,
+    pub commits: u32,
+    pub stored: u32,
 }
 
 /// Concurrency-safe map of task id → record.
@@ -49,10 +56,10 @@ pub struct TaskRegistry {
 
 impl TaskRegistry {
     fn update<F: FnOnce(&mut TaskRecord)>(&self, id: &str, f: F) {
-        if let Ok(mut map) = self.inner.lock()
-            && let Some(rec) = map.get_mut(id)
-        {
-            f(rec);
+        if let Ok(mut map) = self.inner.lock() {
+            if let Some(rec) = map.get_mut(id) {
+                f(rec);
+            }
         }
     }
 
@@ -69,6 +76,9 @@ impl TaskRegistry {
                     issues: 0,
                     pull_requests: 0,
                     files: 0,
+                    comments: 0,
+                    commits: 0,
+                    stored: 0,
                 },
             );
         }
@@ -78,6 +88,34 @@ impl TaskRegistry {
         self.update(id, |r| {
             r.status = TaskStatus::Running;
             r.message = Some(message.to_string());
+        });
+    }
+
+    /// Update the live progress of a running sync: the phase line and the
+    /// counts pulled/stored so far. Called after each phase so the portal's
+    /// poll reflects progress (and the objects already in the graph) instead of
+    /// staying at zero until the whole sync completes.
+    #[allow(clippy::too_many_arguments)]
+    pub fn report(
+        &self,
+        id: &str,
+        message: &str,
+        issues: u32,
+        pull_requests: u32,
+        files: u32,
+        comments: u32,
+        commits: u32,
+        stored: u32,
+    ) {
+        self.update(id, |r| {
+            r.status = TaskStatus::Running;
+            r.message = Some(message.to_string());
+            r.issues = issues;
+            r.pull_requests = pull_requests;
+            r.files = files;
+            r.comments = comments;
+            r.commits = commits;
+            r.stored = stored;
         });
     }
 

@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use serde::Deserialize;
 
 use super::driver::{
-    ConnectionAuth, ConnectorCategory, ConnectorDriver, Contributor, DriverIdentity, RemoteFile,
-    RemoteIssue, RemotePullRequest, RemoteRepo, RepoTree, RepoTreeEntry,
+    ConnectionAuth, ConnectorCategory, ConnectorDriver, Contributor, DriverIdentity, RemoteComment,
+    RemoteCommit, RemoteFile, RemoteIssue, RemotePullRequest, RemoteRepo, RepoTree, RepoTreeEntry,
 };
 
 pub struct GitHubDriver {
@@ -110,6 +110,51 @@ struct GitHubContributor {
     login: String,
     #[serde(default)]
     contributions: i64,
+}
+
+/// One comment from `/repos/{path}/issues/comments` (covers issues AND PRs).
+#[derive(Deserialize)]
+struct GitHubComment {
+    id: i64,
+    #[serde(default)]
+    user: Option<GitHubUser>,
+    #[serde(default)]
+    body: Option<String>,
+    html_url: String,
+    #[serde(default)]
+    created_at: Option<String>,
+    #[serde(default)]
+    updated_at: Option<String>,
+    /// API URL of the issue/PR the comment is on; ends with `/issues/{number}`.
+    issue_url: String,
+}
+
+/// The nested `commit` object inside a `/repos/{path}/commits` row.
+#[derive(Deserialize)]
+struct GitHubCommitAuthor {
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    date: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct GitHubCommitMeta {
+    #[serde(default)]
+    message: Option<String>,
+    #[serde(default)]
+    author: Option<GitHubCommitAuthor>,
+}
+
+/// One row of `/repos/{path}/commits`.
+#[derive(Deserialize)]
+struct GitHubCommit {
+    sha: String,
+    html_url: String,
+    commit: GitHubCommitMeta,
+    /// The account GitHub matched the commit to (may be null for unmatched).
+    #[serde(default)]
+    author: Option<GitHubUser>,
 }
 
 #[derive(Deserialize)]
@@ -376,6 +421,102 @@ impl ConnectorDriver for GitHubDriver {
             }
         }
         Ok(out)
+    }
+
+    async fn list_comments(
+        &self,
+        auth: &ConnectionAuth,
+        repo_full_path: &str,
+        since: Option<&str>,
+        page: u32,
+        per_page: u32,
+    ) -> anyhow::Result<Vec<RemoteComment>> {
+        let mut url = format!(
+            "{}/repos/{repo_full_path}/issues/comments?sort=updated&direction=desc&per_page={}&page={}",
+            auth.root(),
+            per_page.clamp(1, 100),
+            page.max(1),
+        );
+        if let Some(s) = since.map(str::trim).filter(|s| !s.is_empty()) {
+            url.push_str("&since=");
+            url.push_str(s);
+        }
+        let res = self.request(&url, auth).send().await?;
+        let status = res.status();
+        if !status.is_success() {
+            let body = res.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "GitHub {status}: {}",
+                body.chars().take(200).collect::<String>()
+            );
+        }
+        let comments: Vec<GitHubComment> = res.json().await?;
+        Ok(comments
+            .into_iter()
+            .map(|c| {
+                // The issue/PR number is the last path segment of issue_url.
+                let target_number = c
+                    .issue_url
+                    .rsplit('/')
+                    .next()
+                    .and_then(|s| s.parse::<i64>().ok())
+                    .unwrap_or(0);
+                RemoteComment {
+                    id: c.id.to_string(),
+                    target_number,
+                    author: c.user.map(|u| u.login),
+                    body: c.body,
+                    url: Some(c.html_url),
+                    created_at: c.created_at,
+                    updated_at: c.updated_at,
+                }
+            })
+            .collect())
+    }
+
+    async fn list_commits(
+        &self,
+        auth: &ConnectionAuth,
+        repo_full_path: &str,
+        since: Option<&str>,
+        page: u32,
+        per_page: u32,
+    ) -> anyhow::Result<Vec<RemoteCommit>> {
+        let mut url = format!(
+            "{}/repos/{repo_full_path}/commits?per_page={}&page={}",
+            auth.root(),
+            per_page.clamp(1, 100),
+            page.max(1),
+        );
+        if let Some(s) = since.map(str::trim).filter(|s| !s.is_empty()) {
+            url.push_str("&since=");
+            url.push_str(s);
+        }
+        let res = self.request(&url, auth).send().await?;
+        let status = res.status();
+        if !status.is_success() {
+            let body = res.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "GitHub {status}: {}",
+                body.chars().take(200).collect::<String>()
+            );
+        }
+        let commits: Vec<GitHubCommit> = res.json().await?;
+        Ok(commits
+            .into_iter()
+            .map(|c| {
+                let author_name = c.commit.author.as_ref().and_then(|a| a.name.clone());
+                let created_at = c.commit.author.as_ref().and_then(|a| a.date.clone());
+                RemoteCommit {
+                    sha: c.sha,
+                    message: c.commit.message,
+                    author: c.author.map(|u| u.login),
+                    author_name,
+                    url: Some(c.html_url),
+                    created_at,
+                }
+            })
+            .collect())
     }
 
     async fn list_files(

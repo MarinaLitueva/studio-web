@@ -207,9 +207,16 @@ const cookieOk = (req) => {
 const bearerApiOk = (req) =>
   GW && req.url.startsWith("/studio-api/") && !!req.headers.authorization;
 
+// Server-to-server control API (ADR-0010): studio-backend reaches the Theia
+// node's /internal/theia/v1/* directly, authenticated by the X-CFS-Theia-Token
+// the node checks itself — so it bypasses the browser session-cookie gate. When
+// the bridge is off the node mounts no such route and simply 404s, so this is
+// safe for normal sessions.
+const controlApiOk = (req) => req.url.startsWith("/internal/theia/v1/");
+
 http
   .createServer((req, res) => {
-    if (!bearerApiOk(req) && !cookieOk(req)) {
+    if (!controlApiOk(req) && !bearerApiOk(req) && !cookieOk(req)) {
       const url = new URL(req.url, "http://x");
       if (url.searchParams.get("token") === TOKEN) {
         url.searchParams.delete("token");

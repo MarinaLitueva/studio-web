@@ -19,12 +19,19 @@ import { FrontendApplicationContribution } from '@theia/core/lib/browser/fronten
 import { ThemeService } from '@theia/core/lib/browser/theming';
 import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
 import { Saveable } from '@theia/core/lib/browser/saveable';
-import { PreferenceService, PreferenceScope } from '@theia/core/lib/common';
+import { CommandService, PreferenceService, PreferenceScope } from '@theia/core/lib/common';
+import { ArtifactGraphCommand } from './artifact-graph-contribution';
+import { OpenInEditorFrontendController } from './open-in-editor-controller';
 
 interface PortalMessage {
     type?: string;
     theme?: string;
     apiToken?: string;
+    path?: string;
+    /** Tenant that opened this session — a workspace tenant (shows every
+     *  project under it) or a project tenant (shows just that project). Scopes
+     *  the Artifact Graph's reads so it never bleeds other projects' nodes. */
+    workspaceId?: string;
 }
 
 /**
@@ -34,6 +41,19 @@ interface PortalMessage {
  */
 export const StudioApi = {
     token: '' as string,
+    /** Tenant scope from the portal handshake (`studio.init` workspaceId). The
+     *  Artifact Graph appends it as `?scope=` so it shows only the opened
+     *  tenant's artifacts. Empty = unscoped (standalone / legacy portal). */
+    scope: '' as string,
+    /** Append the current tenant scope to a gear path as a `scope` query param
+     *  (no-op when unset). Merges with an existing query string. */
+    scoped(path: string): string {
+        if (!StudioApi.scope) {
+            return path;
+        }
+        const sep = path.includes('?') ? '&' : '?';
+        return `${path}${sep}scope=${encodeURIComponent(StudioApi.scope)}`;
+    },
     async fetch(path: string, init: RequestInit = {}): Promise<Response> {
         return fetch(`/studio-api${path}`, {
             ...init,
@@ -57,6 +77,12 @@ export class PortalBridgeContribution implements FrontendApplicationContribution
 
     @inject(PreferenceService)
     protected readonly preferences: PreferenceService;
+
+    @inject(CommandService)
+    protected readonly commands: CommandService;
+
+    @inject(OpenInEditorFrontendController)
+    protected readonly opener: OpenInEditorFrontendController;
 
     protected portalOrigin: string | undefined;
     protected lastDirty = -1;
@@ -83,8 +109,23 @@ export class PortalBridgeContribution implements FrontendApplicationContribution
                 StudioApi.token = msg.apiToken;
                 void this.configureTheiaAi(msg.apiToken);
             }
+            if ((msg.type === 'studio.init' || msg.type === 'studio.token') && typeof msg.workspaceId === 'string') {
+                StudioApi.scope = msg.workspaceId;
+            }
             if (msg.type === 'studio.init') {
                 this.postStatus(); // answer the handshake right away
+            }
+            if (msg.type === 'studio.openGraph') {
+                // Experiment (ADR-0010): the portal's artifact list asks the
+                // embedded IDE to open the Artifact Graph view (backend graph,
+                // no `cfs map` dependency).
+                void this.commands.executeCommand(ArtifactGraphCommand.id);
+            }
+            if (msg.type === 'studio.openInEditor' && msg.path) {
+                // The portal's file list asks the embedded IDE to open a
+                // repository file in its editor (ADR-0010 openInEditor). Resolved
+                // against the first workspace root by the controller.
+                void this.opener.onOpenInEditor({ relativePath: msg.path });
             }
         });
 

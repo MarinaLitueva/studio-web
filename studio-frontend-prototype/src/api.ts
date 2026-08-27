@@ -674,9 +674,12 @@ export const api = {
       repo_full_path: string;
       base_url?: string;
       since?: string;
-      /** Workspace + repo dir → ingest reads the IDE's checkout instead of
-       *  cloning its own. */
+      /** Parent workspace tenant — tagged onto every node so a workspace-level
+       *  graph shows every project under it. */
       workspace_id?: string;
+      /** Project tenant — tagged onto every node (project-level graph scope)
+       *  and used to locate the IDE's checkout to read instead of cloning. */
+      project_id?: string;
       repo_dir?: string;
     },
   ) =>
@@ -696,6 +699,10 @@ export const api = {
       issues: number;
       pull_requests: number;
       files: number;
+      /** Live per-phase counts + nodes already stored in the graph (mid-sync). */
+      comments: number;
+      commits: number;
+      stored: number;
     }>(`/studio-artifact-ingest/v1/tasks/${encodeURIComponent(taskId)}`, token),
 
   /** Text files (path + content) from a repository's IDE checkout, for running
@@ -709,16 +716,72 @@ export const api = {
     ),
 
   /** Read back the ingested artifact nodes, optionally filtered by type
-   * substring (`issue`, `pull_request`, `file`, `repo`). */
-  listArtifactNodes: (token: string, type?: string) =>
-    request<{ nodes: ArtifactNode[] }>(
-      `/studio-artifact-ingest/v1/nodes${type ? `?type=${encodeURIComponent(type)}` : ""}`,
+   * substring (`issue`, `pull_request`, `file`, `repo`) and scoped to a tenant
+   * (`scope` matches a node's workspace_id OR project_id). */
+  listArtifactNodes: (token: string, type?: string, scope?: string) => {
+    const qs = new URLSearchParams();
+    if (type) qs.set("type", type);
+    if (scope) qs.set("scope", scope);
+    const suffix = qs.toString();
+    return request<{ nodes: ArtifactNode[] }>(
+      `/studio-artifact-ingest/v1/nodes${suffix ? `?${suffix}` : ""}`,
+      token,
+    );
+  },
+
+  /** Relations between ingested nodes (authored_by / modifies / …), optionally
+   * scoped to a tenant (both endpoints must be in-scope). */
+  artifactEdges: (token: string, scope?: string) =>
+    request<{ edges: ArtifactEdge[] }>(
+      `/studio-artifact-ingest/v1/edges${scope ? `?scope=${encodeURIComponent(scope)}` : ""}`,
       token,
     ),
 
-  /** Relations between ingested nodes (authored_by / modifies / …). */
-  artifactEdges: (token: string) =>
-    request<{ edges: ArtifactEdge[] }>("/studio-artifact-ingest/v1/edges", token),
+  /** Store a manually-added file in the artifact graph as a `file` node
+   *  (origin=manual), scoped to a workspace + project — no file-storage
+   *  data-plane needed. Idempotent by (tenant, path). */
+  addManualFile: (
+    token: string,
+    body: {
+      workspace_id: string;
+      project_id?: string;
+      path: string;
+      text?: string;
+      size?: number;
+    },
+  ) =>
+    request<{ instance_id: string }>("/studio-artifact-ingest/v1/files", token, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  /** Persist spec-quality detector results into the artifact graph: per-document
+   *  finding nodes plus derived document↔document relations (duplicates /
+   *  traces_to). Endpoints are node instance ids. Idempotent. */
+  saveQualityFindings: (
+    token: string,
+    body: {
+      findings?: {
+        detector: string;
+        subject: string;
+        path?: string;
+        severity?: string;
+        summary?: string;
+        score?: number;
+        details?: unknown;
+      }[];
+      duplicates?: { from: string; to: string }[];
+      traces?: { from: string; to: string }[];
+      /** Tenants to tag finding nodes with, so they survive the graph's scope
+       *  filter (workspace = parent, project = this project). */
+      workspace_id?: string;
+      project_id?: string;
+    },
+  ) =>
+    request<{ nodes: number; edges: number }>("/studio-artifact-ingest/v1/quality", token, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 
   /* ── studio-session gear: per-workspace Theia IDE containers ── */
   createStudioSession: (

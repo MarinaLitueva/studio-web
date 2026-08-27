@@ -9,7 +9,7 @@
 //! Only compiled with the `graph` feature (the gear itself is behind it).
 
 use async_trait::async_trait;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::sync::Arc;
 use toolkit_security::SecurityContext;
 
@@ -17,7 +17,9 @@ use std::collections::{HashMap, HashSet};
 
 use super::graph::{GraphStore, GtsEdge, GtsEdgeView, GtsNode};
 use super::gts;
-use crate::graph_storage::sdk::{Direction, EdgeInput, GraphStorageClientV1, NodeInput};
+use crate::graph_storage::sdk::{
+    Direction, EdgeInput, GraphStorageClientV1, HybridQuery, NodeInput, NodeView, SearchQuery,
+};
 
 /// Nodes per ingest batch. Under the gear's `ingest_max_nodes` (10k) with room
 /// to spare, so a repo with many files still commits in a few atomic batches.
@@ -27,6 +29,12 @@ const LIST_PAGE: u32 = 500;
 /// Keep a node payload comfortably under the gear's 64 KiB ceiling; an oversized
 /// one would fail the whole atomic batch.
 const MAX_PAYLOAD_BYTES: usize = 60_000;
+/// Upper bound on the free-text we hand graph-storage as `search_text` per node.
+/// graph-storage builds the FTS tsvector from this on save (the on-save "vector
+/// index"), so this is what makes a file's *content* searchable — but a whole
+/// large file would bloat the index, so cap it. Body/content beyond this is
+/// truncated (on a char boundary); metadata always fits first.
+const MAX_SEARCH_TEXT_BYTES: usize = 32_000;
 
 pub struct GraphStorageBackend {
     client: Arc<dyn GraphStorageClientV1>,
@@ -70,9 +78,15 @@ fn node_name(value: &Value) -> String {
     String::new()
 }
 
-/// Free text for lexical search: name plus a few searchable fields.
+/// Free text for lexical search. graph-storage builds the FTS tsvector from this
+/// on save, so it is the search surface: identifying metadata first (always
+/// indexed), then the node's *content* — an issue/PR `body`, a file's `text`
+/// (connector-cloned, hand-added, or file-parser-extracted) — so search reaches
+/// what's *inside* a file, not just its name. The whole thing is capped at
+/// [`MAX_SEARCH_TEXT_BYTES`] so one big file can't bloat the index.
 fn search_text(value: &Value) -> String {
     let mut parts: Vec<String> = Vec::new();
+    // Identifying fields first — small and always worth indexing.
     for key in ["title", "path", "full_path", "state", "author"] {
         if let Some(s) = value.get(key).and_then(Value::as_str) {
             parts.push(s.to_string());
@@ -85,7 +99,28 @@ fn search_text(value: &Value) -> String {
             }
         }
     }
-    parts.join(" ")
+    // Content next — this is what makes search look *inside* the artifact.
+    for key in ["body", "text"] {
+        if let Some(s) = value.get(key).and_then(Value::as_str) {
+            if !s.trim().is_empty() {
+                parts.push(s.to_string());
+            }
+        }
+    }
+    let joined = parts.join(" ");
+    truncate_on_char_boundary(&joined, MAX_SEARCH_TEXT_BYTES)
+}
+
+/// Truncate `s` to at most `max_bytes`, never splitting a UTF-8 char.
+fn truncate_on_char_boundary(s: &str, max_bytes: usize) -> String {
+    if s.len() <= max_bytes {
+        return s.to_string();
+    }
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    s[..end].to_string()
 }
 
 /// The payload to store: the node value minus file content, bounded to the
@@ -120,6 +155,17 @@ fn to_node_input(n: &GtsNode) -> NodeInput {
         search_text: Some(search_text(&n.value)).filter(|s| !s.is_empty()),
         payload: Some(bounded_payload(&n.value)),
         embedding: None,
+    }
+}
+
+/// Map a graph-storage node view back to our [`GtsNode`] (reverse of
+/// [`to_node_input`]); used by search/hybrid results.
+fn view_to_node(view: NodeView) -> GtsNode {
+    let type_id = gts::our_type_from_graph(&view.type_id).unwrap_or(gts::REPO_TYPE);
+    GtsNode {
+        type_id,
+        instance_id: view.node_key,
+        value: view.payload.unwrap_or_else(|| json!({})),
     }
 }
 
@@ -169,6 +215,99 @@ impl GraphStore for GraphStorageBackend {
             "studio-artifact-ingest: graph-storage upsert"
         );
         Ok(())
+    }
+
+    async fn upsert_nodes_embedded(
+        &self,
+        ctx: &SecurityContext,
+        nodes: &[GtsNode],
+        embeddings: &[Option<Vec<f32>>],
+    ) -> anyhow::Result<()> {
+        if nodes.is_empty() {
+            return Ok(());
+        }
+        self.register_types(ctx).await?;
+
+        // Same as `upsert_nodes` but attaches the aligned embedding (when any) to
+        // each node input, so the graph's VECTOR column is populated.
+        let inputs: Vec<NodeInput> = nodes
+            .iter()
+            .enumerate()
+            .map(|(i, n)| {
+                let mut input = to_node_input(n);
+                input.embedding = embeddings.get(i).cloned().flatten();
+                input
+            })
+            .collect();
+        let mut upserted = 0u64;
+        for chunk in inputs.chunks(INGEST_CHUNK) {
+            let res = self
+                .client
+                .ingest(ctx, chunk, &[])
+                .await
+                .map_err(|e| anyhow::anyhow!("graph-storage ingest: {e}"))?;
+            upserted += res.nodes_upserted;
+        }
+        tracing::info!(
+            batch = nodes.len(),
+            nodes_upserted = upserted,
+            "studio-artifact-ingest: graph-storage upsert (embedded)"
+        );
+        Ok(())
+    }
+
+    async fn search(
+        &self,
+        ctx: &SecurityContext,
+        query_vector: Option<&[f32]>,
+        text: &str,
+        limit: u32,
+    ) -> anyhow::Result<Vec<GtsNode>> {
+        self.register_types(ctx).await?;
+        // With a query vector: hybrid (vector seeds + graph + text). Hybrid hits
+        // carry only ids, so resolve each to its node for the payload.
+        if let Some(vec) = query_vector.filter(|v| !v.is_empty()) {
+            let hits = self
+                .client
+                .hybrid(
+                    ctx,
+                    &HybridQuery {
+                        query_vector: vec,
+                        text,
+                        seed_limit: limit.max(20),
+                        limit,
+                    },
+                )
+                .await
+                .map_err(|e| anyhow::anyhow!("graph-storage hybrid: {e}"))?;
+            let mut out = Vec::with_capacity(hits.len());
+            for hit in hits {
+                if let Some(view) = self
+                    .client
+                    .node_by_id(ctx, hit.id, true)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("graph-storage node_by_id: {e}"))?
+                {
+                    out.push(view_to_node(view));
+                }
+            }
+            Ok(out)
+        } else {
+            // No vector (no embedder wired): lexical full-text search.
+            let views = self
+                .client
+                .search(
+                    ctx,
+                    &SearchQuery {
+                        text,
+                        limit,
+                        include_payload: true,
+                    },
+                )
+                .await
+                .map_err(|e| anyhow::anyhow!("graph-storage search: {e}"))?;
+            Ok(views.into_iter().map(view_to_node).collect())
+        }
     }
 
     async fn upsert_edges(&self, ctx: &SecurityContext, edges: &[GtsEdge]) -> anyhow::Result<()> {
@@ -247,7 +386,13 @@ impl GraphStore for GraphStorageBackend {
         let mut seeds: Vec<i64> = Vec::new();
         for our_type in gts::ALL_NODE_TYPES {
             let graph_type = gts::graph_type_id(our_type);
-            let is_seed = our_type == gts::ISSUE_TYPE || our_type == gts::PULL_REQUEST_TYPE;
+            // Seed every type that can be an edge *source* so all our relations
+            // are read back: repo→file (contains), issue/PR→repo/user/file,
+            // comment→issue/PR (+author), commit→repo (+author), finding→doc.
+            // Users are only edge targets; files are excluded here to avoid a
+            // per-file edge walk on large repos (file↔file duplicate links are
+            // the one relation this omits — a known follow-up).
+            let is_seed = our_type != gts::USER_TYPE && our_type != gts::FILE_TYPE;
             let mut cursor: Option<String> = None;
             loop {
                 let page = self
@@ -276,14 +421,7 @@ impl GraphStore for GraphStorageBackend {
             loop {
                 let page = self
                     .client
-                    .list_edges(
-                        ctx,
-                        id,
-                        Direction::Outgoing,
-                        cursor.as_deref(),
-                        LIST_PAGE,
-                        false,
-                    )
+                    .list_edges(ctx, id, Direction::Outgoing, cursor.as_deref(), LIST_PAGE, false)
                     .await
                     .map_err(|e| anyhow::anyhow!("graph-storage list_edges: {e}"))?;
                 for e in page.items {

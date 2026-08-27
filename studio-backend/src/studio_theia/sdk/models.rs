@@ -1,0 +1,125 @@
+//! v1 wire DTOs for the Theia control bridge.
+//!
+//! Shapes mirror `theia/studio/src/common/studio-protocol.ts`, which is
+//! camelCase — so every wire DTO is `rename_all = "camelCase"`. Each derives
+//! both `Serialize` and `Deserialize`: requests are serialized on the way to
+//! the Theia node, responses deserialized on the way back. These same types are
+//! also the studio-theia portal REST bodies (hence camelCase there too).
+
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+/// Addresses the caller's IDE session for a workspace. Not sent on the wire
+/// as-is; the resolver turns it into a concrete endpoint + token, scoped to the
+/// caller's tenant via the `SecurityContext`.
+#[derive(Debug, Clone)]
+pub struct SessionTarget {
+    pub workspace_id: Uuid,
+}
+
+/// One repository the IDE has mounted (subset of `StudioRepositoryDescriptor`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoryDescriptor {
+    pub repository_id: String,
+    pub fingerprint: String,
+    pub root_uri: String,
+    pub label: String,
+    #[serde(default)]
+    pub git_mode: Option<String>,
+}
+
+/// Session identity + feature summary (subset of `StudioRuntimeSession`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionInfo {
+    pub actor_id: String,
+    pub workspace_id: String,
+    pub workspace_root_name: String,
+    pub git_mode: String,
+}
+
+/// Enqueue a workspace operation (mirrors `EnqueueStudioOperationRequest`,
+/// dropping the redundant `workspaceId`/`languageId` the node infers).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnqueueOperation {
+    pub repository_id: String,
+    pub relative_path: String,
+    pub content_hash: String,
+    pub idempotency_key: String,
+    pub saved_at: String,
+}
+
+/// Result of an enqueue (mirrors `EnqueueStudioOperationResponse`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnqueueOperationResult {
+    pub operation: OperationSnapshot,
+    pub reused_existing: bool,
+}
+
+/// Point-in-time state of one operation (subset of `StudioOperationSnapshot`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OperationSnapshot {
+    pub operation_id: String,
+    pub state: String,
+    pub last_sequence: i64,
+    #[serde(default)]
+    pub commit_sha: Option<String>,
+    #[serde(default)]
+    pub failure_reason: Option<String>,
+}
+
+/// Cursor-paged operation events (mirrors `StudioOperationDeltaResponse`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OperationDeltas {
+    pub last_sequence: i64,
+    pub events: Vec<OperationEvent>,
+}
+
+/// One operation lifecycle event (subset of `StudioOperationEvent`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OperationEvent {
+    pub sequence: i64,
+    pub operation_id: String,
+    pub state: String,
+    pub relative_path: String,
+    pub timestamp: String,
+    #[serde(default)]
+    pub commit_sha: Option<String>,
+    #[serde(default)]
+    pub failure_reason: Option<String>,
+}
+
+/// Richer readiness than studio-session's TCP probe (new editor command §4).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeStatus {
+    pub ready: bool,
+    pub workspace_mode: String,
+    pub active_clients: u32,
+    pub last_event_sequence: i64,
+    pub version: String,
+}
+
+/// Reveal/open a file in the running IDE (new editor command §4).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenInEditor {
+    pub relative_path: String,
+    #[serde(default)]
+    pub preview: bool,
+}
+
+/// Result of [`OpenInEditor`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenInEditorResult {
+    pub opened: bool,
+    #[serde(default)]
+    pub resolved_relative_path: Option<String>,
+}

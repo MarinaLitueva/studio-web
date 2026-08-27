@@ -13,4 +13,5 @@ pub mod gear;
 pub mod k8s;
 pub mod proxy;
 pub mod rest;
+pub mod sdk;
 pub mod service;
