@@ -87,15 +87,15 @@ fn node_text(n: &GtsNode) -> String {
     }
     // File content (connector-cloned, hand-added, or file-parser-extracted),
     // bounded to the model's input budget on a char boundary.
-    if let Some(s) = v.get("text").and_then(serde_json::Value::as_str) {
-        if !s.trim().is_empty() {
-            let end = s
-                .char_indices()
-                .map(|(i, _)| i)
-                .nth(MAX_EMBED_TEXT_CHARS)
-                .unwrap_or(s.len());
-            parts.push(s[..end].to_string());
-        }
+    if let Some(s) = v.get("text").and_then(serde_json::Value::as_str)
+        && !s.trim().is_empty()
+    {
+        let end = s
+            .char_indices()
+            .map(|(i, _)| i)
+            .nth(MAX_EMBED_TEXT_CHARS)
+            .unwrap_or(s.len());
+        parts.push(s[..end].to_string());
     }
     parts.join("\n")
 }
@@ -916,7 +916,7 @@ impl IngestService {
         &self,
         ctx: &SecurityContext,
         task_id: Option<&str>,
-        nodes: &mut Vec<GtsNode>,
+        nodes: &mut [GtsNode],
         flushed: &mut usize,
         workspace_id: Option<&str>,
         project_id: Option<&str>,
@@ -1071,11 +1071,11 @@ impl IngestService {
             return None;
         }
         let target = root.join(scope).join("_artifacts").join(&rel);
-        if let Some(parent) = target.parent() {
-            if let Err(e) = tokio::fs::create_dir_all(parent).await {
-                tracing::warn!(error = %e, dir = %parent.display(), "studio-artifact-ingest: could not create _artifacts dir — file not materialized");
-                return None;
-            }
+        if let Some(parent) = target.parent()
+            && let Err(e) = tokio::fs::create_dir_all(parent).await
+        {
+            tracing::warn!(error = %e, dir = %parent.display(), "studio-artifact-ingest: could not create _artifacts dir — file not materialized");
+            return None;
         }
         match tokio::fs::write(&target, text).await {
             Ok(()) => Some(format!("_artifacts/{rel}")),
