@@ -36,7 +36,7 @@ impl LicenseFeature for License {}
 /// Acknowledgement that a sync was accepted and is running in the background.
 #[derive(Debug)]
 #[toolkit_macros::api_dto(response)]
-pub struct SyncEnqueued {
+pub struct CatalogSyncEnqueued {
     /// Poll `GET /studio-gears-catalog/v1/tasks/{task_id}` for the outcome.
     pub task_id: String,
     pub status: String,
@@ -87,9 +87,9 @@ pub struct VersionsQuery {
 async fn sync(
     Extension(ctx): Extension<SecurityContext>,
     Extension(catalog): Extension<Catalog>,
-) -> ApiResult<JsonBody<SyncEnqueued>> {
+) -> ApiResult<JsonBody<CatalogSyncEnqueued>> {
     let task_id = catalog.0.enqueue_sync(ctx);
-    Ok(Json(SyncEnqueued {
+    Ok(Json(CatalogSyncEnqueued {
         task_id,
         status: "queued".to_string(),
     }))
@@ -181,7 +181,7 @@ pub fn register_routes(
         .authenticated()
         .require_license_features::<License>([])
         .handler(sync)
-        .json_response_with_schema::<SyncEnqueued>(openapi, StatusCode::OK, "Sync enqueued")
+        .json_response_with_schema::<CatalogSyncEnqueued>(openapi, StatusCode::OK, "Sync enqueued")
         .error_401(openapi)
         .error_500(openapi)
         .register(router, openapi);
