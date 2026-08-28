@@ -13,6 +13,7 @@ use uuid::Uuid;
 pub const PLATFORM_ROOT_TENANT_ID: Uuid = Uuid::from_u128(1);
 const HOME_TENANT_ATTRIBUTE: &str = "tenant_id";
 const ORGANIZATION_ROLE_ATTRIBUTE: &str = "studio_organization_role";
+const TENANT_GROUP_ROOT: &str = "tenants";
 const ACCESS_METADATA_TYPE: &str = "gts.cf.core.am.tenant_metadata.v1~cf.studio.access.config.v1~";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,6 +56,13 @@ struct KeycloakUser {
     attributes: HashMap<String, Vec<String>>,
     #[serde(default)]
     federated_identities: Vec<FederatedIdentity>,
+}
+
+#[derive(Debug, Deserialize)]
+struct KeycloakGroup {
+    id: String,
+    name: String,
+    path: String,
 }
 
 pub struct IdentityDirectoryService {
@@ -133,6 +141,117 @@ impl IdentityDirectoryService {
             .json::<Vec<KeycloakUser>>()
             .await
             .context("decode Keycloak users response")
+    }
+
+    async fn tenant_group(&self, token: &str, tenant_id: Uuid) -> Result<KeycloakGroup> {
+        let groups_url = format!("{}/admin/realms/{}/groups", self.admin_base_url, self.realm);
+        let parent = self
+            .http
+            .get(groups_url)
+            .bearer_auth(token)
+            .query(&[
+                ("search", TENANT_GROUP_ROOT),
+                ("exact", "true"),
+                ("briefRepresentation", "false"),
+            ])
+            .send()
+            .await
+            .context("find Keycloak tenant group root")?
+            .error_for_status()
+            .context("Keycloak rejected the tenant group root lookup")?
+            .json::<Vec<KeycloakGroup>>()
+            .await
+            .context("decode Keycloak tenant group root")?
+            .into_iter()
+            .find(|group| {
+                group.name == TENANT_GROUP_ROOT && group.path == format!("/{TENANT_GROUP_ROOT}")
+            })
+            .context("Keycloak tenant group root does not exist")?;
+
+        let children_url = format!(
+            "{}/admin/realms/{}/groups/{}/children",
+            self.admin_base_url, self.realm, parent.id
+        );
+        let tenant_name = tenant_id.to_string();
+        self.http
+            .get(children_url)
+            .bearer_auth(token)
+            .query(&[
+                ("search", tenant_name.as_str()),
+                ("exact", "true"),
+                ("briefRepresentation", "false"),
+            ])
+            .send()
+            .await
+            .context("find Keycloak organization group")?
+            .error_for_status()
+            .context("Keycloak rejected the organization group lookup")?
+            .json::<Vec<KeycloakGroup>>()
+            .await
+            .context("decode Keycloak organization group")?
+            .into_iter()
+            .find(|group| {
+                group.name == tenant_name
+                    && group.path == format!("/{TENANT_GROUP_ROOT}/{tenant_name}")
+            })
+            .context("Keycloak organization group does not exist")
+    }
+
+    async fn sync_tenant_group_membership(
+        &self,
+        token: &str,
+        identity_id: Uuid,
+        tenant_id: Uuid,
+    ) -> Result<()> {
+        let target = self.tenant_group(token, tenant_id).await?;
+        let groups_url = format!(
+            "{}/admin/realms/{}/users/{}/groups",
+            self.admin_base_url, self.realm, identity_id
+        );
+        let current = self
+            .http
+            .get(&groups_url)
+            .bearer_auth(token)
+            .query(&[
+                ("first", "0"),
+                ("max", "200"),
+                ("briefRepresentation", "false"),
+            ])
+            .send()
+            .await
+            .context("list Keycloak user groups")?
+            .error_for_status()
+            .context("Keycloak rejected the user group lookup")?
+            .json::<Vec<KeycloakGroup>>()
+            .await
+            .context("decode Keycloak user groups")?;
+
+        let tenant_path_prefix = format!("/{TENANT_GROUP_ROOT}/");
+        for group in current
+            .into_iter()
+            .filter(|group| group.path.starts_with(&tenant_path_prefix) && group.id != target.id)
+        {
+            let membership_url = format!("{groups_url}/{}", group.id);
+            self.http
+                .delete(membership_url)
+                .bearer_auth(token)
+                .send()
+                .await
+                .context("remove stale Keycloak organization membership")?
+                .error_for_status()
+                .context("Keycloak rejected stale organization membership removal")?;
+        }
+
+        let membership_url = format!("{groups_url}/{}", target.id);
+        self.http
+            .put(membership_url)
+            .bearer_auth(token)
+            .send()
+            .await
+            .context("add Keycloak organization membership")?
+            .error_for_status()
+            .context("Keycloak rejected the organization membership")?;
+        Ok(())
     }
 
     pub async fn list(&self, ctx: &SecurityContext) -> Result<Vec<DirectoryIdentity>> {
@@ -216,10 +335,9 @@ impl IdentityDirectoryService {
 
     /// Assign an existing Keycloak identity to an Account Management tenant.
     ///
-    /// Account Management's user surface is an IdP-backed projection: the
-    /// `tenant_id` attribute is the membership boundary used by both token
-    /// issuance and tenant-scoped user listing. Keep the organization role in
-    /// the same source of truth so it follows the identity across browsers.
+    /// Account Management's user surface is an IdP-backed projection. Tokens
+    /// use the `tenant_id` attribute while tenant-scoped user listing uses the
+    /// matching Keycloak group, so assignment must update both representations.
     pub async fn assign(
         &self,
         ctx: &SecurityContext,
@@ -227,6 +345,8 @@ impl IdentityDirectoryService {
         tenant_id: Uuid,
         organization_role: &str,
     ) -> Result<()> {
+        let identity_id = Uuid::parse_str(identity_id).context("identity id is not a UUID")?;
+        let identity_id_string = identity_id.to_string();
         let tenant = self
             .account_management
             .get_tenant(ctx, tenant_id)
@@ -275,20 +395,27 @@ impl IdentityDirectoryService {
             ctx,
             tenant_id,
             &tenant.name,
-            identity_id,
+            &identity_id_string,
             organization_role == "owner",
         )
         .await?;
 
         self.http
             .put(url)
-            .bearer_auth(token)
+            .bearer_auth(&token)
             .json(&user)
             .send()
             .await
             .context("update Keycloak organization assignment")?
             .error_for_status()
             .context("Keycloak rejected the organization assignment")?;
+
+        // Account Management's Keycloak IdP projection lists members from
+        // the per-tenant group, not from the `tenant_id` attribute. Keep both
+        // representations synchronized so assigned identities immediately
+        // appear in the organization's People screen.
+        self.sync_tenant_group_membership(&token, identity_id, tenant_id)
+            .await?;
         Ok(())
     }
 
