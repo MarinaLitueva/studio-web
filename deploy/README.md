@@ -39,12 +39,28 @@ One image, any environment:
 ## Feature flags in cluster v1
 
 - **IDE sessions are environment-controlled** (`backend.sessions.enabled`).
-  Dev enables the Kubernetes Pod driver: the chart grants the backend a
-  namespace-only Role for session Pods/Services and launches the immutable
-  `cf-studio-theia` image matching the backend SHA. Keep backend autoscaling
+  Dev enables the Kubernetes Pod driver and launches the immutable
+  `cf-studio-theia` image matching the backend SHA. The backend needs a
+  namespace-only Role for session Pods/Services. A cluster-admin chart install
+  can create it with `backend.sessions.rbac.create=true`; restricted GitHub
+  deployers must set that value to `false` and have an administrator bootstrap
+  the Role and RoleBinding once (example below). Keep backend autoscaling
   disabled until the in-memory session registry is replaced by shared storage.
   Dev leaves session egress unrestricted so arbitrary Git sources can clone;
   controlled environments should enable the policy and list approved CIDRs.
+
+  ```bash
+  helm template studio deploy/helm/studio-web \
+    --namespace studio-dev \
+    --show-only templates/backend/sessions-rbac.yaml \
+    --set backend.sessions.enabled=true \
+    --set backend.sessions.rbac.create=true \
+    --set backend.autoscaling.enabled=false \
+  | kubectl --kubeconfig /path/to/admin.kubeconfig apply -f -
+  ```
+
+  Repeat with the target namespace for test/prod. Do not grant the application
+  deployer general access to Roles or RoleBindings.
 - **User invites are optional**: set `backend.idpAdmin.baseUrl` +
   `idp_admin_secret` to enable the Keycloak Admin provisioning plugin;
   without them the plugin self-deprioritizes.

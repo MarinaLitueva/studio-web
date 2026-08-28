@@ -67,6 +67,12 @@ backend:
   # sessions (a DB-backed registry is the follow-up).
   sessions:
     enabled: false
+    rbac:
+      # Set false when application deploys run under a restricted ServiceAccount.
+      # A cluster administrator must bootstrap the Role/RoleBinding once; see
+      # deploy/README.md. Keeping this true preserves the self-contained chart
+      # behaviour for cluster-admin installations.
+      create: true
     image:
       # The deploy workflow publishes cf-studio-theia beside the backend. An
       # empty tag follows backend.image.tag, preserving one immutable release.

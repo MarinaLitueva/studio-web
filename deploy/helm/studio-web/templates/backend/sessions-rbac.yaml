@@ -1,7 +1,4 @@
-{{- if .Values.backend.sessions.enabled }}
-{{- if .Values.backend.autoscaling.enabled }}
-{{- fail "backend.autoscaling.enabled must be false while backend.sessions.enabled is true (session registry is process-local)" }}
-{{- end }}
+{{- if and .Values.backend.sessions.enabled .Values.backend.sessions.rbac.create }}
 # The Kubernetes session driver (studio-session, ADR-0003) creates one Pod +
 # Service per IDE session in this namespace through the API. Grant the backend
 # ServiceAccount exactly that, namespaced — never cluster-wide.

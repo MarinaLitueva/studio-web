@@ -19,6 +19,11 @@ backend:
     enabled: false
   sessions:
     enabled: true
+    # GitHub's studio-deployer cannot and must not administer RBAC. The
+    # namespace-scoped session Role/RoleBinding is bootstrapped once by an
+    # administrator (deploy/README.md).
+    rbac:
+      create: false
     # Dev projects may use arbitrary Git hosts. Test/prod should keep the
     # policy enabled and list approved provider CIDRs explicitly.
     networkPolicy:
