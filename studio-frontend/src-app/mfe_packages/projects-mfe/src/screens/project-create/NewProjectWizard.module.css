@@ -6,13 +6,6 @@
   flex-direction: column;
   gap: var(--space-5);
   width: 35rem;
-  /*
-   * The value is the mockup's 620px, clamped by the shell frame's own
-   * `max-h-[calc(100vh-8rem)]` minus its 1px borders, so a short window shrinks
-   * the card instead of overflowing it. Viewport units on purpose: they resolve
-   * regardless of the parent chain, and `height: 100%` cannot — the frame is
-   * `h-fit`, so its height flows UP from here and a percentage would be circular.
-   */
   height: min(38.75rem, calc(100vh - 8rem - 2px));
   padding: var(--space-8);
   font-family: var(--font-sans);
@@ -344,19 +337,6 @@
   letter-spacing: 0.02em;
 }
 
-/*
- * The owner row's placeholders. The row itself is now drawn in both states, so
- * its height is produced by one box rather than appearing from nothing — the
- * subject is a shared property the bridge usually replays before the first
- * render, but the shell publishes it from an effect, so an overlay opened early
- * saw `null` and the three-line row materialised under the label, shoving the
- * starting-point cards down.
- *
- * Each placeholder is sized by the metrics of the text it stands in for. Both
- * text rows inherit the wizard's body line-height — the email's smaller
- * font-size does not shrink its line box, because the token is a length — so
- * both take the same token. Widths are cosmetic.
- */
 .ownerAvatarSkeleton {
   flex: none;
   width: var(--owner-avatar-size);

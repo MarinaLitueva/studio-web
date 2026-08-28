@@ -1,10 +1,9 @@
-/**
- * The Connect source form
- */
+/** The Connect source form */
 
 // @cpt-dod:cpt-studiofrontend-dod-connection-create-overlay:p1
 // @cpt-dod:cpt-studiofrontend-dod-connection-create-verify:p1
 // @cpt-dod:cpt-studiofrontend-dod-connection-create-announce:p1
+// @cpt-dod:cpt-studiofrontend-dod-connection-create-refusal:p1
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   apiRegistry,
@@ -16,8 +15,11 @@ import {
 } from '@gears-frontx/react';
 import {
   Button,
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldLabel,
   Input,
-  Label,
   Select,
   SelectContent,
   SelectItem,
@@ -51,6 +53,8 @@ const DialogBody: React.FC = () => {
   const draft = useAppSelector((state) => state[CONNECT_SLICE_KEY].draft);
   const submitting = useAppSelector((state) => state[CONNECT_SLICE_KEY].submitting);
   const error = useAppSelector((state) => state[CONNECT_SLICE_KEY].error);
+
+  const tokenError = error?.kind === 'provider' ? error.text : null;
   const { org, loading: orgLoading } = useOrganization();
   const orgId = org?.id ?? null;
 
@@ -106,21 +110,15 @@ const DialogBody: React.FC = () => {
           <Skeleton className={styles.bodySkeleton} />
         ) : (
           <>
-            <div className={styles.field}>
-              <Label className={styles.fieldLabel} htmlFor="cs-provider">
-                {t('field_provider')}
-              </Label>
+            <Field name="provider">
+              <FieldLabel className={styles.fieldLabel}>{t('field_provider')}</FieldLabel>
               <Select
                 value={draft.provider}
                 modal={false}
                 disabled={providersLoading}
                 onValueChange={(next) => dispatch(editDraft({ provider: next ?? '' }))}
               >
-                <SelectTrigger
-                  id="cs-provider"
-                  className={styles.providerTrigger}
-                  aria-label={t('field_provider')}
-                >
+                <SelectTrigger className={styles.providerTrigger} aria-label={t('field_provider')}>
                   <SelectValue placeholder={providerPlaceholder}>
                     {(selected) =>
                       selected ? (chosen?.display_name ?? String(selected)) : providerPlaceholder
@@ -135,57 +133,54 @@ const DialogBody: React.FC = () => {
                   ))}
                 </SelectContent>
               </Select>
-            </div>
+            </Field>
 
-            <div className={styles.field}>
-              <Label className={styles.fieldLabel} htmlFor="cs-label">
-                {t('field_label')}
-              </Label>
+            <Field name="label">
+              <FieldLabel className={styles.fieldLabel}>{t('field_label')}</FieldLabel>
               <Input
-                id="cs-label"
                 value={draft.label}
                 onChange={(event) => dispatch(editDraft({ label: event.target.value }))}
               />
-              <span className={styles.fieldHint}>{t('field_label_hint')}</span>
-            </div>
+              <FieldDescription>{t('field_label_hint')}</FieldDescription>
+            </Field>
 
-            <div className={styles.field}>
-              <Label className={styles.fieldLabel} htmlFor="cs-base-url">
-                {t('field_base_url')}
-              </Label>
+            <Field name="base_url">
+              <FieldLabel className={styles.fieldLabel}>{t('field_base_url')}</FieldLabel>
               <Input
-                id="cs-base-url"
                 value={draft.baseUrl}
                 placeholder={chosen?.default_base_url ?? ''}
                 onChange={(event) => dispatch(editDraft({ baseUrl: event.target.value }))}
               />
-            </div>
+            </Field>
 
-            <div className={styles.field}>
-              <Label className={styles.fieldLabel} htmlFor="cs-token">
+            <Field name="token" invalid={Boolean(tokenError)}>
+              <FieldLabel className={styles.fieldLabel}>
                 {chosen?.credential_label || t('field_token')}
-              </Label>
+              </FieldLabel>
               <Input
-                id="cs-token"
                 type="password"
                 autoComplete="off"
                 value={draft.token}
                 placeholder={chosen?.credential_hint ?? ''}
                 onChange={(event) => dispatch(editDraft({ token: event.target.value }))}
               />
-            </div>
+              <FieldError className={styles.fieldError} match={true} title={tokenError ?? undefined}>
+                {tokenError}
+              </FieldError>
+            </Field>
           </>
         )}
       </div>
 
-      {(translationsFailed || error || providersFailed || (!orgId && !orgLoading)) && (
+      {(translationsFailed ||
+        error?.kind === 'i18n' ||
+        providersFailed ||
+        (!orgId && !orgLoading)) && (
         <p className={styles.error} role="alert">
           {translationsFailed
             ? 'Could not load this screen.'
-            : error
-              ? error.kind === 'i18n'
-                ? t(error.key)
-                : error.text
+            : error?.kind === 'i18n'
+              ? t(error.key)
               : providersFailed
                 ? t('error_providers')
                 : t('error_no_org')}

@@ -21,6 +21,7 @@
   - [The form is an overlay extension, not a dialog](#the-form-is-an-overlay-extension-not-a-dialog)
   - [Scope and owner are decided, not asked](#scope-and-owner-are-decided-not-asked)
   - [The credential is verified by the write, once](#the-credential-is-verified-by-the-write-once)
+  - [A rejected credential is answered on the credential field](#a-rejected-credential-is-answered-on-the-credential-field)
   - [The credential never comes back and never persists](#the-credential-never-comes-back-and-never-persists)
   - [The write outlives the form](#the-write-outlives-the-form)
   - [One place knows what a provider looks like](#one-place-knows-what-a-provider-looks-like)
@@ -319,6 +320,30 @@ credential a second time and could disagree with the write that follows it.
 - API: `POST /cf/studio-connector/v1/connections`
 - Entities: `ConnectSourceDialog`, `connectEffects`
 
+### A rejected credential is answered on the credential field
+
+- [x] `p1` - **ID**: `cpt-studiofrontend-dod-connection-create-refusal`
+
+The system **MUST** render a refusal the gear puts in its own words under the
+credential field and mark that field invalid, and **MUST** keep its own generic
+message at form level.
+
+The form does not submit until a provider, a name and a credential are filled
+in, so a refusal of the request itself is a refusal of the credential — the one
+value the form cannot check before sending it. What the gear said is therefore
+shown where the member can act on it, not under the buttons.
+
+The system **MUST NOT** reword, parse or shorten what the gear said. A refusal
+readable enough to put in front of a member is the gear's to write; a screen
+that unpicks the wording instead would be guessing at a format the gear never
+promised, and would go on guessing wrong after the gear reworded it.
+
+**Implements**:
+- `cpt-studiofrontend-algo-connection-create-write`
+
+**Touches**:
+- Entities: `ConnectSourceDialog`, `problemDetails`
+
 ### The credential never comes back and never persists
 
 - [x] `p1` - **ID**: `cpt-studiofrontend-dod-connection-create-secret`
@@ -461,6 +486,6 @@ do share, because `queryCacheShared` retains the host's off `globalThis`.
 - [ ] The form has no scope field, no owner field and no test button.
 - [ ] Creating with a valid credential adds the connection at organization scope, owned by the organization in scope, captioned with the account the provider reported.
 - [ ] Leaving the base URL empty stores the provider's default installation root, not an empty string.
-- [ ] A rejected credential leaves the overlay open with the draft intact and shows what the provider said.
+- [ ] A rejected credential leaves the overlay open with the draft intact and says what the gear said under the credential field, with the field marked invalid.
 - [ ] With no organization in scope the primary action refuses and says why.
 - [ ] The created connection appears in the list without a manual refresh, and is offered as a tab by the New project wizard's repositories step.
