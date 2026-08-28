@@ -3,7 +3,7 @@ use serde::Deserialize;
 /// Configuration for the studio-session gear.
 #[derive(Debug, Clone, Deserialize)]
 pub struct StudioSessionConfig {
-    /// Master switch. `false` (k8s deployments until the Pod driver lands,
+    /// Master switch. `false` (environments that do not allow session Pods or
     /// hosts without Docker): the gear boots, REST stays mounted, every
     /// session operation answers 503 with a clear message instead of the
     /// whole backend failing on a missing /var/run/docker.sock.
@@ -22,8 +22,8 @@ pub struct StudioSessionConfig {
     /// for pulling the (private) session image. Unset = no pull secret.
     #[serde(default)]
     pub k8s_image_pull_secret: Option<String>,
-    /// Docker image for a Theia session. Default: the CI-published one
-    /// (fabric-poc/.github/workflows/theia-image.yml). Pulled automatically
+    /// Docker image for a Theia session. Default: the legacy CI-published one;
+    /// Kubernetes deployments inject this repository's matching immutable image.
     /// when absent; a locally-built `cf-studio-theia:latest` also works.
     #[serde(default = "default_image")]
     pub image: String,
@@ -55,6 +55,10 @@ pub struct StudioSessionConfig {
     /// Hostname the browser uses to reach sessions (what we put in the URL).
     #[serde(default = "default_public_host")]
     pub public_host: String,
+    /// Studio API gateway as reached from inside a session container. Docker
+    /// uses the host gateway; Kubernetes injects the backend Service DNS.
+    #[serde(default = "default_gateway_url")]
+    pub gateway_url: String,
     /// Inclusive host port range for sessions.
     #[serde(default = "default_port_start")]
     pub port_range_start: u16,
@@ -106,6 +110,7 @@ impl Default for StudioSessionConfig {
             workspaces_root: default_workspaces_root(),
             bind_host: default_bind_host(),
             public_host: default_public_host(),
+            gateway_url: default_gateway_url(),
             port_range_start: default_port_start(),
             port_range_end: default_port_end(),
             max_session_secs: default_max_session_secs(),
@@ -162,6 +167,9 @@ fn default_bind_host() -> String {
 }
 fn default_public_host() -> String {
     "localhost".into()
+}
+fn default_gateway_url() -> String {
+    "http://host.docker.internal:8090/cf".into()
 }
 fn default_port_start() -> u16 {
     41000

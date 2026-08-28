@@ -8,9 +8,11 @@
 #     below; add `enabled: false` there + idp.vendor "cf" to run without invites)
 #   STUDIO_LLM_API_KEY / STUDIO_LLM_HOST / STUDIO_LLM_BASE_URL / STUDIO_LLM_MODEL
 #   STUDIO_FS_SIGNING_SEED             (URL-signing key, per environment)
-# IDE sessions are DISABLED here (studio-session.enabled=false): the Docker
-# driver needs /var/run/docker.sock; the k8s Pod driver is a future ADR-0003
-# step. NB: Postgres port is fixed at 5432 (integer field — no env expansion);
+# IDE sessions use the Kubernetes Pod driver (ADR-0003) when the Helm
+# backend.sessions.enabled flag injects STUDIO_SESSION_ENABLED=true. The image
+# is injected too, so every backend snapshot launches the matching immutable
+# Theia snapshot instead of a mutable edge tag. NB: Postgres port is fixed at
+# 5432 (integer field — no env expansion);
 # override via APP__database__servers__pg_main__port if ever needed.
 server:
   home_dir: "~/.cf-studio-backend"
@@ -496,12 +498,13 @@ gears:
       # IDE sessions via the Kubernetes Pod driver (ADR-0003). Needs the
       # backend Role over pods/services (Helm backend.sessions.enabled=true)
       # and a browser reachable through the /studio proxy.
-      enabled: false
+      enabled: ${STUDIO_SESSION_ENABLED}
       driver: "kubernetes"
       # kyverno on this cluster admits only harbor.constr.dev images, so the
       # session image goes through the ghcr proxy project (same as the backend
       # and frontend). No pull secret needed — Harbor handles the upstream.
-      image: "harbor.constr.dev/proxy-ghcr.io/constructorfabric/studio-web/cf-studio-theia:edge"
+      image: "${STUDIO_SESSION_IMAGE}"
+      gateway_url: "${STUDIO_SESSION_GATEWAY_URL}"
       # Namespace is auto-detected from the mounted ServiceAccount token;
       # k8s_namespace / k8s_image_pull_secret override only if ever needed.
       git_mode: "disabled"

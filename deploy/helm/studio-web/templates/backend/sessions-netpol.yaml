@@ -24,6 +24,17 @@ spec:
           protocol: UDP
         - port: 53
           protocol: TCP
+    # The session's same-origin /studio-api bridge calls Studio through the
+    # backend Service. Restrict this to backend Pods and the API port.
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: backend
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/name: {{ include "studio-web.name" . }}
+      ports:
+        - port: {{ .Values.backend.port }}
+          protocol: TCP
     {{- with .Values.backend.sessions.networkPolicy.egressCidrs }}
     # Git source hosts (and any allowed clone targets).
     - to:

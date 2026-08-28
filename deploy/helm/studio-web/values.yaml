@@ -67,6 +67,11 @@ backend:
   # sessions (a DB-backed registry is the follow-up).
   sessions:
     enabled: false
+    image:
+      # The deploy workflow publishes cf-studio-theia beside the backend. An
+      # empty tag follows backend.image.tag, preserving one immutable release.
+      repository: harbor.constr.dev/proxy-ghcr.io/constructorfabric/studio-web/cf-studio-theia
+      tag: ""
     # The session driver needs egress to the kube-apiserver, but that rule must
     # NOT ship as a chart CiliumNetworkPolicy: the constructorfabric Argo CD
     # project does not permit kind CiliumNetworkPolicy, so rendering it makes the

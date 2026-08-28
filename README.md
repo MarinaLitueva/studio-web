@@ -68,18 +68,18 @@ override the Groq defaults; any OpenAI-compatible endpoint works.
 `studio-session` gear (our first own gear — see
 `studio-backend/docs/adr/0003-theia-sessions.md`).
 
-No local image build needed: CI publishes the IDE image on every `fabric-poc`
-push touching `poc/theia/**` (workflow `theia-image.yml`), and the gear pulls
-and refreshes it automatically:
+No local image build is needed: this repository's **Build Images** workflow
+publishes `cf-studio-theia` beside every backend image.
 
-- image: `ghcr.io/constructorfabric/fabric-poc/cf-studio-theia:edge`
+- local Docker image: `ghcr.io/constructorfabric/studio-web/cf-studio-theia:edge`
+- Kubernetes image: the immutable backend SHA through the cluster's GHCR proxy
 - auth: the package is private — set `STUDIO_REGISTRY_USER` /
   `STUDIO_REGISTRY_TOKEN` (PAT with `read:packages`) before starting the
   backend. `docker login` alone is NOT enough: the gear talks to the Docker
   API directly, which ignores the CLI credential store.
 - freshness: `always_pull: true` re-pulls the mutable `edge` tag on every
   launch; a failed pull falls back to the local copy (offline-friendly).
-- hacking on the image locally: `cd ../fabric-poc/poc/theia && docker build
+- hacking on the image locally: `cd theia && docker build
   -t cf-studio-theia:latest .`, then in the config set
   `image: cf-studio-theia:latest` + `always_pull: false`.
 
@@ -91,8 +91,8 @@ and can be stopped from the launcher. Inside the IDE, Theia AI (chat with
 the portal bridge through the backend's `studio-llm-proxy` — the provider
 key never enters the container.
 
-Requirements: Docker daemon reachable from the backend (`/var/run/docker.sock`).
-In the full-docker profile the compose file mounts the socket and
+Local requirements: Docker daemon reachable from the backend
+(`/var/run/docker.sock`). In the full-docker profile the compose file mounts the socket and
 `/srv/cf-studio-workspaces` into the backend (host and container paths must be
 identical — bind sources are resolved by the host daemon).
 
@@ -212,5 +212,7 @@ values and GitHub Actions deployment workflows live in this repository; there
 is no GitLab or Argo CD deployment dependency. The pipeline contract, Secret
 contract, and prerequisites live in `deploy/PIPELINES.md`,
 `deploy/helm/values-dmz.example.yaml`, and `deploy/README.md`. Cluster v1
-runs with IDE sessions disabled (`studio-session.enabled=false` in
-`config/k8s.yaml`) until the per-session Pod driver lands (ADR-0003).
+uses the Kubernetes per-session Pod driver when
+`backend.sessions.enabled=true` (enabled for dev). The chart owns the
+namespace-scoped Pod/Service RBAC and keeps the Theia image on the same
+immutable service SHA as the backend (ADR-0003).

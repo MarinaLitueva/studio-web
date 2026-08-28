@@ -150,6 +150,9 @@ jobs:
           docker manifest inspect "$IMAGE_PREFIX/studio-backend:$backend_tag" >/dev/null
           docker manifest inspect "$IMAGE_PREFIX/studio-frontend:$frontend_tag" >/dev/null
           docker manifest inspect "$IMAGE_PREFIX/studio-frontend-prototype:$prototype_tag" >/dev/null
+          # The Kubernetes session driver follows the deployed backend tag;
+          # fail before Helm if the matching IDE runtime was not published.
+          docker manifest inspect "$IMAGE_PREFIX/cf-studio-theia:$backend_tag" >/dev/null
           docker manifest inspect "$IMAGE_PREFIX/cf-studio-keycloak:$keycloak_tag" >/dev/null
 
           echo "backend_tag=$backend_tag" >> "$GITHUB_OUTPUT"

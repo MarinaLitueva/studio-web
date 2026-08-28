@@ -437,7 +437,7 @@ impl SessionService {
             // gears same-origin (no CORS, no token storage server-side).
             // The /cf path is the api-gateway prefix_path: the gate prepends
             // it when forwarding, so in-IDE clients use gateway-rooted paths.
-            "STUDIO_GATEWAY_URL=http://host.docker.internal:8090/cf".to_string(),
+            format!("STUDIO_GATEWAY_URL={}", self.cfg.gateway_url),
         ];
         // Hand the container its S2S control token so the Theia node can
         // authenticate studio-backend's control calls (ADR-0010).

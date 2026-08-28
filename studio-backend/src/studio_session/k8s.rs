@@ -13,8 +13,9 @@ use std::collections::BTreeMap;
 use anyhow::{Context, anyhow};
 use async_trait::async_trait;
 use k8s_openapi::api::core::v1::{
-    Container, ContainerPort, EmptyDirVolumeSource, EnvVar, LocalObjectReference, Pod, PodSpec,
-    ResourceRequirements, SecurityContext, Service, ServicePort, ServiceSpec, Volume, VolumeMount,
+    Capabilities, Container, ContainerPort, EmptyDirVolumeSource, EnvVar, LocalObjectReference,
+    Pod, PodSecurityContext, PodSpec, ResourceRequirements, SeccompProfile, SecurityContext,
+    Service, ServicePort, ServiceSpec, Volume, VolumeMount,
 };
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
@@ -158,6 +159,15 @@ impl SessionDriver for KubernetesDriver {
                 // A session is one lifetime: a crash is a dead session, not a
                 // restart onto a fresh (empty) workspace.
                 restart_policy: Some("Never".to_string()),
+                automount_service_account_token: Some(false),
+                security_context: Some(PodSecurityContext {
+                    run_as_non_root: Some(true),
+                    seccomp_profile: Some(SeccompProfile {
+                        type_: "RuntimeDefault".to_string(),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
                 image_pull_secrets,
                 containers: vec![Container {
                     name: "theia".to_string(),
@@ -182,6 +192,10 @@ impl SessionDriver for KubernetesDriver {
                         run_as_non_root: Some(true),
                         run_as_user: Some(1000),
                         allow_privilege_escalation: Some(false),
+                        capabilities: Some(Capabilities {
+                            drop: Some(vec!["ALL".to_string()]),
+                            ..Default::default()
+                        }),
                         ..Default::default()
                     }),
                     ..Default::default()

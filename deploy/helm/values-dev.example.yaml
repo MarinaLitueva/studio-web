@@ -18,7 +18,11 @@ backend:
   autoscaling:
     enabled: false
   sessions:
-    enabled: false
+    enabled: true
+    # Dev projects may use arbitrary Git hosts. Test/prod should keep the
+    # policy enabled and list approved provider CIDRs explicitly.
+    networkPolicy:
+      enabled: false
   configOverride:
     existingConfigMap: ""
   idpAdmin:

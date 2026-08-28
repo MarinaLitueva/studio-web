@@ -38,10 +38,13 @@ One image, any environment:
 
 ## Feature flags in cluster v1
 
-- **IDE sessions are disabled** (`studio-session.enabled=false` in
-  `k8s.yaml`): the Docker session driver needs `/var/run/docker.sock`;
-  the per-session Pod driver is a future step (ADR-0003). Session APIs
-  answer 503 with a clear message; the rest of the portal is unaffected.
+- **IDE sessions are environment-controlled** (`backend.sessions.enabled`).
+  Dev enables the Kubernetes Pod driver: the chart grants the backend a
+  namespace-only Role for session Pods/Services and launches the immutable
+  `cf-studio-theia` image matching the backend SHA. Keep backend autoscaling
+  disabled until the in-memory session registry is replaced by shared storage.
+  Dev leaves session egress unrestricted so arbitrary Git sources can clone;
+  controlled environments should enable the policy and list approved CIDRs.
 - **User invites are optional**: set `backend.idpAdmin.baseUrl` +
   `idp_admin_secret` to enable the Keycloak Admin provisioning plugin;
   without them the plugin self-deprioritizes.
