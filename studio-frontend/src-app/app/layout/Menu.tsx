@@ -113,6 +113,14 @@ export const Menu: React.FC<MenuProps> = ({ children }) => {
     async (extensionId: string) => {
       if (!mfeRegistry || mounting) return;
       setMounting(true);
+      // Only when the screen actually changes, and before the mount rather than
+      // after it. `ExclusiveMountStrategy.mount` returns early for an extension
+      // that is already the mounted one, so re-picking the open screen produces
+      // no new root and no new announcement — resetting there would drop the
+      // chrome of a screen that never went away. And the incoming screen
+      // announces from a mount effect, which can land while the chain below is
+      // still resolving, so resetting afterwards would undo that instead.
+      if (extensionId !== mountedId) eventBus.emit('app/context/screen/changing');
       try {
         await mfeRegistry.executeActionsChain({
           action: {
@@ -129,7 +137,7 @@ export const Menu: React.FC<MenuProps> = ({ children }) => {
       eventBus.emit('app/context/project/closed');
       close();
     },
-    [close, mfeRegistry, mounting]
+    [close, mfeRegistry, mounting, mountedId]
   );
 
   if (!open) return null;

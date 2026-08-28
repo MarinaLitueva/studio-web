@@ -38,5 +38,14 @@ declare module '@gears-frontx/react' {
     'app/context/project/changed': { projectId: string };
     /** Left the project scope (a global screen mounted, or "All projects"). */
     'app/context/project/closed': void;
+
+    /** A workspace was picked in its slot. */
+    'app/context/workspace/changed': { workspaceId: string };
+    /** A workspace was created by an MFE and must become the current one. */
+    'app/context/workspace/created': { id: string; name: string };
+    /** The mounted screen works inside a workspace, so the slot naming it belongs in the bar. */
+    'app/context/workspace/scoped': void;
+    /** The drawer is mounting another screen.*/
+    'app/context/screen/changing': void;
   }
 }

@@ -45,12 +45,20 @@ vi.mock('./slices/createSlice', () => ({
   createWizardSlice: { name: 'projects/create' },
 }));
 
+vi.mock('./slices/workspaceSlice', () => ({
+  workspaceCreateSlice: { name: 'projects/workspace-create' },
+}));
+
 vi.mock('./effects/projectsEffects', () => ({
   initProjectsEffects: vi.fn(),
 }));
 
 vi.mock('./effects/wizardEffects', () => ({
   initWizardEffects: vi.fn(),
+}));
+
+vi.mock('./effects/workspaceEffects', () => ({
+  initWorkspaceEffects: vi.fn(),
 }));
 
 describe('projects-mfe init', () => {
@@ -61,13 +69,14 @@ describe('projects-mfe init', () => {
     build.mockReturnValue({ id: 'projects-mfe-app' });
   });
 
-  it('registers both api services before build and both slices after it', async () => {
+  it('registers both api services before build and every slice after it', async () => {
     use.mockImplementation(() => ({ use, build }));
     const expectedApp = { id: 'projects-mfe-app' };
     build.mockReturnValue(expectedApp);
 
     const { initProjectsEffects } = await import('./effects/projectsEffects');
     const { initWizardEffects } = await import('./effects/wizardEffects');
+    const { initWorkspaceEffects } = await import('./effects/workspaceEffects');
     const module = await import('./init');
 
     // Two gears: account-management and studio-connector.
@@ -94,6 +103,12 @@ describe('projects-mfe init', () => {
     expect(registerSlice).toHaveBeenCalledWith(
       { name: 'projects/create' },
       initWizardEffects
+    );
+    // Same schedule, same reason: the workspace overlay is a third entry that
+    // does not re-run this module, and its effect carries the write.
+    expect(registerSlice).toHaveBeenCalledWith(
+      { name: 'projects/workspace-create' },
+      initWorkspaceEffects
     );
     expect(module.mfeApp).toBe(expectedApp);
   });

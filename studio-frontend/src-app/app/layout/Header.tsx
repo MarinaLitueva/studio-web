@@ -4,8 +4,8 @@
  * One 56px row across the whole viewport, above everything the MFEs draw. It
  * carries what used to be spread between a permanent left column and a screen
  * title: the control that opens the navigation drawer, the product name, the
- * context the session is in, and the session's own affordances (search, inbox,
- * identity) on the right.
+ * context the session is in — organization, then workspace — and the session's
+ * own affordances (search, inbox, identity) on the right.
  *
  * The screen title left with the left column. A mounted MFE owns its whole
  * area now, heading included, so the shell no longer titles it.
@@ -25,6 +25,7 @@ import { Icon } from '@iconify/react';
 import { cn } from '@/app/lib/utils';
 import type { OverlayExtension } from './overlayExtension';
 import { ContextSwitcher } from './ContextSwitcher';
+import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 import { UserMenu } from './UserMenu';
 
 export interface HeaderProps {
@@ -66,10 +67,6 @@ const IconPill: React.FC<{
       )}
     />
     {unread && (
-      // 6px dot in an 8px optical box, overlapping the icon corner, with a
-      // hairline in the button's own surface colour so it reads as separate
-      // from the glyph rather than part of it. Outside the Button on purpose:
-      // children would turn off its icon-only squaring.
       <span className="pointer-events-none absolute right-0.5 top-px grid size-2 place-items-center">
         <span className="size-1.5 rounded-full bg-primary ring-1 ring-muted/50" />
       </span>
@@ -118,9 +115,6 @@ export const Header: React.FC<HeaderProps> = ({ children }) => {
 
   return (
     <header className="flex h-14 shrink-0 items-center border-b border-border bg-card pl-2 pr-4">
-      {/* 40px with a 20px glyph is exactly the kit's `lg`: --control-height-lg
-          and, at that size, --icon-size-md. Only the corner radius differs from
-          the kit's default. */}
       <Button
         variant="ghost"
         size="lg"
@@ -133,19 +127,14 @@ export const Header: React.FC<HeaderProps> = ({ children }) => {
       <span className="ml-3 whitespace-nowrap text-[16px] font-semibold leading-6 text-foreground">
         Constructor Studio
       </span>
-
-      {/* align-self: stretch on the kit's vertical separator makes this the
-          full 56px rule the mockup draws, without pinning a height here. */}
       <Separator orientation="vertical" className="ml-4" />
 
-      <div className="ml-6 min-w-0">
+      <div className="ml-6 flex min-w-0 items-center gap-1">
         <ContextSwitcher />
+        <WorkspaceSwitcher />
       </div>
 
       <div className="ml-auto flex items-center gap-2">
-        {/* Whoever claims the route names and draws its own control — rename the
-            MFE and the tooltip follows. The literals below name the *place*, and
-            only ever show while nothing claims it. */}
         <IconPill
           icon={searchExtension?.presentation?.icon ?? 'material-symbols:search'}
           label={searchExtension?.presentation?.label ?? 'Search'}

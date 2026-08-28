@@ -71,16 +71,14 @@ describe('ContextSwitcher', () => {
       });
     });
 
-    it('carries the icon colours on wrappers, not on <Icon>', () => {
-      // @iconify/react renders an unclassed placeholder span until it has
-      // resolved the icon, so a className handed to <Icon> is dropped for that
-      // render and the glyph inherits the trigger's dark foreground. The colour
-      // has to live on an element that is always there.
+    it('mutes both glyphs, on the glyphs themselves', () => {
+      // The icons are lucide now: a plain synchronous SVG, so the colour goes on
+      // the element that draws it. Without it the glyph inherits the trigger's
+      // dark foreground and stops reading as chrome. Two of them: the leading
+      // scope glyph and the chevron.
       const { container } = render(<ContextSwitcher />);
-      const muted = container.querySelectorAll('span.text-muted-foreground');
-      // Two: the leading scope glyph and the chevron.
-      expect(muted.length).toBe(2);
-      expect(container.querySelector('svg.text-muted-foreground')).toBeNull();
+
+      expect(container.querySelectorAll('svg.text-muted-foreground')).toHaveLength(2);
     });
 
     it('drops the chevron when there is only one organization to be in', () => {

@@ -21,6 +21,13 @@ patterns = [
   "src-app/mfe_packages/*/vite.config.ts",
   "src-app/mfe_packages/*/vitest.config.ts",
   "src-app/mfe_packages/*/src/init.ts",
+  # The shell files that came with the template and still carry only its
+  # markers. The rest of `src-app/app` is this repository's and is in scope.
+  "src-app/app/actions/**",
+  "src-app/app/effects/bootstrapEffects.ts",
+  "src-app/app/mfe/MfeScreenContainer.tsx",
+  "src-app/app/mfe/bootstrap.ts",
+  "src-app/app/themes/**",
 ]
 
 [[systems]]
@@ -33,6 +40,10 @@ children = []
 # widening this would measure coverage against specs this repository does not own.
 codebase = [
   { path = "src-app/mfe_packages/projects-mfe/src", extensions = [".ts", ".tsx"] },
+  # The shell, in scope since the workspace feature: the workspace list, the
+  # slot that shows it and the property that publishes it are the shell's, so
+  # the markers of `workspace-scope` live here as well as in the MFE.
+  { path = "src-app/app", extensions = [".ts", ".tsx"] },
   { path = "src-app/mfe_packages/connections-mfe/src", extensions = [".ts", ".tsx"] },
   # What both of the above share, extracted rather than copied. In scope because
   # the code that moved there carries markers of its own — `organization.tsx`

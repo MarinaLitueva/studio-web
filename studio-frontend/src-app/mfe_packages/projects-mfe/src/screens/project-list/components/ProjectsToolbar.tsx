@@ -4,22 +4,26 @@ import { Button, Input, Skeleton } from '@gears-frontx/ui-kit';
 import { useProjectListText } from '../../../i18n';
 import { useMfeBridge } from '@gears-frontx/react';
 import { openProjectWizard } from '../../../actions/wizardActions';
+import { openWorkspaceForm } from '../../../actions/workspaceActions';
 import styles from '../ProjectListScreen.module.css';
 
 interface ProjectsToolbarProps {
   query: string;
   onQueryChange: (query: string) => void;
   busy: boolean;
+  hasWorkspace: boolean;
 }
 
 /**
  * The mockup's Portfolio Header: the page title and every control that acts on
  * the list, on one line above the table.
  */
+// @cpt-dod:cpt-studiofrontend-dod-workspace-scope-no-workspace:p1
 export const ProjectsToolbar: React.FC<ProjectsToolbarProps> = ({
   query,
   onQueryChange,
   busy,
+  hasWorkspace,
 }) => {
   const t = useProjectListText();
   const bridge = useMfeBridge();
@@ -40,7 +44,15 @@ export const ProjectsToolbar: React.FC<ProjectsToolbarProps> = ({
         onChange={(event) => onQueryChange(event.target.value)}
         aria-label={t('search_placeholder')}
       />
-      <Button size="sm" onClick={() => openProjectWizard(bridge)}>
+      <Button size="sm" onClick={() => openWorkspaceForm(bridge)}>
+        {t('new_workspace')}
+      </Button>
+      <Button
+        size="sm"
+        disabled={!hasWorkspace}
+        title={hasWorkspace ? undefined : t('empty_no_workspace')}
+        onClick={() => openProjectWizard(bridge)}
+      >
         {t('new_project')}
       </Button>
     </div>

@@ -14,7 +14,13 @@ import {
 } from '@gears-frontx/react';
 import { useAppDispatch, useAppSelector } from '@gears-frontx/react';
 import { Button, Skeleton } from '@gears-frontx/ui-kit';
-import { OrganizationProvider, useHostChrome, useOrganization } from '@constructor-studio/mfe-shared';
+import {
+  OrganizationProvider,
+  WorkspaceProvider,
+  useHostChrome,
+  useOrganization,
+  useWorkspace,
+} from '@constructor-studio/mfe-shared';
 import { useProjectCreateScreenTranslations, useProjectCreateText } from '../../i18n';
 import { closeProjectWizard, requestProjectCreate } from '../../actions/wizardActions';
 import '../../events/wizardEvents';
@@ -48,8 +54,9 @@ const WizardBody: React.FC = () => {
   const draft = useAppSelector((state) => state[CREATE_SLICE_KEY].draft);
   const submitting = useAppSelector((state) => state[CREATE_SLICE_KEY].submitting);
   const error = useAppSelector((state) => state[CREATE_SLICE_KEY].error);
-  const { org, loading: orgLoading } = useOrganization();
-  const orgId = org?.id ?? null;
+  const { loading: orgLoading } = useOrganization();
+  const { workspace, loading: workspaceLoading } = useWorkspace();
+  const workspaceId = workspace?.id ?? null;
 
   // Every opening starts clean. The store outlives this root (it belongs to the
   // MFE app, which `init.ts` builds once for any entry), so without this a
@@ -81,19 +88,21 @@ const WizardBody: React.FC = () => {
 
   useEffect(() => {
     const subscription = eventBus.on('mfe/projects/created', () => {
-      if (orgId) {
+      if (workspaceId) {
+        // The workspace's own page is the one that gained a row — it is the
+        // list's root now, so nothing above it changed.
         const accounts = apiRegistry.getService(AccountsApiService);
-        void invalidateQueryCacheForApp(app, accounts.children(childrenPageParams(orgId)));
+        void invalidateQueryCacheForApp(app, accounts.children(childrenPageParams(workspaceId)));
       }
       closeProjectWizard(bridge);
     });
     return () => subscription.unsubscribe();
-  }, [app, bridge, orgId]);
+  }, [app, bridge, workspaceId]);
 
   const onPrimary = (): void => {
     if (final) {
-      if (!orgId) return;
-      requestProjectCreate(orgId, draft);
+      if (!workspaceId) return;
+      requestProjectCreate(workspaceId, draft);
       return;
     }
     const next = nextStep(draft, step.key);
@@ -117,7 +126,7 @@ const WizardBody: React.FC = () => {
         {showSkeleton ? <Skeleton className={styles.bodySkeleton} /> : <Body />}
       </div>
 
-      {(translationsFailed || error || (final && !orgId && !orgLoading)) && (
+      {(translationsFailed || error || (final && !workspaceId && !workspaceLoading)) && (
         <p className={styles.error} role="alert">
           {translationsFailed
             ? 'Could not load this screen.'
@@ -125,7 +134,7 @@ const WizardBody: React.FC = () => {
               ? error.kind === 'i18n'
                 ? t(error.key)
                 : error.text
-              : t('error_no_org')}
+              : t('error_no_workspace')}
         </p>
       )}
 
@@ -139,7 +148,11 @@ const WizardBody: React.FC = () => {
           size="sm"
           onClick={onPrimary}
           disabled={
-            submitting || orgLoading || !step.isComplete(draft) || (final && !orgId)
+            submitting ||
+            orgLoading ||
+            workspaceLoading ||
+            !step.isComplete(draft) ||
+            (final && !workspaceId)
           }
         >
           {final ? t('create') : t('continue')}
@@ -153,7 +166,9 @@ WizardBody.displayName = 'WizardBody';
 
 export const NewProjectWizard: React.FC = () => (
   <OrganizationProvider>
-    <WizardBody />
+    <WorkspaceProvider>
+      <WizardBody />
+    </WorkspaceProvider>
   </OrganizationProvider>
 );
 

@@ -34,9 +34,9 @@ export interface Page<T> {
 
 /**
  * Tenant type IDs seeded by studio-backend config
- * (`types-registry.config.entities`). The organization type is the one the
- * top-bar context switcher offers; workspaces are a level the current concept
- * does not surface.
+ * (`types-registry.config.entities`). Both are surfaced in the top bar: the
+ * organization in the context slot, the workspace in its own slot beside it.
+ * A project's parent is a workspace, which is why the shell resolves them.
  */
 export const TENANT_TYPES = {
   organization: 'gts.cf.core.am.tenant_type.v1~cf.studio.tenant.organization.v1~',

@@ -20,6 +20,10 @@
  *
  * Until projects-mfe emits those, the slot simply stays at `org` scope. That is
  * the designed resting state, not a missing feature.
+ *
+ * The workspace is a THIRD pair (`workspace`/`workspaces`) rather than a third
+ * scope: it is in scope at the same time as the organization, while `org` and
+ * `project` are alternatives to each other.
  */
 
 import { createSlice, type ReducerPayload } from '@gears-frontx/react';
@@ -39,6 +43,10 @@ export interface AppContextState {
   org: ContextEntity | null;
   /** Organizations the user may switch to, current one included. */
   orgs: ContextEntity[];
+  /** The workspace in scope — a project's parent and the list's root. */
+  workspace: ContextEntity | null;
+  workspaces: ContextEntity[];
+  screenUsesWorkspace: boolean;
   /** The open project. Non-null exactly when `scope` is `project`. */
   project: ContextEntity | null;
   /** Projects the switcher offers, as published by projects-mfe. */
@@ -53,6 +61,9 @@ const initialState: AppContextState = {
   scope: 'org',
   org: null,
   orgs: [],
+  workspace: null,
+  workspaces: [],
+  screenUsesWorkspace: false,
   project: null,
   projects: [],
   loading: false,
@@ -63,6 +74,10 @@ const {
   setContextLoading,
   setContextOrganizations,
   setContextOrg,
+  setContextWorkspaces,
+  setContextWorkspace,
+  addContextWorkspace,
+  setScreenUsesWorkspace,
   setContextProjects,
   openContextProject,
   closeContextProject,
@@ -94,8 +109,50 @@ const {
       state.org = next;
       // Leaving the organization invalidates anything scoped under it.
       state.scope = 'org';
+      state.workspace = null;
+      state.workspaces = [];
       state.project = null;
       state.projects = [];
+    },
+
+    // @cpt-begin:cpt-studiofrontend-algo-workspace-scope-resolve:p1:inst-4
+    setContextWorkspaces: (
+      state: AppContextState,
+      action: ReducerPayload<ContextEntity[]>
+    ) => {
+      state.workspaces = action.payload;
+      const kept = action.payload.find((item) => item.id === state.workspace?.id);
+      state.workspace = kept ?? action.payload[0] ?? null;
+    },
+    // @cpt-end:cpt-studiofrontend-algo-workspace-scope-resolve:p1:inst-4
+
+    setContextWorkspace: (state: AppContextState, action: ReducerPayload<string>) => {
+      const next = state.workspaces.find((workspace) => workspace.id === action.payload);
+      if (!next || next.id === state.workspace?.id) return;
+      state.workspace = next;
+      state.scope = 'org';
+      state.project = null;
+      state.projects = [];
+    },
+
+    addContextWorkspace: (
+      state: AppContextState,
+      action: ReducerPayload<ContextEntity>
+    ) => {
+      if (!state.workspaces.some((workspace) => workspace.id === action.payload.id)) {
+        state.workspaces = [...state.workspaces, action.payload];
+      }
+      state.workspace = action.payload;
+      state.scope = 'org';
+      state.project = null;
+      state.projects = [];
+    },
+
+    setScreenUsesWorkspace: (
+      state: AppContextState,
+      action: ReducerPayload<boolean>
+    ) => {
+      state.screenUsesWorkspace = action.payload;
     },
 
     setContextProjects: (
@@ -131,6 +188,10 @@ export {
   setContextLoading,
   setContextOrganizations,
   setContextOrg,
+  setContextWorkspaces,
+  setContextWorkspace,
+  addContextWorkspace,
+  setScreenUsesWorkspace,
   setContextProjects,
   openContextProject,
   closeContextProject,

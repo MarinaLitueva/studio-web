@@ -9,12 +9,13 @@
  * The switcher renders state and emits events; it fetches nothing. Who owns
  * which half of that state is explained in slices/appContextSlice.ts.
  *
- * Icon colours sit on the wrapping span, never on `<Icon>` itself. @iconify/react
- * resolves an icon asynchronously and renders an unclassed `<span>` placeholder
- * until it has the data — a className handed to `Icon` is dropped for that
- * render, so the glyph inherits the trigger's `text-foreground` and comes out
- * dark instead of muted. A wrapper holds the colour through both states, which is
- * the same reason `SidebarMenuIcon` exists in components/ui/sidebar.tsx.
+ * Icons come from `lucide-react`: a normal import that renders its SVG on the
+ * first pass, so a className reaches the glyph and no wrapping span is needed to
+ * hold the colour. @iconify/react, which this used to use, resolves an icon over
+ * the network and renders an unclassed placeholder until it arrives — the
+ * workaround that shape forced is still visible in `SidebarMenuIcon`
+ * (components/ui/sidebar.tsx), where the icon name comes from a manifest and
+ * Iconify is therefore unavoidable.
  */
 
 import React, { useCallback } from 'react';
@@ -26,7 +27,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from '@gears-frontx/ui-kit/dropdown-menu';
-import { Icon } from '@iconify/react';
+import { Building2, ChevronDown, Folder } from 'lucide-react';
 import { Skeleton } from '@gears-frontx/ui-kit/skeleton';
 import {
   APP_CONTEXT_SLICE_KEY,
@@ -36,8 +37,8 @@ import {
 
 /** The 20px leading glyph naming the KIND of context, per the mockup's two variants. */
 const SCOPE_ICON = {
-  org: 'material-symbols:domain',
-  project: 'material-symbols:folder',
+  org: Building2,
+  project: Folder,
 } as const;
 
 export const ContextSwitcher: React.FC = () => {
@@ -70,11 +71,11 @@ export const ContextSwitcher: React.FC = () => {
   // inventing a name for a context the backend has not confirmed.
   if (!current) return null;
 
+  const ScopeIcon = SCOPE_ICON[scope];
+
   const label = (
     <>
-      <span className="grid size-5 shrink-0 place-items-center text-muted-foreground">
-        <Icon icon={SCOPE_ICON[scope]} className="size-5" />
-      </span>
+      <ScopeIcon className="size-5 shrink-0 text-muted-foreground" strokeWidth={1.3} />
       <span className="truncate text-[16px] font-semibold leading-6 text-foreground">
         {current.name}
       </span>
@@ -93,13 +94,11 @@ export const ContextSwitcher: React.FC = () => {
     <DropdownMenu>
       <DropdownMenuTrigger className="flex h-9 max-w-72 items-center gap-2 rounded-lg px-2.5 outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring">
         {label}
-        <span className="grid size-[18px] shrink-0 place-items-center text-muted-foreground">
-          {/* The mockup labels this glyph `expand_more`, which is what Material
-              Symbols called it originally; in Iconify's set that name is a
-              deprecated alias (`hidden: true`) and `keyboard-arrow-down` is the
-              live name for the same chevron. */}
-          <Icon icon="material-symbols:keyboard-arrow-down" className="size-[18px]" />
-        </span>
+        <ChevronDown
+          className="size-[18px] shrink-0 text-muted-foreground"
+          strokeWidth={1.3}
+          aria-hidden="true"
+        />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" sideOffset={4} className="min-w-56 rounded-lg">
         {options.map((option) => (

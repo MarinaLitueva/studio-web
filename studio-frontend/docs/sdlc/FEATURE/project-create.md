@@ -53,9 +53,13 @@ path in the portal against that model.
 **Assumptions fixed here**, both because the mockups are silent and the choice
 changes the code:
 
-- A project is created under the **organization** in scope, not under a
-  workspace. The wizard has no workspace field, and the tenant type accepts both
-  parents (`allowed_parent_types` in every backend profile).
+- A project is created under the **workspace** in scope. **Superseded**: this
+  feature originally created a project under the organization. The tenant type
+  does accept both parents, so that was never refused — but the workspace is the
+  level a project belongs in, and it did not exist in the portal until
+  [Workspaces in scope](workspace-scope.md) introduced it. The wizard still has
+  no workspace field: the workspace is the one in the shell's top bar, and
+  `cpt-studiofrontend-dod-workspace-scope-project-parent` owns that decision.
 - A new project starts with the stage list `['intent']`. The wizard has no stage
   picker; `intent` is the one mandatory stage.
 - A modernization takes **one or more** repositories, at most 100 in total. The
@@ -185,13 +189,13 @@ are traced.
 
 - [x] `p2` - **ID**: `cpt-studiofrontend-algo-project-create-write`
 
-**Input**: a complete draft and the organization tenant in scope
+**Input**: a complete draft and the workspace tenant in scope
 
 **Output**: the created tenant's id, or the reason it was refused
 
 **Steps**:
 1. [x] - `p1` - Trim the name; reject an empty one before any request - `inst-1`
-2. [x] - `p1` - `API: POST /cf/account-management/v1/tenants (name, project tenant type, parent = organization)` - `inst-2`
+2. [x] - `p1` - `API: POST /cf/account-management/v1/tenants (name, project tenant type, parent = the workspace in scope)` - `inst-2`
 3. [x] - `p1` - **IF** account-management refuses - `inst-3`
    1. [x] - `p1` - **RETURN** the refusal; the draft survives so the member can correct it - `inst-4`
 4. [x] - `p1` - `API: PUT /cf/account-management/v1/tenants/{id}/metadata/{project config type} (mode, stages, status, brief, source)` - `inst-5`
@@ -376,19 +380,20 @@ so resolving twice costs cache hits rather than requests.
 - `cpt-studiofrontend-algo-project-create-write`
 
 **Touches**:
-- Entities: `shared/organization`, `projectTree`, `NewProjectWizard`
+- Entities: `shared/organization`, `shared/workspace`, `projectTree`, `NewProjectWizard`
 
 ### The list learns without polling
 
 - [x] `p1` - **ID**: `cpt-studiofrontend-dod-project-create-announce`
 
 The system **MUST** make a created project appear in the list without a manual
-refresh, by invalidating the organization's children page on the shared
+refresh, by invalidating the workspace's children page on the shared
 QueryClient.
 
 Not by an event the list listens to: the two roots do not share an event bus.
-Only the organization's own page is invalidated — a project is created as its
-direct child, so no other branch gained a row.
+Only the current workspace's own page is invalidated — a project is created as
+its direct child, and that page is the list's root, so no other branch gained a
+row.
 
 **Implements**:
 - `cpt-studiofrontend-flow-project-create-greenfield`
@@ -409,7 +414,7 @@ direct child, so no other branch gained a row.
 - [ ] The selection survives switching connection tabs, and a created project records every picked repository.
 - [ ] At 100 selected the unpicked checkboxes are inert and the footer states the maximum.
 - [ ] A connection to a model provider (an API key) is not offered as a tab on the repositories step.
-- [ ] A created project is a tenant of the project type whose parent is the organization in scope, with `status = draft`, `stages = ['intent']` and an `owner_id` in its metadata.
+- [ ] A created project is a tenant of the project type whose parent is the workspace in scope, with `status = draft`, `stages = ['intent']` and an `owner_id` in its metadata.
 - [ ] The owner field names the signed-in member and offers no way to change them; the created project carries their subject id as `owner_id`.
 - [ ] A refused creation leaves the wizard open with the draft intact and shows what was refused.
 - [ ] The created project appears in the list without a manual refresh.

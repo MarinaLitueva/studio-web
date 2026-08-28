@@ -15,8 +15,10 @@ import {
 } from '@gears-frontx/react';
 import { navSlice } from './slices/navSlice';
 import { createWizardSlice } from './slices/createSlice';
+import { workspaceCreateSlice } from './slices/workspaceSlice';
 import { initProjectsEffects } from './effects/projectsEffects';
 import { initWizardEffects } from './effects/wizardEffects';
+import { initWorkspaceEffects } from './effects/workspaceEffects';
 import { AccountsApiService } from './api/AccountsApiService';
 import { ConnectorsApiService } from '@constructor-studio/mfe-shared';
 
@@ -40,5 +42,6 @@ const mfeApp = createFrontX()
 // Register slices with effects (needs store from build())
 registerSlice(navSlice, initProjectsEffects);
 registerSlice(createWizardSlice, initWizardEffects);
+registerSlice(workspaceCreateSlice, initWorkspaceEffects);
 
 export { mfeApp };

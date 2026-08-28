@@ -8,6 +8,7 @@ export {
   STUDIO_SHARED_PROPERTY_CONTEXT_PROJECT,
   STUDIO_SHARED_PROPERTY_CONTEXT_ORGANIZATION,
   STUDIO_SHARED_PROPERTY_SESSION_PROFILE,
+  STUDIO_SHARED_PROPERTY_CONTEXT_WORKSPACE,
 } from './host/hostProperties';
 export {
   OrganizationProvider,
@@ -15,6 +16,12 @@ export {
   type OrganizationRef,
   type OrganizationState,
 } from './host/organization';
+export {
+  WorkspaceProvider,
+  useWorkspace,
+  type WorkspaceRef,
+  type WorkspaceState,
+} from './host/workspace';
 
 export {
   ConnectorsApiService,

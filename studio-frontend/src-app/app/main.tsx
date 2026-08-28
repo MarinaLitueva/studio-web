@@ -16,6 +16,8 @@ import extensionOverlaySchemaJson from '@/app/mfe/schemas/extension_overlay.v1.j
 import actionContextPublishSchemaJson from '@/app/mfe/schemas/action_context_publish.v1.json';
 import sharedPropertyContextProjectSchemaJson from '@/app/mfe/schemas/shared_property_context_project.v1.json';
 import sharedPropertyContextOrganizationSchemaJson from '@/app/mfe/schemas/shared_property_context_organization.v1.json';
+import sharedPropertyContextWorkspaceSchemaJson from '@/app/mfe/schemas/shared_property_context_workspace.v1.json';
+import actionContextWorkspacesPublishSchemaJson from '@/app/mfe/schemas/action_context_workspaces_publish.v1.json';
 import sharedPropertySessionProfileSchemaJson from '@/app/mfe/schemas/shared_property_session_user_profile.v1.json';
 import App from './App';
 
@@ -43,6 +45,9 @@ gtsPlugin.registerSchema(extensionOverlaySchemaJson as JSONSchema);
 // The context-slot action an MFE executes against the screen domain. Same rule
 // as above: GTS refuses to route an action instance whose type has no schema.
 gtsPlugin.registerSchema(actionContextPublishSchemaJson as JSONSchema);
+// The overlay-domain counterpart: a workspace an MFE has just created, handed to
+// the shell that owns the list it belongs in.
+gtsPlugin.registerSchema(actionContextWorkspacesPublishSchemaJson as JSONSchema);
 // The shell -> MFE half of the same slot. `sharedProperties` on a domain and
 // `requiredProperties` on an entry both carry an `x-gts-ref` that checks the type
 // is IN THE REGISTRY, not merely that the string looks right, so an unregistered
@@ -52,6 +57,8 @@ gtsPlugin.registerSchema(sharedPropertyContextProjectSchemaJson as JSONSchema);
 // working in, and who is signed in. Both are the shell's to know and every MFE's
 // to be told — see mfe/contextActions.ts for what they replace.
 gtsPlugin.registerSchema(sharedPropertyContextOrganizationSchemaJson as JSONSchema);
+// The level between them: a project's parent and the Projects list's root.
+gtsPlugin.registerSchema(sharedPropertyContextWorkspaceSchemaJson as JSONSchema);
 gtsPlugin.registerSchema(sharedPropertySessionProfileSchemaJson as JSONSchema);
 
 // Register accounts service (application-level service for user info)

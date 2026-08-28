@@ -226,8 +226,6 @@
   gap: var(--space-2);
   width: 100%;
   padding: 0;
-  /* One indent step per tree level; the level comes in as --row-level. */
-  padding-inline-start: calc(var(--row-level, 0) * var(--space-5));
   border: 0;
   background: none;
   color: inherit;
@@ -236,37 +234,9 @@
   cursor: pointer;
 }
 
-.nameButton:disabled {
-  cursor: default;
-}
-
-.pending {
-  display: block;
-  padding-inline-start: calc(var(--row-level, 0) * var(--space-5));
-}
-
-.pendingSkeleton {
-  height: var(--text-body-line-height, 1.25rem);
-  width: 40%;
-}
-
 .cellSkeleton {
   height: var(--text-body-line-height, 1.25rem);
   width: 4.5rem;
-}
-
-.chevron {
-  display: inline-flex;
-  color: var(--muted-foreground);
-}
-
-/* A leaf keeps the slot so names stay aligned with their siblings. */
-.chevron[data-expandable='false'] {
-  visibility: hidden;
-}
-
-.chevron[data-expanded='true'] {
-  transform: rotate(90deg);
 }
 
 .nameButton:hover .name {
@@ -290,16 +260,8 @@
   block-size: var(--icon-size-md);
 }
 
-.nameText {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 2px;
-  min-width: 0;
-  min-height: calc(var(--text-body-line-height) + 2px + var(--text-meta-line-height));
-}
-
 .name {
+  min-width: 0;
   font-size: var(--text-body-size);
   line-height: var(--text-body-line-height);
   font-weight: var(--text-label-weight);
@@ -308,19 +270,11 @@
   white-space: nowrap;
 }
 
-.subtitle,
 .updated,
 .noData {
   font-size: var(--text-meta-size);
   line-height: var(--text-meta-line-height);
   color: var(--muted-foreground);
-}
-
-.subtitle {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 28rem;
 }
 
 .owner {

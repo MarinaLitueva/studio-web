@@ -45,10 +45,13 @@ import type {
 
 import {
   STUDIO_ACTION_CONTEXT_PUBLISH,
+  STUDIO_ACTION_WORKSPACES_PUBLISH,
   STUDIO_SHARED_PROPERTY_CONTEXT_ORGANIZATION,
   STUDIO_SHARED_PROPERTY_CONTEXT_PROJECT,
+  STUDIO_SHARED_PROPERTY_CONTEXT_WORKSPACE,
   STUDIO_SHARED_PROPERTY_SESSION_PROFILE,
   createContextPublishHandler,
+  createWorkspacePublishHandler,
 } from '@/app/mfe/contextActions';
 import { publishStudioContext } from '@/app/mfe/sharedContext';
 
@@ -161,6 +164,7 @@ class ScreenDomainImpl extends ExtensionDomainImplementation {
     // MFE's context publication arrives. See contextActions.ts for why this is
     // an action chain and not an event.
     ctx.registerHandler(STUDIO_ACTION_CONTEXT_PUBLISH, createContextPublishHandler());
+    ctx.registerHandler(STUDIO_ACTION_WORKSPACES_PUBLISH, createWorkspacePublishHandler());
   }
 
   protected getMountStrategies(): MountStrategy[] {
@@ -171,7 +175,13 @@ class ScreenDomainImpl extends ExtensionDomainImplementation {
 class OptionalDomainImpl extends ExtensionDomainImplementation {
   private readonly strategy: OptionalMountStrategy;
 
-  constructor(ctx: DomainContext, hooks: ContainerHooks, registry: MfeRegistry, domainId: string) {
+  constructor(
+    ctx: DomainContext,
+    hooks: ContainerHooks,
+    registry: MfeRegistry,
+    domainId: string,
+    handlers: Record<string, ActionHandler> = {},
+  ) {
     super();
     this.strategy = new OptionalMountStrategy(ctx.mounter, hooks, registry, domainId);
     ctx.registerHandler(
@@ -182,6 +192,9 @@ class OptionalDomainImpl extends ExtensionDomainImplementation {
       FRONTX_ACTION_UNMOUNT_EXT,
       ActionHandler.fromFunction((_t, p) => this.strategy.unmount!(p as ActionPayload)),
     );
+    for (const [type, handler] of Object.entries(handlers)) {
+      ctx.registerHandler(type, handler);
+    }
   }
 
   protected getMountStrategies(): MountStrategy[] {
@@ -201,6 +214,7 @@ class OptionalDomainFactory extends ExtensionDomainImplementationFactory {
     private readonly registry: MfeRegistry,
     private readonly domainId: string,
     private readonly fill: boolean = true,
+    private readonly handlers: Record<string, ActionHandler> = {},
   ) { super(); }
   build(ctx: DomainContext): OptionalDomainImpl {
     return new OptionalDomainImpl(
@@ -208,6 +222,7 @@ class OptionalDomainFactory extends ExtensionDomainImplementationFactory {
       new HostContainerHooks(this.fill),
       this.registry,
       this.domainId,
+      this.handlers,
     );
   }
 }
@@ -376,11 +391,16 @@ export async function bootstrapMFE(app: FrontXApp): Promise<void> {
 
   const studioScreenDomain: ExtensionDomain = {
     ...screenDomain,
-    actions: [...screenDomain.actions, STUDIO_ACTION_CONTEXT_PUBLISH],
+    actions: [
+      ...screenDomain.actions,
+      STUDIO_ACTION_CONTEXT_PUBLISH,
+      STUDIO_ACTION_WORKSPACES_PUBLISH,
+    ],
     sharedProperties: [
       ...screenDomain.sharedProperties,
       STUDIO_SHARED_PROPERTY_CONTEXT_PROJECT,
       STUDIO_SHARED_PROPERTY_CONTEXT_ORGANIZATION,
+      STUDIO_SHARED_PROPERTY_CONTEXT_WORKSPACE,
       STUDIO_SHARED_PROPERTY_SESSION_PROFILE,
     ],
   };
@@ -392,9 +412,14 @@ export async function bootstrapMFE(app: FrontXApp): Promise<void> {
    */
   const studioOverlayDomain: ExtensionDomain = {
     ...overlayDomain,
+    // The overlay that creates a workspace hands it back through this action —
+    // it is mounted here, and an action reaches only the domain it targets, so
+    // the screen domain above declares it too.
+    actions: [...overlayDomain.actions, STUDIO_ACTION_WORKSPACES_PUBLISH],
     sharedProperties: [
       ...overlayDomain.sharedProperties,
       STUDIO_SHARED_PROPERTY_CONTEXT_ORGANIZATION,
+      STUDIO_SHARED_PROPERTY_CONTEXT_WORKSPACE,
       STUDIO_SHARED_PROPERTY_SESSION_PROFILE,
     ],
   };
@@ -404,7 +429,9 @@ export async function bootstrapMFE(app: FrontXApp): Promise<void> {
   registry.registerDomain(popupDomain, new OptionalDomainFactory(registry, popupDomain.id, false));
   registry.registerDomain(
     studioOverlayDomain,
-    new OptionalDomainFactory(registry, overlayDomain.id, false),
+    new OptionalDomainFactory(registry, overlayDomain.id, false, {
+      [STUDIO_ACTION_WORKSPACES_PUBLISH]: createWorkspacePublishHandler(),
+    }),
   );
 
   const currentThemeId = app.themeRegistry?.getCurrent()?.id ?? 'default';
