@@ -557,6 +557,15 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
   const [spaces, setSpaces] = useState<
     { wsId: string; wsName: string; url: string; sessionId: string }[]
   >([]);
+  const [spaceDirty, setSpaceDirty] = useState<Record<string, number>>({});
+  const initTimersRef = useRef<Record<string, ReturnType<typeof setInterval>>>({});
+  const stopInitRetry = useCallback((wsId: string) => {
+    const timer = initTimersRef.current[wsId];
+    if (timer !== undefined) {
+      clearInterval(timer);
+      delete initTimersRef.current[wsId];
+    }
+  }, []);
   // Initialized FROM the URL: the sync effect below runs on mount and would
   // otherwise rewrite /space/{id} to / before the restore logic reads it.
   const [activeSpace, setActiveSpace] = useState<string | null>(
@@ -579,9 +588,33 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
   );
 
   const closeSpace = useCallback((wsId: string) => {
+    stopInitRetry(wsId);
     setSpaces((prev) => prev.filter((s) => s.wsId !== wsId));
     setActiveSpace((a) => (a === wsId ? null : a));
-  }, []);
+    setSpaceDirty((prev) => {
+      if (!(wsId in prev)) return prev;
+      const next = { ...prev };
+      delete next[wsId];
+      return next;
+    });
+  }, [stopInitRetry]);
+
+  const stopSpace = useCallback(
+    async (wsId: string) => {
+      const space = spaces.find((candidate) => candidate.wsId === wsId);
+      if (!space) return;
+      const dirty = spaceDirty[wsId] ?? 0;
+      const warning = dirty > 0 ? ` ${dirty} unsaved file(s) will be lost.` : "";
+      if (!window.confirm(`Stop the IDE session and release its resources?${warning}`)) return;
+      try {
+        await api.deleteStudioSession(token, space.sessionId);
+        closeSpace(wsId);
+      } catch (e) {
+        setError(errText(e));
+      }
+    },
+    [closeSpace, spaceDirty, spaces, token],
+  );
 
   /* ── Space routing & restore ──
      The URL mirrors the active space (/space/{wsId} ↔ /), the list of open
@@ -679,7 +712,6 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
   /* ── Portal ↔ IDE bridge (postMessage) ──
      Outbound: theme on iframe load + on portal theme change. Inbound:
      studio.status {dirty} — origin-checked against known space URLs. */
-  const [spaceDirty, setSpaceDirty] = useState<Record<string, number>>({});
   const spaceOrigin = (url: string): string => {
     try {
       return new URL(url).origin;
@@ -694,14 +726,6 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
      until the bridge answers with studio.status (its ack to studio.init). */
   const tokenRef = useRef(token);
   tokenRef.current = token;
-  const initTimersRef = useRef<Record<string, ReturnType<typeof setInterval>>>({});
-  const stopInitRetry = (wsId: string) => {
-    const t = initTimersRef.current[wsId];
-    if (t !== undefined) {
-      clearInterval(t);
-      delete initTimersRef.current[wsId];
-    }
-  };
 
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
@@ -1173,10 +1197,17 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
                   </button>
                   <button
                     className="ghost space-x"
-                    title="Close space (the session keeps running)"
+                    title="Hide space (the IDE session keeps running)"
                     onClick={() => closeSpace(s.wsId)}
                   >
                     ✕
+                  </button>
+                  <button
+                    className="ghost space-stop"
+                    title="Stop IDE session and release Kubernetes resources"
+                    onClick={() => void stopSpace(s.wsId)}
+                  >
+                    Stop
                   </button>
                 </div>
               ))}
