@@ -77,11 +77,18 @@ jobs:
           fi
 
           case "${{ inputs.environment }}" in
-            dev) host=studio-dev.cfabric.org ;;
-            test) host=studio-test.cfabric.org ;;
+            dev)
+              host=studio-dev.cfabric.org
+              prototype_host=studio-dev-poc.cfabric.org
+              ;;
+            test)
+              host=studio-test.cfabric.org
+              prototype_host=studio-test-poc.cfabric.org
+              ;;
             *) echo "Unsupported environment" >&2; exit 1 ;;
           esac
           echo "host=$host" >> "$GITHUB_OUTPUT"
+          echo "prototype_host=$prototype_host" >> "$GITHUB_OUTPUT"
           echo "url=https://$host" >> "$GITHUB_OUTPUT"
           echo "source_kind=$source_kind" >> "$GITHUB_OUTPUT"
           echo "source_commit=$resolved" >> "$GITHUB_OUTPUT"
@@ -231,6 +238,10 @@ jobs:
           if [ "${{ inputs.component }}" = all ] || [ "${{ inputs.component }}" = prototype ]; then
             curl --fail --silent --show-error --retry 6 --retry-all-errors \
               "https://$host/prototype/" >/dev/null
+            curl --fail --silent --show-error --retry 6 --retry-all-errors \
+              "https://${{ steps.target.outputs.prototype_host }}/" >/dev/null
+            curl --fail --silent --show-error --retry 6 --retry-all-errors \
+              "https://${{ steps.target.outputs.prototype_host }}/cf/health" >/dev/null
           fi
           curl --fail --silent --show-error --retry 6 --retry-all-errors \
             "https://$host/cf/health" >/dev/null

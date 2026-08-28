@@ -42,6 +42,7 @@ frontend:
 
 frontendPrototype:
   enabled: true
+  hostname: studio-dev-poc.cfabric.org
   image:
     tag: "sha-REPLACE_ME"
 

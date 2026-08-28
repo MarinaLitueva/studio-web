@@ -105,12 +105,16 @@ frontend:
   autoscaling:
     enabled: false
 
-# Experimental pre-FrontX portal. It is a separate immutable image and is
-# exposed under the existing Studio hostname at /prototype/, so no DNS record
-# or additional certificate is required.
+# Experimental pre-FrontX portal. It is a separate immutable image. The
+# existing Studio hostname keeps exposing it at `path`; when `hostname` is
+# set, the same service is additionally exposed at the root of that host.
 frontendPrototype:
   enabled: false
   path: /prototype
+  hostname: ""
+  ingress:
+    annotations: {}
+    tls: []
   image:
     repository: ghcr.io/constructorfabric/studio-web/studio-frontend-prototype
     tag: ""                # REQUIRED when enabled: fixed service release tag
