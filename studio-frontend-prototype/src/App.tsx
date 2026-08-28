@@ -214,7 +214,6 @@ function Login({
   onLogin: (token: string, me: Me) => void;
   sessionExpired?: boolean;
 }) {
-  const [value, setValue] = useState("studio-admin-token");
   const [error, setError] = useState<string | null>(
     sessionExpired ? "Session expired — please sign in again." : null,
   );
@@ -237,20 +236,6 @@ function Login({
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      const who = await api.me(value); // 401 -> failed login
-      onLogin(value, who);
-    } catch (err) {
-      setError(err instanceof ApiError && err.status === 401 ? "Invalid token" : errText(err));
-    } finally {
-      setBusy(false);
-    }
-  }
 
   const sso = (idpHint?: string) =>
     import("./oidc").then(({ startSsoLogin }) => startSsoLogin(idpHint));
@@ -285,23 +270,6 @@ function Login({
 
         {error && <div className="error">{error}</div>}
 
-        {/* Static-profile escape hatch: dev tokens, tucked away. */}
-        <details className="login-dev">
-          <summary>Developer sign-in (static token)</summary>
-          <form onSubmit={submit} className="inline">
-            <input
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder="studio-admin-token"
-            />
-            <button disabled={busy || !value}>Sign in</button>
-          </form>
-          <p className="hint">
-            Works with the static profiles only (<code>config/dev.yaml</code>,{" "}
-            <code>config/postgres.yaml</code>). The compose stack signs in through Keycloak
-            instead — use the button above, admin or demo, password <code>studio</code>.
-          </p>
-        </details>
       </div>
     </div>
   );
