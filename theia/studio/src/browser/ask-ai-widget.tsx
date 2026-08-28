@@ -9,7 +9,7 @@ import * as React from '@theia/core/shared/react';
 import { injectable } from '@theia/core/shared/inversify';
 import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { Message } from '@theia/core/lib/browser/widgets/widget';
-import { StudioApi } from './portal-bridge-contribution';
+import { StudioApi } from './studio-api';
 
 export const ASK_AI_WIDGET_ID = 'studio.ask-ai';
 

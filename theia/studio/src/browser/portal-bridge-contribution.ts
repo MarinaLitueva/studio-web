@@ -22,6 +22,7 @@ import { Saveable } from '@theia/core/lib/browser/saveable';
 import { CommandService, PreferenceService, PreferenceScope } from '@theia/core/lib/common';
 import { ArtifactGraphCommand } from './artifact-graph-contribution';
 import { OpenInEditorFrontendController } from './open-in-editor-controller';
+import { StudioApi } from './studio-api';
 
 interface PortalMessage {
     type?: string;
@@ -39,33 +40,6 @@ interface PortalMessage {
  * portal renews it silently and re-posts `studio.token`; gears calls go
  * same-origin through the session gate at `/studio-api/<gear path>`.
  */
-export const StudioApi = {
-    token: '' as string,
-    /** Tenant scope from the portal handshake (`studio.init` workspaceId). The
-     *  Artifact Graph appends it as `?scope=` so it shows only the opened
-     *  tenant's artifacts. Empty = unscoped (standalone / legacy portal). */
-    scope: '' as string,
-    /** Append the current tenant scope to a gear path as a `scope` query param
-     *  (no-op when unset). Merges with an existing query string. */
-    scoped(path: string): string {
-        if (!StudioApi.scope) {
-            return path;
-        }
-        const sep = path.includes('?') ? '&' : '?';
-        return `${path}${sep}scope=${encodeURIComponent(StudioApi.scope)}`;
-    },
-    async fetch(path: string, init: RequestInit = {}): Promise<Response> {
-        return fetch(`/studio-api${path}`, {
-            ...init,
-            headers: {
-                ...(init.headers ?? {}),
-                Authorization: `Bearer ${StudioApi.token}`,
-                'Content-Type': 'application/json',
-            },
-        });
-    },
-};
-
 @injectable()
 export class PortalBridgeContribution implements FrontendApplicationContribution {
 

@@ -2,7 +2,7 @@ import * as React from '@theia/core/shared/react';
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { Message } from '@theia/core/lib/browser/widgets/widget';
-import { StudioApi } from './portal-bridge-contribution';
+import { StudioApi } from './studio-api';
 import { OpenInEditorFrontendController } from './open-in-editor-controller';
 
 // Local mirror of the studio-artifact-ingest DTOs. Index signatures let the
