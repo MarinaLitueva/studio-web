@@ -25,15 +25,15 @@ server {
     listen 8080;
     server_name _;
     # TLS terminates at Traefik, so nginx sees HTTP internally. Keep redirects
-    # relative to avoid downgrading https://.../prototype to an http:// URL.
+    # relative for the legacy /prototype container mount as well.
     absolute_redirect off;
 
     root /usr/share/nginx/html;
     index index.html;
 
-    # Kubernetes exposes this image at /prototype/. Strip that mount prefix
-    # before resolving files from the image root. The bundle uses relative
-    # asset URLs, so compose can still serve the identical image at `/`.
+    # Compatibility mount for local/legacy callers. Kubernetes exposes the
+    # image at `/` on a dedicated POC host, but retaining this costs nothing
+    # and lets the same immutable image serve older compose configurations.
     location = /prototype {
         return 308 /prototype/;
     }

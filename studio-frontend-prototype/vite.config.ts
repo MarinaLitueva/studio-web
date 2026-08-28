@@ -4,8 +4,8 @@ import react from "@vitejs/plugin-react";
 // Dev proxy: the backend (studio-backend) serves REST under /cf on :8090.
 // In production the same /cf prefix is proxied by nginx (see nginx.conf).
 export default defineConfig({
-  // Keep asset URLs relative so the same immutable image works both at `/`
-  // (local/compose) and behind the cluster's `/prototype/` ingress path.
+  // Keep asset URLs relative so the same immutable image works at `/` on the
+  // dedicated POC host and with the legacy `/prototype/` container mount.
   base: "./",
   plugins: [react()],
   server: {

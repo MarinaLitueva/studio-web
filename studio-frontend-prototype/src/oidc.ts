@@ -15,9 +15,9 @@ import { env } from "./env";
 const ISSUER: string = env.oidcIssuer ?? "https://localhost:8443/realms/studio";
 const CLIENT_ID: string = env.oidcClientId ?? "studio-portal";
 
-// Vite's relative base (`./`) lets one image run at `/` in compose and at
-// `/prototype/` in Kubernetes. Resolve it against the current document so the
-// OIDC callback and post-logout redirect return to the same mount point.
+// Vite's relative base (`./`) lets one image run at `/` on the dedicated POC
+// host and at a legacy nested mount. Resolve it against the current document
+// so the OIDC callback and post-logout redirect return to the same mount point.
 function applicationUrl(): string {
   return new URL(import.meta.env.BASE_URL, window.location.href).toString();
 }

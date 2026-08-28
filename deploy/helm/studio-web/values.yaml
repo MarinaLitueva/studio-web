@@ -105,9 +105,10 @@ frontend:
   autoscaling:
     enabled: false
 
-# Experimental pre-FrontX portal. It is a separate immutable image. The
-# existing Studio hostname keeps exposing it at `path`; when `hostname` is
-# set, the same service is additionally exposed at the root of that host.
+# Experimental pre-FrontX portal. It is a separate immutable image exposed at
+# the root of `hostname`; the primary Studio hostname serves only the main
+# frontend. `path` remains the container-internal health/mount compatibility
+# path and is not added to the primary ingress.
 frontendPrototype:
   enabled: false
   path: /prototype

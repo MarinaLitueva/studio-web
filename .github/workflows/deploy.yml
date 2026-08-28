@@ -237,8 +237,6 @@ jobs:
             "https://$host/" >/dev/null
           if [ "${{ inputs.component }}" = all ] || [ "${{ inputs.component }}" = prototype ]; then
             curl --fail --silent --show-error --retry 6 --retry-all-errors \
-              "https://$host/prototype/" >/dev/null
-            curl --fail --silent --show-error --retry 6 --retry-all-errors \
               "https://${{ steps.target.outputs.prototype_host }}/" >/dev/null
             curl --fail --silent --show-error --retry 6 --retry-all-errors \
               "https://${{ steps.target.outputs.prototype_host }}/cf/health" >/dev/null
