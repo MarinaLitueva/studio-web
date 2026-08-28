@@ -16,6 +16,8 @@ import {
   eventBus,
   ExtensionDomainSlot,
   screenDomain,
+  FRONTX_ACTION_MOUNT_EXT,
+  type ScreenExtension,
 } from '@gears-frontx/react';
 import { bootstrapMFE } from './bootstrap';
 
@@ -39,6 +41,30 @@ export function MfeScreenContainer() {
       eventBus.emit('app/mfe/bootstrap', { status: 'failed' });
     });
   }, [app]);
+
+  useEffect(() => {
+    const registry = app.mfeRegistry;
+    if (!bootstrapped || !registry) return;
+    if (registry.getMountedExtensions(screenDomain.id).length > 0) return;
+
+    const screens = registry.getExtensionsForDomain(screenDomain.id) as ScreenExtension[];
+    const initialScreen =
+      screens.find((extension) => extension.presentation.route === '/projects') ??
+      [...screens].sort(
+        (a, b) => (a.presentation.order ?? 999) - (b.presentation.order ?? 999),
+      )[0];
+    if (!initialScreen) return;
+
+    registry.executeActionsChain({
+      action: {
+        type: FRONTX_ACTION_MOUNT_EXT,
+        target: screenDomain.id,
+        payload: { subject: initialScreen.id },
+      },
+    }).catch((error) => {
+      console.error('[MFE Bootstrap] Failed to mount the initial screen:', error);
+    });
+  }, [app.mfeRegistry, bootstrapped]);
 
   return (
     <div className="flex-1 overflow-auto" data-mfe-screen-container>

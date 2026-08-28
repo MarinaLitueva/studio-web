@@ -32,10 +32,23 @@ vi.mock('@gears-frontx/react', async (importOriginal) => ({
 }));
 
 describe('MfeScreenContainer', () => {
-  let app: { mfeRegistry: Record<string, never> };
+  let registry: {
+    getMountedExtensions: ReturnType<typeof vi.fn>;
+    getExtensionsForDomain: ReturnType<typeof vi.fn>;
+    executeActionsChain: ReturnType<typeof vi.fn>;
+  };
+  let app: { mfeRegistry: typeof registry };
 
   beforeEach(() => {
-    app = { mfeRegistry: {} };
+    registry = {
+      getMountedExtensions: vi.fn().mockReturnValue([]),
+      getExtensionsForDomain: vi.fn().mockReturnValue([
+        { id: 'people', presentation: { route: '/people', order: 30 } },
+        { id: 'projects', presentation: { route: '/projects', order: 20 } },
+      ]),
+      executeActionsChain: vi.fn().mockResolvedValue(undefined),
+    };
+    app = { mfeRegistry: registry };
     mockUseFrontX.mockReturnValue(app);
     mockBootstrapMFE.mockReset();
     mockBootstrapMFE.mockResolvedValue(undefined);
@@ -85,6 +98,21 @@ describe('MfeScreenContainer', () => {
       expect(slot.dataset.domainId).toBe(mockScreenDomain.id);
       expect(slot.dataset.registryPresent).toBe('yes');
       expect(slot.dataset.className).toContain('h-full');
+    });
+  });
+
+  it('mounts Projects as the initial screen after bootstrap', async () => {
+    const { MfeScreenContainer } = await import('./MfeScreenContainer');
+
+    render(<MfeScreenContainer />);
+
+    await waitFor(() => {
+      expect(registry.executeActionsChain).toHaveBeenCalledWith({
+        action: expect.objectContaining({
+          target: mockScreenDomain.id,
+          payload: { subject: 'projects' },
+        }),
+      });
     });
   });
 

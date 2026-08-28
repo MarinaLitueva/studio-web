@@ -29,6 +29,7 @@
  *
  * Usage:
  *   npx tsx scripts/generate-mfe-manifests.ts [--base-url <url>]
+ *   npx tsx scripts/generate-mfe-manifests.ts [--base-path <path>]
  *
  * When --base-url is omitted, publicPath comes from manifest.metaData.publicPath
  * in the enriched mfe-manifest.json (set by the build plugin from mf-manifest.json).
@@ -172,6 +173,7 @@ class ManifestGenerator {
   private readonly mfePackagesDir: string;
   private readonly outputFile: string;
   private readonly globalBaseUrl: string | null;
+  private readonly globalBasePath: string | null;
   private readonly mfeManifestPath: string;
 
   // Packages to skip (hidden dirs, non-MFE directories)
@@ -181,12 +183,14 @@ class ManifestGenerator {
     mfePackagesDir: string,
     outputFile: string,
     mfeManifestPath: string,
-    globalBaseUrl: string | null
+    globalBaseUrl: string | null,
+    globalBasePath: string | null,
   ) {
     this.mfePackagesDir = mfePackagesDir;
     this.outputFile = outputFile;
     this.mfeManifestPath = mfeManifestPath;
     this.globalBaseUrl = globalBaseUrl;
+    this.globalBasePath = globalBasePath;
   }
 
   run(): void {
@@ -282,6 +286,15 @@ class ManifestGenerator {
       return this.globalBaseUrl.endsWith('/')
         ? this.globalBaseUrl
         : `${this.globalBaseUrl}/`;
+    }
+
+    // Production images serve every remote from the same origin as the host.
+    // Keep the hostname out of the image so the exact same artifact can run in
+    // dev, test and prod; bootstrap resolves this root-relative path against
+    // window.location.origin at runtime.
+    if (this.globalBasePath !== null) {
+      const root = this.globalBasePath.replace(/\/+$/, '');
+      return `${root}/${packageDir}/`;
     }
 
     // Use publicPath from enriched manifest (set by the plugin from mfe-manifest.json).
@@ -407,20 +420,31 @@ class ManifestGenerator {
 // CLI entry point
 // ---------------------------------------------------------------------------
 
-function parseArgs(argv: string[]): { baseUrl: string | null } {
+function parseArgs(argv: string[]): { baseUrl: string | null; basePath: string | null } {
   const idx = argv.indexOf('--base-url');
   const baseUrl = (idx !== -1 && idx + 1 < argv.length) ? argv[idx + 1] : null;
-  return { baseUrl };
+  const pathIdx = argv.indexOf('--base-path');
+  const basePath = (pathIdx !== -1 && pathIdx + 1 < argv.length) ? argv[pathIdx + 1] : null;
+  if (baseUrl !== null && basePath !== null) {
+    throw new Error('--base-url and --base-path are mutually exclusive');
+  }
+  return { baseUrl, basePath };
 }
 
-const { baseUrl } = parseArgs(process.argv.slice(2));
+const { baseUrl, basePath } = parseArgs(process.argv.slice(2));
 
 const MFE_PACKAGES_DIR = join(process.cwd(), 'src-app/mfe_packages');
 const OUTPUT_FILE = join(process.cwd(), 'public/generated-mfe-manifests.json');
 const MFE_MANIFEST_PATH = 'dist/mfe-manifest.json';
 
 try {
-  new ManifestGenerator(MFE_PACKAGES_DIR, OUTPUT_FILE, MFE_MANIFEST_PATH, baseUrl).run();
+  new ManifestGenerator(
+    MFE_PACKAGES_DIR,
+    OUTPUT_FILE,
+    MFE_MANIFEST_PATH,
+    baseUrl,
+    basePath,
+  ).run();
 } catch (err) {
   console.error('Error generating MFE manifests:', err instanceof Error ? err.message : String(err));
   process.exit(1);

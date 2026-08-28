@@ -7,14 +7,10 @@
 
 import { spawn } from 'child_process';
 import { existsSync, readdirSync, readFileSync } from 'fs';
-import { dirname, join } from 'path';
-
-// Resolve sibling CLIs from Node's own bin directory rather than relying on
-// PATH lookup. This avoids CWE-427 (attacker-controllable PATH shadowing a
-// trusted executable), even though these scripts are dev-only.
-export const NODE_BIN_DIR = dirname(process.execPath);
+import { join } from 'path';
 
 export const MFE_PACKAGES_DIR = join(process.cwd(), 'src-app/mfe_packages');
+const VITE_CLI = join(process.cwd(), 'node_modules', 'vite', 'bin', 'vite.js');
 
 // Packages to skip (shared libraries, hidden dirs)
 const EXCLUDED_PACKAGES = new Set(['shared']);
@@ -71,16 +67,16 @@ export async function buildMfesSequentially(mfes: MfeInfo[]): Promise<void> {
 
   console.log('📦 Building MFE packages...\n');
 
-  // Spawn `vite build` per package with `cwd` set to that package — avoids
-  // `/bin/sh -c` concatenation (which is non-portable on Windows and fragile
-  // when a package path contains shell-special characters).
+  // Invoke Vite through Node instead of spawning npx.cmd. Windows cannot spawn
+  // .cmd files directly without a shell (EINVAL), while enabling a shell would
+  // reintroduce command parsing. The checked-in dependency is both portable
+  // and deterministic.
+  if (!existsSync(VITE_CLI)) {
+    throw new Error(`Vite CLI not found at ${VITE_CLI}; run npm ci first`);
+  }
   for (const mfe of mfes) {
     await new Promise<void>((resolve, reject) => {
-      const npxPath = join(
-        NODE_BIN_DIR,
-        process.platform === 'win32' ? 'npx.cmd' : 'npx',
-      );
-      const proc = spawn(npxPath, ['vite', 'build'], {
+      const proc = spawn(process.execPath, [VITE_CLI, 'build'], {
         stdio: 'inherit',
         cwd: join(MFE_PACKAGES_DIR, mfe.name),
       });

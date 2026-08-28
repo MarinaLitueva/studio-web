@@ -140,4 +140,27 @@ describe('bootstrapMFE (host-app)', () => {
 
     expect(registerExtension).not.toHaveBeenCalled();
   });
+
+  it('resolves packaged MFE paths against the runtime origin', async () => {
+    const manifest = {
+      id: 'projects-manifest',
+      metaData: { publicPath: '/mfes/projects-mfe/' },
+    };
+    const config = {
+      manifest,
+      entries: [{ id: 'projects-entry', manifest }],
+      extensions: [],
+    };
+
+    const { resolveRuntimePublicPaths } = await import('./bootstrap');
+    const [resolved] = resolveRuntimePublicPaths(
+      [config] as never,
+      'https://studio-dev.cfabric.org',
+    );
+
+    expect(resolved.manifest.metaData.publicPath).toBe(
+      'https://studio-dev.cfabric.org/mfes/projects-mfe/',
+    );
+    expect(resolved.entries[0].manifest).toBe(resolved.manifest);
+  });
 });

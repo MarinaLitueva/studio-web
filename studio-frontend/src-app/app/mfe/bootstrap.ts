@@ -74,6 +74,30 @@ interface MfeManifestConfig {
   schemas?: JSONSchema[];
 }
 
+/** Resolve deploy-time same-origin MFE paths without baking an environment hostname into the image. */
+export function resolveRuntimePublicPaths(
+  manifests: readonly MfeManifestConfig[],
+  origin: string,
+): MfeManifestConfig[] {
+  return manifests.map((config) => {
+    const configuredPath = config.manifest.metaData?.publicPath;
+    if (!configuredPath?.startsWith('/')) return config;
+
+    const manifest: MfManifest = {
+      ...config.manifest,
+      metaData: {
+        ...config.manifest.metaData,
+        publicPath: new URL(configuredPath, origin).href,
+      },
+    };
+    return {
+      ...config,
+      manifest,
+      entries: config.entries.map((entry) => ({ ...entry, manifest })),
+    };
+  });
+}
+
 function mfeStylesheetHrefs(manifests: readonly MfeManifestConfig[]): string[] {
   const hrefs: string[] = [];
   for (const config of manifests) {
@@ -396,7 +420,10 @@ export async function bootstrapMFE(app: FrontXApp): Promise<void> {
       `[MFE Bootstrap] Failed to load MFE manifests from ${MFE_MANIFESTS_URL}: ${response.status} ${response.statusText}`,
     );
   }
-  const manifests = (await response.json()) as MfeManifestConfig[];
+  const manifests = resolveRuntimePublicPaths(
+    (await response.json()) as MfeManifestConfig[],
+    window.location.origin,
+  );
 
   if (manifests.length === 0) {
     console.warn(
