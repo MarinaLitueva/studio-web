@@ -32,6 +32,7 @@ import {
   type RepoEntry,
   type Tenant,
   type WorkspaceSettings,
+  waitForStudioSessionReady,
 } from "./api";
 
 // Portal (личный кабинет): sign in with a bearer token, then an app shell
@@ -6258,9 +6259,10 @@ function StudioLauncher({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, target.id]);
 
-  // No polling needed for opening: the space embeds the session URL right
-  // away and the container-side splash keeps the frame alive until Theia
-  // takes the port over.
+  // Kubernetes creates the session Pod asynchronously. Do not mount its URL
+  // until the backend reachability probe moves it from starting to running;
+  // otherwise the first iframe request races the Service endpoint and gets a
+  // sticky Cloudflare 502 instead of the container-side splash.
 
   // "Open in IDE" means open the Studio — launch as soon as the sources are
   // known instead of asking for a second click. Creation is idempotent per
@@ -6300,11 +6302,13 @@ function StudioLauncher({
       const usable = freshRepos.filter((r) =>
         r.source === "local" ? Boolean(r.path?.trim()) : Boolean(r.url?.trim()),
       );
-      const s = await api.createStudioSession(token, target.id, usable, freshRoot);
-      setSession(s);
-      // Straight into the embedded space — starting sessions show the
-      // in-container splash until the IDE is up.
-      onOpen({ id: s.id, url: s.url });
+      const created = await api.createStudioSession(token, target.id, usable, freshRoot);
+      setSession(created);
+      const ready = await waitForStudioSessionReady(created, () =>
+        api.studioSession(token, created.id),
+      );
+      setSession(ready);
+      onOpen({ id: ready.id, url: ready.url });
     } catch (e) {
       setError(errText(e));
     } finally {

@@ -317,6 +317,53 @@ export interface StudioSession {
   sources: string[];
 }
 
+interface SessionWaitOptions {
+  timeoutMs?: number;
+  pollIntervalMs?: number;
+  now?: () => number;
+  sleep?: (milliseconds: number) => Promise<void>;
+}
+
+/**
+ * Wait until a newly-created asynchronous IDE runtime is actually reachable.
+ *
+ * Kubernetes returns the session record before its Pod has been scheduled and
+ * the gate has bound port 3003. Embedding the URL while it is still `starting`
+ * makes the reverse proxy answer 502 and leaves Cloudflare's error document in
+ * the iframe. GET refreshes the server-side reachability probe, so poll that
+ * state before mounting the frame.
+ */
+export async function waitForStudioSessionReady(
+  initial: StudioSession,
+  refresh: () => Promise<StudioSession>,
+  options: SessionWaitOptions = {},
+): Promise<StudioSession> {
+  const timeoutMs = options.timeoutMs ?? 120_000;
+  const pollIntervalMs = options.pollIntervalMs ?? 1_000;
+  const now = options.now ?? Date.now;
+  const sleep =
+    options.sleep ??
+    ((milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
+  const deadline = now() + timeoutMs;
+  let session = initial;
+
+  while (session.state === "starting") {
+    const remaining = deadline - now();
+    if (remaining <= 0) {
+      throw new Error(
+        `IDE session did not become ready within ${Math.ceil(timeoutMs / 1_000)} seconds`,
+      );
+    }
+    await sleep(Math.min(pollIntervalMs, remaining));
+    session = await refresh();
+  }
+
+  if (session.state !== "running") {
+    throw new Error(`IDE session stopped before it became ready (state: ${session.state})`);
+  }
+  return session;
+}
+
 /** Loopback names the session URL may carry — same machine, different "site". */
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 

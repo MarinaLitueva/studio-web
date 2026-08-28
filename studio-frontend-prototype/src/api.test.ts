@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { ApiError, alignSessionHost, apiUrl } from "./api";
+import {
+  ApiError,
+  alignSessionHost,
+  apiUrl,
+  type StudioSession,
+  waitForStudioSessionReady,
+} from "./api";
 
 describe("apiUrl", () => {
   it("prefixes paths with /cf", () => {
@@ -63,5 +69,59 @@ describe("alignSessionHost", () => {
   it("hands back anything that is not a URL", () => {
     at("127.0.0.1");
     expect(alignSessionHost("")).toBe("");
+  });
+});
+
+describe("waitForStudioSessionReady", () => {
+  const session = (state: StudioSession["state"]): StudioSession => ({
+    id: "session-1",
+    workspace_id: "workspace-1",
+    state,
+    url: "/cf/studio-session/v1/ide/session-1/",
+    created_at_epoch_secs: 1,
+    sources: [],
+  });
+
+  it("does not refresh an already-running session", async () => {
+    let refreshes = 0;
+    const ready = await waitForStudioSessionReady(session("running"), async () => {
+      refreshes += 1;
+      return session("running");
+    });
+    expect(ready.state).toBe("running");
+    expect(refreshes).toBe(0);
+  });
+
+  it("polls a starting Kubernetes session before returning its URL", async () => {
+    const states: StudioSession["state"][] = ["starting", "running"];
+    const ready = await waitForStudioSessionReady(
+      session("starting"),
+      async () => session(states.shift() ?? "running"),
+      { sleep: async () => undefined },
+    );
+    expect(ready.state).toBe("running");
+    expect(states).toHaveLength(0);
+  });
+
+  it("fails clearly when the runtime stops during startup", async () => {
+    await expect(
+      waitForStudioSessionReady(session("starting"), async () => session("stopped"), {
+        sleep: async () => undefined,
+      }),
+    ).rejects.toThrow("stopped before it became ready");
+  });
+
+  it("times out instead of polling forever", async () => {
+    let clock = 0;
+    await expect(
+      waitForStudioSessionReady(session("starting"), async () => session("starting"), {
+        timeoutMs: 10,
+        pollIntervalMs: 10,
+        now: () => clock,
+        sleep: async (milliseconds) => {
+          clock += milliseconds;
+        },
+      }),
+    ).rejects.toThrow("did not become ready");
   });
 });
