@@ -11,18 +11,16 @@ interface ProjectsToolbarProps {
   query: string;
   onQueryChange: (query: string) => void;
   busy: boolean;
+  hasOrg: boolean;
   hasWorkspace: boolean;
 }
 
-/**
- * The mockup's Portfolio Header: the page title and every control that acts on
- * the list, on one line above the table.
- */
 // @cpt-dod:cpt-studiofrontend-dod-workspace-scope-no-workspace:p1
 export const ProjectsToolbar: React.FC<ProjectsToolbarProps> = ({
   query,
   onQueryChange,
   busy,
+  hasOrg,
   hasWorkspace,
 }) => {
   const t = useProjectListText();
@@ -44,7 +42,12 @@ export const ProjectsToolbar: React.FC<ProjectsToolbarProps> = ({
         onChange={(event) => onQueryChange(event.target.value)}
         aria-label={t('search_placeholder')}
       />
-      <Button size="sm" onClick={() => openWorkspaceForm(bridge)}>
+      <Button
+        size="sm"
+        disabled={!hasOrg}
+        title={hasOrg ? undefined : t('empty_no_org')}
+        onClick={() => openWorkspaceForm(bridge)}
+      >
         {t('new_workspace')}
       </Button>
       <Button

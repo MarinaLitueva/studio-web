@@ -109,6 +109,7 @@ Definitions of Done, which are traced.
 **Error Scenarios**:
 - The name duplicates a sibling workspace; account-management refuses and the form keeps the name.
 - There is no organization in scope; the form refuses to submit and says so.
+- The workspace is written but the shell never hears it; the overlay stays open and offers to retry the announcement alone, because retrying the creation would write a second workspace under the same name.
 
 **Steps**:
 1. [ ] - `p1` - Member activates "New workspace" in the Projects list toolbar - `inst-1`
@@ -118,8 +119,10 @@ Definitions of Done, which are traced.
 5. [ ] - `p1` - Run `cpt-studiofrontend-algo-workspace-scope-write` - `inst-5`
 6. [ ] - `p1` - **IF** account-management refuses - `inst-6`
    1. [ ] - `p1` - **RETURN** the overlay stays open with the name intact and reports the refusal - `inst-7`
-7. [ ] - `p1` - Announce the created workspace to the shell so it enters the switcher and becomes current - `inst-8`
-8. [ ] - `p1` - **RETURN** unmount the overlay extension - `inst-9`
+7. [ ] - `p1` - Announce the created workspace to the shell so it enters the switcher and becomes current, and wait for the shell to have heard it - `inst-8`
+8. [ ] - `p1` - **IF** the announcement does not land - `inst-9`
+   1. [ ] - `p1` - **RETURN** the overlay stays open, reports that the workspace exists but was not announced, and offers the announcement alone as the retry - `inst-10`
+9. [ ] - `p1` - **RETURN** unmount the overlay extension - `inst-11`
 
 ### Switch the workspace in scope
 
@@ -153,10 +156,12 @@ Definitions of Done, which are traced.
 
 **Steps**:
 1. [x] - `p1` - `API: GET /cf/account-management/v1/tenants/{org}/children?$filter=tenant_type eq '{workspace type}' (one page)` - `inst-1`
-2. [x] - `p1` - **IF** the read fails - `inst-2`
-   1. [x] - `p1` - **RETURN** an empty list rather than a stale one; the slot then offers nothing - `inst-3`
-3. [x] - `p1` - Keep the current workspace if it is still in the list, otherwise take the first - `inst-4`
-4. [x] - `p1` - **RETURN** the list and the current workspace - `inst-5`
+2. [x] - `p1` - **IF** the organization in scope is no longer the one this read was made for - `inst-2`
+   1. [x] - `p1` - **RETURN** nothing; the answer belongs to an organization that has been left - `inst-3`
+3. [x] - `p1` - **IF** the read fails - `inst-4`
+   1. [x] - `p1` - **RETURN** the workspaces already in scope, marked unread rather than emptied - `inst-5`
+4. [x] - `p1` - Keep the current workspace if it is still in the list, otherwise take the first - `inst-6`
+5. [x] - `p1` - **RETURN** the list and the current workspace - `inst-7`
 
 ### Write the workspace
 
@@ -185,9 +190,11 @@ Definitions of Done, which are traced.
 
 **Transitions**:
 1. [ ] - `p1` - **FROM** Unresolved **TO** Selected **WHEN** the organization's workspaces are read and at least one exists - `inst-1`
-2. [ ] - `p1` - **FROM** Unresolved **TO** Empty **WHEN** the organization has no workspace, or the read failed - `inst-2`
+2. [ ] - `p1` - **FROM** Unresolved **TO** Empty **WHEN** the organization is read and has no workspace - `inst-2`
 3. [ ] - `p1` - **FROM** Empty **TO** Selected **WHEN** a workspace is created - `inst-3`
 4. [ ] - `p1` - **FROM** Selected **TO** Unresolved **WHEN** the organization is switched - `inst-4`
+5. [ ] - `p1` - **FROM** Unresolved **TO** Unresolved **WHEN** the read fails; the next workspace-scoped screen retries it - `inst-5`
+6. [ ] - `p1` - **FROM** Selected **TO** Selected **WHEN** the read fails; the workspace in scope outlives a transient error - `inst-6`
 
 ## 5. Definitions of Done
 
@@ -203,6 +210,19 @@ Same split as the organization, and for the same reason: workspaces are
 account-management tenants, which the shell already talks to, and the answer is
 needed by the top bar before any MFE has mounted. Publishing it is the only
 host → child channel that survives an MFE's module realm.
+
+Two rules follow from the shell owning it, and neither is optional:
+
+- A read may only write for the organization it was made for. Organizations are
+  switched faster than the list comes back, so every answer — the list and the
+  failure alike — is checked against the organization in scope when it arrives,
+  and dropped if that is no longer the one it was read for.
+- A **failed** read is not an empty one. An organization with no workspace and
+  an organization whose workspaces could not be read are different states, and
+  the list carries a `pending`/`ready`/`failed` status saying which — the same
+  three-way answer the MFE bootstrap status gives the menu, for the same reason.
+  A failure leaves the list and the workspace in scope exactly as they were, and
+  the next workspace-scoped screen re-reads them.
 
 **Implements**:
 - `cpt-studiofrontend-algo-workspace-scope-resolve`
@@ -234,6 +254,11 @@ governed by one mechanism is worth more than either rule chosen alone.
 Visibility only: the chosen workspace stays chosen and stays published while an
 organization-scoped screen is open, or navigating to People and back would lose
 the scope and the overlays would open without a parent.
+
+While the read is still pending on a screen that does work in a workspace, the
+slot holds a placeholder rather than collapsing — an unread list is not an empty
+one here either, and switching organizations would otherwise blank that part of
+the top bar and fill it again.
 
 **Implements**:
 - `cpt-studiofrontend-flow-workspace-scope-switch`
@@ -268,12 +293,19 @@ Not an event and not a refetch: the overlay runs in its own module realm, so the
 shell never hears its event bus, and the shell has no reason to re-read a list it
 is being told the one new row of.
 
+The overlay **MUST NOT** close before the chain has landed. The tenant is
+written by the time the announcement runs, so a chain that is sent and not waited on
+turns a lost message into a workspace that exists in account-management and in
+no list the member can see. An announcement that fails therefore keeps the
+overlay open, says the workspace was created, and retries **the announcement** — never
+the creation, which would write a second workspace under the same name.
+
 **Implements**:
 - `cpt-studiofrontend-flow-workspace-scope-create`
 
 **Touches**:
 - Action: `constructor_studio.context.workspaces.publish.v1~`
-- Entities: `contextActions`, `bootstrap`, `workspaceEffects`
+- Entities: `contextActions`, `bootstrap`, `workspaceEffects`, `workspaceActions`, `NewWorkspaceForm`, `workspaceSlice`
 
 ### The projects list is rooted at the workspace
 
@@ -329,6 +361,11 @@ portal picks the workspace, and the list shows only what is in one.
 The system **MUST** disable "New project" while no workspace is current, and
 **MUST** leave "New workspace" available — that is the way out of the state.
 
+"New workspace" is gated on the organization instead, and only on it: a
+workspace is created under the organization in scope, so without one there is
+nothing to create it in and the button says so rather than opening a form whose
+only button is already refused.
+
 **Implements**:
 - `cpt-studiofrontend-flow-workspace-scope-create`
 
@@ -337,15 +374,20 @@ The system **MUST** disable "New project" while no workspace is current, and
 
 ## 6. Acceptance Criteria
 
-- [ ] With no workspace in the organization, the top bar shows the organization alone, "New project" is disabled and "New workspace" is not.
+- [ ] With no workspace in the organization, the top bar shows the organization alone, "New project" is disabled and "New workspace" is not; with no organization at all, both are disabled.
 - [ ] The workspace slot is in the top bar on the Projects screen and absent on Connections and People.
 - [ ] Leaving Projects for another screen and coming back shows the same workspace still current, and the Projects list unchanged.
 - [ ] Activating "New workspace" opens an overlay with a single name field; Escape, the scrim and Cancel all close it and write nothing.
 - [ ] Confirming a name creates a tenant of the workspace type whose parent is the organization in scope.
 - [ ] The created workspace appears in the top bar slot immediately and is the current one, without a page reload.
+- [ ] If the announcement to the shell fails, the overlay stays open and says the workspace was created; the button then retries the announcement and never creates a second workspace.
 - [ ] A name that duplicates an existing workspace leaves the overlay open, keeps the name, and shows what was refused.
 - [ ] With a workspace current, "New project" is enabled and a project created through the wizard is a child of that workspace.
 - [ ] Switching workspaces replaces the Projects list with the chosen workspace's projects, and an open project is left.
 - [ ] Switching organizations re-reads the workspaces and selects one of the new organization's, never one of the previous organization's.
+- [ ] Choosing the organization already in scope changes nothing: the workspace stays current, an open project stays open, and no request is made.
+- [ ] On a workspace-scoped screen the slot holds a placeholder while the list is being read, rather than disappearing and coming back.
+- [ ] Switching organizations while the previous organization's workspaces are still being read leaves the slot showing the new organization's, whatever order the two reads answer in.
+- [ ] A failed workspace read leaves the workspace in scope and the switcher's list untouched, and does not present the organization as having no workspace.
 - [ ] The Projects list shows an empty state, not workspace rows, for a workspace with no projects.
 - [ ] Every row in the list is a project: no expandable rows, no indentation and no container rows anywhere in it.

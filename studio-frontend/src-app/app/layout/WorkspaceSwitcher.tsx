@@ -10,6 +10,7 @@ import {
   DropdownMenuItem,
 } from '@gears-frontx/ui-kit/dropdown-menu';
 import { ChevronDown, LayoutGrid } from 'lucide-react';
+import { Skeleton } from '@gears-frontx/ui-kit/skeleton';
 import {
   APP_CONTEXT_SLICE_KEY,
   type AppContextState,
@@ -24,12 +25,16 @@ export const WorkspaceSwitcher: React.FC = () => {
   const current: ContextEntity | null = context?.workspace ?? null;
   const options: ContextEntity[] = context?.workspaces ?? [];
   const used = context?.screenUsesWorkspace ?? false;
+  const status = context?.workspacesStatus ?? 'pending';
 
   const pick = useCallback((id: string) => {
     eventBus.emit('app/context/workspace/changed', { workspaceId: id });
   }, []);
 
-  if (!used || !current) return null;
+  if (!used) return null;
+  if (status === 'pending' && !current) return <Skeleton className="h-5 w-32" />;
+
+  if (!current) return null;
 
   const label = (
     <>

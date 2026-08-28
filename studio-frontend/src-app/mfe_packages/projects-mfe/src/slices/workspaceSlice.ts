@@ -1,6 +1,4 @@
-/**
- * The New workspace form's state: one name, and what happened to it.
- */
+/** The New workspace form's state: one name, and what happened to it.*/
 
 import { createSlice, type ReducerPayload } from '@gears-frontx/react';
 import type { Refusal } from '@constructor-studio/mfe-shared';
@@ -9,6 +7,7 @@ export interface WorkspaceCreateState {
   name: string;
   submitting: boolean;
   error: Refusal | null;
+  created: { id: string; name: string } | null;
 }
 
 const SLICE_KEY = 'projects/workspace-create' as const;
@@ -17,10 +16,17 @@ const initialState: WorkspaceCreateState = {
   name: '',
   submitting: false,
   error: null,
+  created: null,
 };
 
-const { slice, resetWorkspaceForm, editWorkspaceName, workspaceSubmitStarted, workspaceSubmitFailed } =
-  createSlice({
+const {
+  slice,
+  resetWorkspaceForm,
+  editWorkspaceName,
+  workspaceSubmitStarted,
+  workspaceSubmitFailed,
+  workspaceAnnounceFailed,
+} = createSlice({
     name: SLICE_KEY,
     initialState,
     reducers: {
@@ -29,6 +35,7 @@ const { slice, resetWorkspaceForm, editWorkspaceName, workspaceSubmitStarted, wo
         state.name = '';
         state.submitting = false;
         state.error = null;
+        state.created = null;
       },
       editWorkspaceName: (state: WorkspaceCreateState, action: ReducerPayload<string>) => {
         state.name = action.payload;
@@ -46,6 +53,14 @@ const { slice, resetWorkspaceForm, editWorkspaceName, workspaceSubmitStarted, wo
         state.submitting = false;
         state.error = action.payload;
       },
+      workspaceAnnounceFailed: (
+        state: WorkspaceCreateState,
+        action: ReducerPayload<{ workspace: { id: string; name: string }; error: Refusal }>
+      ) => {
+        state.submitting = false;
+        state.created = action.payload.workspace;
+        state.error = action.payload.error;
+      },
     },
   });
 
@@ -55,6 +70,7 @@ export {
   editWorkspaceName,
   workspaceSubmitStarted,
   workspaceSubmitFailed,
+  workspaceAnnounceFailed,
 };
 export const WORKSPACE_CREATE_SLICE_KEY = SLICE_KEY;
 

@@ -25,6 +25,7 @@ const ProjectList: React.FC = () => {
         query={query}
         onQueryChange={setQuery}
         busy={busy}
+        hasOrg={!!org}
         hasWorkspace={!!workspace}
       />
 
@@ -36,13 +37,6 @@ const ProjectList: React.FC = () => {
             <Skeleton className={styles.rowSkeleton} />
           </div>
         ) : failed || translationsFailed ? (
-          /*
-           * `error_title` is itself one of the strings that failed to load when
-           * `translationsFailed` is what got us here, so `t` would render the
-           * key. The literal is the last resort for exactly that case — a
-           * chunk that never arrived — and never shows while the dictionary is
-           * intact.
-           */
           <p className={styles.state}>
             {translationsFailed ? 'Could not load this screen.' : t('error_title')}
           </p>

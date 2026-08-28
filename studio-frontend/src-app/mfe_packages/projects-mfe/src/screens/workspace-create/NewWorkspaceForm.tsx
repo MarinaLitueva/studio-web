@@ -1,10 +1,16 @@
 /** The New workspace form */
 
 // @cpt-dod:cpt-studiofrontend-dod-workspace-scope-overlay:p1
-import React, { useEffect, useRef } from 'react';
+// @cpt-dod:cpt-studiofrontend-dod-workspace-scope-announce:p1
+import React, { useCallback, useEffect, useRef } from 'react';
 import { eventBus, useAppDispatch, useAppSelector, useMfeBridge } from '@gears-frontx/react';
 import { Button, Input, Label, Skeleton } from '@gears-frontx/ui-kit';
-import { OrganizationProvider, useHostChrome, useOrganization } from '@constructor-studio/mfe-shared';
+import {
+  OrganizationProvider,
+  refusalFrom,
+  useHostChrome,
+  useOrganization,
+} from '@constructor-studio/mfe-shared';
 import { useWorkspaceCreateScreenTranslations, useWorkspaceCreateText } from '../../i18n';
 import {
   closeWorkspaceForm,
@@ -16,6 +22,8 @@ import {
   WORKSPACE_CREATE_SLICE_KEY,
   editWorkspaceName,
   resetWorkspaceForm,
+  workspaceAnnounceFailed,
+  workspaceSubmitStarted,
 } from '../../slices/workspaceSlice';
 import styles from './NewWorkspaceForm.module.css';
 
@@ -29,6 +37,7 @@ const FormBody: React.FC = () => {
   const name = useAppSelector((state) => state[WORKSPACE_CREATE_SLICE_KEY].name);
   const submitting = useAppSelector((state) => state[WORKSPACE_CREATE_SLICE_KEY].submitting);
   const error = useAppSelector((state) => state[WORKSPACE_CREATE_SLICE_KEY].error);
+  const created = useAppSelector((state) => state[WORKSPACE_CREATE_SLICE_KEY].created);
   const { org, loading: orgLoading } = useOrganization();
   const orgId = org?.id ?? null;
 
@@ -36,23 +45,41 @@ const FormBody: React.FC = () => {
     dispatch(resetWorkspaceForm());
   }, [dispatch]);
 
+  const announceToShell = useCallback(
+    async (workspace: { id: string; name: string }): Promise<void> => {
+      try {
+        await publishCreatedWorkspace(bridge, workspace);
+      } catch (error) {
+        dispatch(workspaceAnnounceFailed({ workspace, error: refusalFrom(error, 'error_announce') }));
+        return;
+      }
+      await closeWorkspaceForm(bridge);
+    },
+    [bridge, dispatch]
+  );
+
   useEffect(() => {
     const subscription = eventBus.on('mfe/workspaces/created', (workspace) => {
-      publishCreatedWorkspace(bridge, workspace);
-      closeWorkspaceForm(bridge);
+      void announceToShell(workspace);
     });
     return () => subscription.unsubscribe();
-  }, [bridge]);
+  }, [announceToShell]);
 
   /** The skeleton is for the first load and nothing else. */
   const everLoaded = useRef(false);
   everLoaded.current ||= isLoaded;
   const showSkeleton = !everLoaded.current && !translationsFailed;
 
-  const blocked = submitting || orgLoading || !orgId || !name.trim();
+  const blocked = submitting || (!created && (orgLoading || !orgId || !name.trim()));
 
   const submit = (): void => {
-    if (blocked || !orgId) return;
+    if (blocked) return;
+    if (created) {
+      dispatch(workspaceSubmitStarted());
+      void announceToShell(created);
+      return;
+    }
+    if (!orgId) return;
     requestWorkspaceCreate(orgId, name);
   };
 
@@ -76,7 +103,7 @@ const FormBody: React.FC = () => {
             autoFocus
             value={name}
             placeholder={t('field_name_placeholder')}
-            disabled={submitting}
+            disabled={submitting || !!created}
             onChange={(event) => dispatch(editWorkspaceName(event.target.value))}
             onKeyDown={(event) => {
               if (event.key === 'Enter') submit();
@@ -86,7 +113,7 @@ const FormBody: React.FC = () => {
         </div>
       )}
 
-      {(translationsFailed || error || (!orgId && !orgLoading)) && (
+      {(translationsFailed || error || (!created && !orgId && !orgLoading)) && (
         <p className={styles.error} role="alert">
           {translationsFailed
             ? 'Could not load this screen.'
@@ -102,13 +129,13 @@ const FormBody: React.FC = () => {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => closeWorkspaceForm(bridge)}
+          onClick={() => void closeWorkspaceForm(bridge)}
           disabled={submitting}
         >
           {t('cancel')}
         </Button>
         <Button size="sm" onClick={submit} disabled={blocked}>
-          {t('create')}
+          {created ? t('retry') : t('create')}
         </Button>
       </div>
     </div>

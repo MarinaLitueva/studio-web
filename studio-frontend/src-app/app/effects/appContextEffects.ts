@@ -30,6 +30,7 @@ import {
   setContextOrganizations,
   setContextOrg,
   setContextWorkspaces,
+  setContextWorkspacesStatus,
   setContextWorkspace,
   addContextWorkspace,
   setScreenUsesWorkspace,
@@ -37,6 +38,7 @@ import {
   openContextProject,
   closeContextProject,
   type ContextEntity,
+  type WorkspacesStatus,
 } from '@/app/slices/appContextSlice';
 
 /** Tenants Studio calls organizations; workspaces are their children. */
@@ -51,10 +53,18 @@ function toEntity(tenant: Tenant): ContextEntity {
   return { id: tenant.id, name: tenant.name };
 }
 
-function currentOrgId(app: FrontXApp): string | null {
+interface ContextSliceShape {
+  org?: ContextEntity | null;
+  workspacesStatus?: WorkspacesStatus;
+}
+
+function contextSlice(app: FrontXApp): ContextSliceShape {
   const state = app.store.getState() as Record<string, unknown>;
-  const context = state['app/context'] as { org?: ContextEntity | null } | undefined;
-  return context?.org?.id ?? null;
+  return (state['app/context'] as ContextSliceShape | undefined) ?? {};
+}
+
+function currentOrgId(app: FrontXApp): string | null {
+  return contextSlice(app).org?.id ?? null;
 }
 
 /**
@@ -68,11 +78,12 @@ export function registerAppContextEffects(app: FrontXApp): void {
   const resolveWorkspaces = async (orgId: string | null): Promise<void> => {
     if (!orgId || !apiRegistry.has(AccountsApiService)) {
       dispatch(setContextWorkspaces([]));
+      dispatch(setContextWorkspacesStatus('ready'));
       publishSelectedWorkspace(app);
       return;
     }
     const accounts = apiRegistry.getService(AccountsApiService);
-    let items: ContextEntity[] = [];
+    dispatch(setContextWorkspacesStatus('pending'));
     try {
       // @cpt-begin:cpt-studiofrontend-algo-workspace-scope-resolve:p1:inst-1
       const page = await accounts
@@ -82,23 +93,27 @@ export function registerAppContextEffects(app: FrontXApp): void {
           limit: WORKSPACE_PAGE_LIMIT,
         })
         .fetch();
-      items = (page?.items ?? []).map(toEntity);
       // @cpt-end:cpt-studiofrontend-algo-workspace-scope-resolve:p1:inst-1
-    } catch (error) {
       // @cpt-begin:cpt-studiofrontend-algo-workspace-scope-resolve:p1:inst-2
       // @cpt-begin:cpt-studiofrontend-algo-workspace-scope-resolve:p1:inst-3
+      if (currentOrgId(app) !== orgId) return;
+      // @cpt-end:cpt-studiofrontend-algo-workspace-scope-resolve:p1:inst-2
+      // @cpt-end:cpt-studiofrontend-algo-workspace-scope-resolve:p1:inst-3
+      // @cpt-begin:cpt-studiofrontend-algo-workspace-scope-resolve:p1:inst-7
+      dispatch(setContextWorkspaces((page?.items ?? []).map(toEntity)));
+      dispatch(setContextWorkspacesStatus('ready'));
+      publishSelectedWorkspace(app);
+      // @cpt-end:cpt-studiofrontend-algo-workspace-scope-resolve:p1:inst-7
+    } catch (error) {
+      if (currentOrgId(app) !== orgId) return;
+      // @cpt-begin:cpt-studiofrontend-algo-workspace-scope-resolve:p1:inst-4
       console.warn(
         'Failed to list workspaces:',
         error instanceof Error ? error.message : String(error)
       );
-      items = [];
-      // @cpt-end:cpt-studiofrontend-algo-workspace-scope-resolve:p1:inst-2
-      // @cpt-end:cpt-studiofrontend-algo-workspace-scope-resolve:p1:inst-3
+      dispatch(setContextWorkspacesStatus('failed'));
+      // @cpt-end:cpt-studiofrontend-algo-workspace-scope-resolve:p1:inst-4
     }
-    // @cpt-begin:cpt-studiofrontend-algo-workspace-scope-resolve:p1:inst-5
-    dispatch(setContextWorkspaces(items));
-    publishSelectedWorkspace(app);
-    // @cpt-end:cpt-studiofrontend-algo-workspace-scope-resolve:p1:inst-5
   };
 
   eventBus.on('app/context/fetch', async () => {
@@ -140,6 +155,14 @@ export function registerAppContextEffects(app: FrontXApp): void {
   });
 
   eventBus.on('app/context/org/changed', ({ orgId }) => {
+    if (currentOrgId(app) === orgId) {
+      // Not a change: reselecting must not clear the workspaces and the open
+      // project, nor re-read a list that has not moved. It is still the
+      // member's way of asking again after a failed read, so that case alone
+      // resolves.
+      if (contextSlice(app).workspacesStatus === 'failed') void resolveWorkspaces(orgId);
+      return;
+    }
     dispatch(setContextOrg(orgId));
     publishSelectedOrganization(app);
     publishSelectedWorkspace(app);
@@ -162,6 +185,9 @@ export function registerAppContextEffects(app: FrontXApp): void {
 
   eventBus.on('app/context/workspace/scoped', () => {
     dispatch(setScreenUsesWorkspace(true));
+    if (contextSlice(app).workspacesStatus === 'failed') {
+      void resolveWorkspaces(currentOrgId(app));
+    }
   });
 
   eventBus.on('app/context/screen/changing', () => {

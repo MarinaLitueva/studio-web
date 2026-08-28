@@ -22,7 +22,7 @@ import { ProjectsToolbar } from './ProjectsToolbar';
  * direct `register` resolves every key without waiting on `setLanguage`, and
  * the test never races the async load.
  */
-async function mount(busy: boolean, hasWorkspace = true) {
+async function mount(busy: boolean, hasWorkspace = true, hasOrg = true) {
   createFrontXApp({});
   const { mfeApp } = await import('../../../init');
   i18nRegistry.register(PROJECT_LIST_NAMESPACE, 'en' as never, en);
@@ -36,6 +36,7 @@ async function mount(busy: boolean, hasWorkspace = true) {
         query=""
         onQueryChange={vi.fn()}
         busy={busy}
+        hasOrg={hasOrg}
         hasWorkspace={hasWorkspace}
       />
     </FrontXProvider>
