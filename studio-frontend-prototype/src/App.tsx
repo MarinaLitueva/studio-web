@@ -558,6 +558,7 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
     { wsId: string; wsName: string; url: string; sessionId: string }[]
   >([]);
   const [spaceDirty, setSpaceDirty] = useState<Record<string, number>>({});
+  const [spaceRefresh, setSpaceRefresh] = useState<Record<string, number>>({});
   const initTimersRef = useRef<Record<string, ReturnType<typeof setInterval>>>({});
   const stopInitRetry = useCallback((wsId: string) => {
     const timer = initTimersRef.current[wsId];
@@ -597,7 +598,28 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
       delete next[wsId];
       return next;
     });
+    setSpaceRefresh((prev) => {
+      if (!(wsId in prev)) return prev;
+      const next = { ...prev };
+      delete next[wsId];
+      return next;
+    });
   }, [stopInitRetry]);
+
+  const refreshSpace = useCallback(
+    (wsId: string) => {
+      const dirty = spaceDirty[wsId] ?? 0;
+      if (
+        dirty > 0 &&
+        !window.confirm(`Refresh the IDE? ${dirty} unsaved file(s) may be lost.`)
+      ) {
+        return;
+      }
+      stopInitRetry(wsId);
+      setSpaceRefresh((prev) => ({ ...prev, [wsId]: (prev[wsId] ?? 0) + 1 }));
+    },
+    [spaceDirty, stopInitRetry],
+  );
 
   const stopSpace = useCallback(
     async (wsId: string) => {
@@ -1203,6 +1225,13 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
                     ✕
                   </button>
                   <button
+                    className="ghost space-refresh"
+                    title="Refresh IDE without stopping the session"
+                    onClick={() => refreshSpace(s.wsId)}
+                  >
+                    ↻
+                  </button>
+                  <button
                     className="ghost space-stop"
                     title="Stop IDE session and release Kubernetes resources"
                     onClick={() => void stopSpace(s.wsId)}
@@ -1338,7 +1367,7 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
         <div className="space-frames">
           {spaces.map((s) => (
             <iframe
-              key={s.wsId}
+              key={`${s.wsId}:${spaceRefresh[s.wsId] ?? 0}`}
               className="space-frame"
               src={s.url}
               title={`Studio — ${s.wsName}`}

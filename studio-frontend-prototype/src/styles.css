@@ -468,6 +468,7 @@ button.danger:hover:not(:disabled) { background: #b91c1c; border-color: #b91c1c;
 .sidebar.collapsed nav button .dirty-dot { font-size: 9px; margin: 0; position: absolute; transform: translate(10px, -8px); }
 .sidebar.collapsed .nav-section-title { display: none; }
 .sidebar.collapsed .space-x,
+.sidebar.collapsed .space-refresh,
 .sidebar.collapsed .space-stop { display: none; }
 .sidebar.collapsed .account-lines { display: none; }
 .sidebar.collapsed .account-button { justify-content: center; padding: 8px 4px; }
@@ -583,6 +584,7 @@ button.danger:hover:not(:disabled) { background: #b91c1c; border-color: #b91c1c;
 .space-row { display: flex; align-items: center; gap: 2px; }
 .space-row button:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .space-x { padding: 2px 6px; flex: 0 0 auto; }
+.space-refresh { padding: 2px 6px; flex: 0 0 auto; font-size: 15px; }
 .space-stop { padding: 2px 6px; flex: 0 0 auto; font-size: 10px; color: var(--danger); }
 .dirty-dot { color: #fbbf24; margin-left: 6px; font-size: 10px; }
 .content > h1 { margin-bottom: 0.25rem; }
