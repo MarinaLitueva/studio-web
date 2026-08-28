@@ -32,12 +32,15 @@ export interface PlatformIdentity {
   status: "platform_admin" | "assigned" | "unassigned";
   home_tenant_id?: string;
   home_tenant_name?: string;
+  organization_role?: "owner" | "member";
 }
 
 export interface Page<T> {
   items: T[];
   page_info?: { next_cursor: string | null; prev_cursor: string | null; limit: number };
 }
+
+export const PLATFORM_ROOT_TENANT_ID = "00000000-0000-0000-0000-000000000001";
 
 // Studio tenant types seeded by studio-backend config (types-registry.config.entities).
 export const TENANT_TYPES = {
@@ -466,6 +469,16 @@ export const api = {
   /** Platform-admin-only directory, including identities without a valid tenant. */
   platformIdentities: (token: string) =>
     request<{ items: PlatformIdentity[] }>("/studio-identity/v1/users", token),
+
+  assignPlatformIdentity: (
+    token: string,
+    identityId: string,
+    input: { tenant_id: string; role: "owner" | "member" },
+  ) =>
+    request<void>(`/studio-identity/v1/users/${encodeURIComponent(identityId)}/assignment`, token, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
 
   inviteUser: (
     token: string,

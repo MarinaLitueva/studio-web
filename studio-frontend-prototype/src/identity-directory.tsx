@@ -1,18 +1,33 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { api, type PlatformIdentity } from "./api";
+import { api, PLATFORM_ROOT_TENANT_ID, TENANT_TYPES, type PlatformIdentity, type Tenant } from "./api";
 import { errText, initials, matches } from "./format";
 
 export function IdentityDirectory({ token, query }: { token: string; query: string }) {
   const [identities, setIdentities] = useState<PlatformIdentity[] | null>(null);
+  const [organizations, setOrganizations] = useState<Tenant[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [targets, setTargets] = useState<Record<string, string>>({});
+  const [roles, setRoles] = useState<Record<string, "owner" | "member">>({});
+
+  const load = async () => {
+    const [{ items }, tenantPage] = await Promise.all([
+      api.platformIdentities(token),
+      api.tenantChildren(token, PLATFORM_ROOT_TENANT_ID),
+    ]);
+    setIdentities(items);
+    setOrganizations(
+      (tenantPage.items ?? []).filter((tenant) => tenant.tenant_type === TENANT_TYPES.organization),
+    );
+  };
 
   useEffect(() => {
     let cancelled = false;
     setError(null);
-    api.platformIdentities(token).then(
-      ({ items }) => {
-        if (!cancelled) setIdentities(items);
+    load().then(
+      () => {
+        if (cancelled) return;
       },
       (reason) => {
         if (!cancelled) {
@@ -25,6 +40,24 @@ export function IdentityDirectory({ token, query }: { token: string; query: stri
       cancelled = true;
     };
   }, [token]);
+
+  async function assign(identity: PlatformIdentity) {
+    const tenantId = targets[identity.id] || identity.home_tenant_id || organizations[0]?.id;
+    if (!tenantId) return;
+    setBusyId(identity.id);
+    setError(null);
+    try {
+      await api.assignPlatformIdentity(token, identity.id, {
+        tenant_id: tenantId,
+        role: roles[identity.id] || identity.organization_role || "member",
+      });
+      await load();
+    } catch (reason) {
+      setError(errText(reason));
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   const filtered = useMemo(
     () =>
@@ -69,6 +102,7 @@ export function IdentityDirectory({ token, query }: { token: string; query: stri
                 <th>Identity</th>
                 <th>Provider</th>
                 <th>Access</th>
+                <th>Organization assignment</th>
                 <th>First seen</th>
               </tr>
             </thead>
@@ -98,6 +132,49 @@ export function IdentityDirectory({ token, query }: { token: string; query: stri
                             ? identity.home_tenant_name || "Assigned"
                             : "Waiting for access"}
                       </span>
+                      {identity.organization_role && (
+                        <div className="sub" style={{ marginTop: 4 }}>
+                          {identity.organization_role === "owner" ? "Owner" : "Member"}
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      <div className="inline" style={{ flexWrap: "nowrap" }}>
+                        <select
+                          aria-label={`Organization for ${name}`}
+                          value={targets[identity.id] || identity.home_tenant_id || organizations[0]?.id || ""}
+                          onChange={(event) =>
+                            setTargets((current) => ({ ...current, [identity.id]: event.target.value }))
+                          }
+                        >
+                          {organizations.length === 0 && <option value="">No organizations</option>}
+                          {organizations.map((organization) => (
+                            <option key={organization.id} value={organization.id}>
+                              {organization.name}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          aria-label={`Role for ${name}`}
+                          value={roles[identity.id] || identity.organization_role || "member"}
+                          onChange={(event) =>
+                            setRoles((current) => ({
+                              ...current,
+                              [identity.id]: event.target.value as "owner" | "member",
+                            }))
+                          }
+                        >
+                          <option value="member">Member</option>
+                          <option value="owner">Owner</option>
+                        </select>
+                        <button
+                          className="primary"
+                          disabled={busyId !== null || organizations.length === 0}
+                          onClick={() => void assign(identity)}
+                        >
+                          {busyId === identity.id ? "Saving…" : identity.home_tenant_id ? "Update" : "Assign"}
+                        </button>
+                      </div>
                     </td>
                     <td className="sub">{firstSeen}</td>
                   </tr>
@@ -114,4 +191,3 @@ export function IdentityDirectory({ token, query }: { token: string; query: stri
     </>
   );
 }
-

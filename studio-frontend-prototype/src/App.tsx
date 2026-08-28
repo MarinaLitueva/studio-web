@@ -21,6 +21,7 @@ import {
 import {
   api,
   ApiError,
+  PLATFORM_ROOT_TENANT_ID,
   UNAUTHENTICATED_EVENT,
   shortTypeName,
   TENANT_TYPES,
@@ -32,8 +33,6 @@ import {
   type Tenant,
   type WorkspaceSettings,
 } from "./api";
-
-const PLATFORM_ROOT_TENANT_ID = "00000000-0000-0000-0000-000000000001";
 
 // Portal (личный кабинет): sign in with a bearer token, then an app shell
 // with a sidebar — Projects / People / Integrations / Profile.

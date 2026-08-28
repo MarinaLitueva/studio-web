@@ -2,14 +2,18 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use account_management_sdk::AccountManagementClient;
+use account_management_sdk::{AccountManagementClient, UpsertMetadataRequest};
 use anyhow::{Context, Result, bail};
+use gts::GtsTypeId;
 use reqwest::Client;
 use serde::Deserialize;
 use toolkit_security::SecurityContext;
 use uuid::Uuid;
 
 pub const PLATFORM_ROOT_TENANT_ID: Uuid = Uuid::from_u128(1);
+const HOME_TENANT_ATTRIBUTE: &str = "tenant_id";
+const ORGANIZATION_ROLE_ATTRIBUTE: &str = "studio_organization_role";
+const ACCESS_METADATA_TYPE: &str = "gts.cf.core.am.tenant_metadata.v1~cf.studio.access.config.v1~";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DirectoryIdentity {
@@ -22,6 +26,7 @@ pub struct DirectoryIdentity {
     pub status: &'static str,
     pub home_tenant_id: Option<Uuid>,
     pub home_tenant_name: Option<String>,
+    pub organization_role: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -143,7 +148,7 @@ impl IdentityDirectoryService {
 
             let requested_tenant = user
                 .attributes
-                .get("tenant_id")
+                .get(HOME_TENANT_ATTRIBUTE)
                 .and_then(|values| values.first())
                 .and_then(|value| Uuid::parse_str(value).ok());
 
@@ -192,6 +197,11 @@ impl IdentityDirectoryService {
                 status,
                 home_tenant_id,
                 home_tenant_name,
+                organization_role: user
+                    .attributes
+                    .get(ORGANIZATION_ROLE_ATTRIBUTE)
+                    .and_then(|values| values.first())
+                    .cloned(),
             });
         }
 
@@ -202,5 +212,133 @@ impl IdentityDirectoryService {
                 .then_with(|| left.username.cmp(&right.username))
         });
         Ok(identities)
+    }
+
+    /// Assign an existing Keycloak identity to an Account Management tenant.
+    ///
+    /// Account Management's user surface is an IdP-backed projection: the
+    /// `tenant_id` attribute is the membership boundary used by both token
+    /// issuance and tenant-scoped user listing. Keep the organization role in
+    /// the same source of truth so it follows the identity across browsers.
+    pub async fn assign(
+        &self,
+        ctx: &SecurityContext,
+        identity_id: &str,
+        tenant_id: Uuid,
+        organization_role: &str,
+    ) -> Result<()> {
+        let tenant = self
+            .account_management
+            .get_tenant(ctx, tenant_id)
+            .await
+            .map_err(|error| anyhow::anyhow!("cannot resolve target organization: {error}"))?;
+
+        let token = self.admin_token().await?;
+        let url = format!(
+            "{}/admin/realms/{}/users/{}",
+            self.admin_base_url, self.realm, identity_id
+        );
+        let mut user = self
+            .http
+            .get(&url)
+            .bearer_auth(&token)
+            .send()
+            .await
+            .context("get Keycloak user for organization assignment")?
+            .error_for_status()
+            .context("Keycloak rejected the user lookup")?
+            .json::<serde_json::Value>()
+            .await
+            .context("decode Keycloak user representation")?;
+
+        let attributes = user
+            .as_object_mut()
+            .context("Keycloak user representation is not an object")?
+            .entry("attributes")
+            .or_insert_with(|| serde_json::json!({}));
+        let attributes = attributes
+            .as_object_mut()
+            .context("Keycloak user attributes are not an object")?;
+        attributes.insert(
+            HOME_TENANT_ATTRIBUTE.to_owned(),
+            serde_json::json!([tenant_id.to_string()]),
+        );
+        attributes.insert(
+            ORGANIZATION_ROLE_ATTRIBUTE.to_owned(),
+            serde_json::json!([organization_role]),
+        );
+
+        // Owner is also a real organization-wide access grant understood by
+        // Studio's PDP. Member is tenant membership without that elevated
+        // grant; project roles can still be assigned independently.
+        self.set_owner_grant(
+            ctx,
+            tenant_id,
+            &tenant.name,
+            identity_id,
+            organization_role == "owner",
+        )
+        .await?;
+
+        self.http
+            .put(url)
+            .bearer_auth(token)
+            .json(&user)
+            .send()
+            .await
+            .context("update Keycloak organization assignment")?
+            .error_for_status()
+            .context("Keycloak rejected the organization assignment")?;
+        Ok(())
+    }
+
+    async fn set_owner_grant(
+        &self,
+        ctx: &SecurityContext,
+        tenant_id: Uuid,
+        tenant_name: &str,
+        identity_id: &str,
+        owner: bool,
+    ) -> Result<()> {
+        let type_id = GtsTypeId::new(ACCESS_METADATA_TYPE);
+        let mut config = match self
+            .account_management
+            .get_metadata(ctx, tenant_id, type_id.clone())
+            .await
+        {
+            Ok(entry) => entry.value,
+            Err(_) => serde_json::json!({ "model": "tenant", "roles": [], "grants": [] }),
+        };
+        let config_object = config
+            .as_object_mut()
+            .context("organization access config is not an object")?;
+        let grants = config_object
+            .entry("grants")
+            .or_insert_with(|| serde_json::json!([]))
+            .as_array_mut()
+            .context("organization access grants are not an array")?;
+        grants.retain(|grant| {
+            grant.get("subjectType").and_then(|value| value.as_str()) != Some("member")
+                || grant.get("subjectId").and_then(|value| value.as_str()) != Some(identity_id)
+                || grant.get("scopeType").and_then(|value| value.as_str()) != Some("org")
+                || grant.get("roleKey").and_then(|value| value.as_str()) != Some("owner")
+        });
+        if owner {
+            grants.push(serde_json::json!({
+                "id": Uuid::new_v4().to_string(),
+                "subjectType": "member",
+                "subjectId": identity_id,
+                "subjectName": identity_id,
+                "roleKey": "owner",
+                "scopeType": "org",
+                "scopeId": tenant_id.to_string(),
+                "scopeName": tenant_name,
+            }));
+        }
+        self.account_management
+            .upsert_metadata(ctx, tenant_id, UpsertMetadataRequest::new(type_id, config))
+            .await
+            .map_err(|error| anyhow::anyhow!("cannot update organization owner grant: {error}"))?;
+        Ok(())
     }
 }
