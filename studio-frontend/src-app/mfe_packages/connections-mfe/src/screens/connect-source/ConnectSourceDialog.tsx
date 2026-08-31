@@ -118,7 +118,7 @@ const DialogBody: React.FC = () => {
                 disabled={providersLoading}
                 onValueChange={(next) => dispatch(editDraft({ provider: next ?? '' }))}
               >
-                <SelectTrigger className={styles.providerTrigger} aria-label={t('field_provider')}>
+                <SelectTrigger className={styles.providerTrigger}>
                   <SelectValue placeholder={providerPlaceholder}>
                     {(selected) =>
                       selected ? (chosen?.display_name ?? String(selected)) : providerPlaceholder
