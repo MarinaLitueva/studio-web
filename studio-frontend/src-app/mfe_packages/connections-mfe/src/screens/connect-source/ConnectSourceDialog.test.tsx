@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { FrontXProvider, createFrontXApp, i18nRegistry } from '@gears-frontx/react';
 import {
@@ -6,6 +6,7 @@ import {
   mfeContextValue,
 } from '../../../../../__test-utils__/createMfeBridgeFixture';
 import { CONNECT_SOURCE_NAMESPACE } from '../../i18n';
+import { submitFailed } from '../../slices/connectSlice';
 import en from './i18n/en.json';
 import { ConnectSourceDialog } from './ConnectSourceDialog';
 
@@ -66,6 +67,7 @@ async function renderDialog(organization: unknown = { id: 'org-1', name: 'Acme' 
     </FrontXProvider>
   );
 
+  return mfeApp;
 }
 
 /**
@@ -75,8 +77,9 @@ async function renderDialog(organization: unknown = { id: 'org-1', name: 'Acme' 
  * tick later.
  */
 async function mount(organization: unknown = { id: 'org-1', name: 'Acme' }) {
-  await renderDialog(organization);
+  const mfeApp = await renderDialog(organization);
   await screen.findByLabelText(en.field_provider);
+  return mfeApp;
 }
 
 describe('ConnectSourceDialog', () => {
@@ -156,6 +159,18 @@ describe('ConnectSourceDialog', () => {
     expect(document.documentElement.style.overflowY).toBe('');
     expect(document.body.style.overflowY).toBe('');
     expect(document.body.style.position).toBe('');
+  });
+
+  it('answers a refused credential on the credential field', async () => {
+    const mfeApp = await mount();
+
+    await act(async () => {
+      mfeApp.store.dispatch(submitFailed({ kind: 'provider', text: 'GitHub 401: bad credentials' }));
+    });
+
+    expect(screen.getByText('GitHub 401: bad credentials')).toBeTruthy();
+    expect(screen.getByLabelText(en.field_token).getAttribute('aria-invalid')).toBe('true');
+    expect(screen.getByLabelText(en.field_base_url).getAttribute('aria-invalid')).toBeNull();
   });
 
   it('portals the provider popover inside this root instead of document.body', async () => {

@@ -1,13 +1,12 @@
-/**
- * Step 1 — name, goal, owner, starting point.
- */
+/** Step 1 — name, goal, owner, starting point. */
 
 // @cpt-dod:cpt-studiofrontend-dod-project-create-owner:p1
 import React from 'react';
 import { FileText, Files } from 'lucide-react';
 import {
+  Field,
+  FieldLabel,
   Input,
-  Label,
   RadioGroup,
   RadioGroupItem,
   Skeleton,
@@ -95,35 +94,29 @@ export const DetailsStep: React.FC = () => {
 
   return (
     <>
-      <div className={styles.field}>
-        <Label className={styles.fieldLabel} htmlFor="np-name">
-          {t('field_name')}
-        </Label>
+      <Field name="name">
+        <FieldLabel className={styles.fieldLabel}>{t('field_name')}</FieldLabel>
         <Input
-          id="np-name"
           value={draft.name}
           onChange={(event) => dispatch(editDraft({ name: event.target.value }))}
           autoFocus
         />
-      </div>
+      </Field>
 
-      <div className={styles.field}>
-        <Label className={styles.fieldLabel} htmlFor="np-goal">
-          {t('field_goal')}
-        </Label>
+      <Field name="goal">
+        <FieldLabel className={styles.fieldLabel}>{t('field_goal')}</FieldLabel>
         <Textarea
-          id="np-goal"
           className={styles.goal}
           rows={3}
           value={draft.goal}
           onChange={(event) => dispatch(editDraft({ goal: event.target.value }))}
         />
-      </div>
+      </Field>
 
       <OwnerField />
 
-      <div className={styles.field}>
-        <Label className={styles.fieldLabel}>{t('field_starting_point')}</Label>
+      <Field name="mode">
+        <FieldLabel className={styles.fieldLabel}>{t('field_starting_point')}</FieldLabel>
         <RadioGroup
           className={styles.modes}
           value={draft.mode ?? ''}
@@ -144,7 +137,7 @@ export const DetailsStep: React.FC = () => {
             </label>
           ))}
         </RadioGroup>
-      </div>
+      </Field>
     </>
   );
 };

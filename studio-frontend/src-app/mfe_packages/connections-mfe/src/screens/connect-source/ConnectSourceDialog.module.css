@@ -38,12 +38,6 @@
   min-height: 0;
 }
 
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
 .fieldLabel {
   font-family: var(--font-mono);
   font-size: var(--text-mono-size);
@@ -54,10 +48,12 @@
   color: var(--muted-foreground);
 }
 
-.fieldHint {
-  font-size: var(--text-meta-size);
-  line-height: var(--text-meta-line-height);
-  color: var(--muted-foreground);
+/* TODO: one line until the gear sends a sentence instead of its error chain.
+   Colour and size come from the kit's own FieldError. */
+.fieldError {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .footer {
