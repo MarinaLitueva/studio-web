@@ -32,6 +32,10 @@ The Helm chart runs two containers in the backend Pod:
 
 - `backend`: the file-storage control plane; metadata lives in PostgreSQL;
 - `file-storage-sidecar`: validates signed URLs and streams bytes to S3.
+- The sidecar's compatibility `local-fs` backend uses container-local `/tmp`;
+  application uploads are routed to the configured S3 backend. This keeps the
+  pinned sidecar's aggregate `/readyz` check healthy without persisting data in
+  the pod filesystem.
 
 The sidecar is exposed through the existing Studio hostname. No additional DNS
 record and no cross-origin browser configuration are required. Only signed data

@@ -128,6 +128,12 @@ spec:
           env:
             - name: FS_SIDECAR_ADDR
               value: "0.0.0.0:8087"
+            # The pinned sidecar always registers its compatibility local-fs
+            # backend and includes it in /readyz, even when all application
+            # traffic is routed to S3. Point it at an existing writable
+            # ephemeral directory so that readiness reflects S3 availability.
+            - name: FS_SIDECAR_BACKEND_ROOT
+              value: "/tmp"
             - name: FS_SIDECAR_PUBLIC_KEY
               valueFrom: { secretKeyRef: { name: {{ .Values.backend.fileStorage.secrets.signingExistingSecret }}, key: sidecar_public_key } }
             - name: FS_SIDECAR_CONTROL_URL
