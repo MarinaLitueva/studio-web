@@ -35,11 +35,34 @@ backend:
   auth:
     existingSecret: "studio-web-idp"
   # Application secrets (keys: llm_api_key [required], fs_signing_seed
-  # [required], credstore_key [strongly recommended: base64 of 32 bytes,
+  # [required only when fileStorage.enabled=false], credstore_key [strongly recommended: base64 of 32 bytes,
   # `openssl rand -base64 32`; without it user-typed secrets die with every
   # pod restart], s2s_client_secret [optional], idp_admin_secret [optional]).
   appSecrets:
     existingSecret: "studio-web-app"
+  # S3-backed file-storage data plane. The sidecar binary is built from the
+  # exact gears-rust revision pinned by studio-backend/Cargo.lock. Secrets are
+  # synchronized by deploy.yml from the selected GitHub Environment.
+  fileStorage:
+    enabled: false
+    image:
+      repository: ghcr.io/constructorfabric/studio-web/file-storage-sidecar
+      tag: ""                  # empty follows backend.image.tag
+    publicBaseUrl: ""          # empty => https://global.hostname
+    backendId: "s3-webstudio"
+    s3:
+      endpoint: "https://eu3-s3.virtuozzo.cloud"
+      region: "eu3"
+      bucket: ""               # REQUIRED when enabled
+      pathStyle: true
+    secrets:
+      s3ExistingSecret: "studio-web-file-storage-s3"
+      signingExistingSecret: "studio-web-file-storage-signing"
+    # Non-secret digest supplied by deploy.yml. A rotation rolls the Pod.
+    secretRevision: ""
+    resources:
+      requests: { cpu: "50m", memory: 64Mi }
+      limits: { cpu: "500m", memory: 512Mi }
   # LLM egress endpoint (non-secret half; the key lives in appSecrets).
   # Any OpenAI-compatible provider; defaults = Groq free tier.
   llm:

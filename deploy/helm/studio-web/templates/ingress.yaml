@@ -18,6 +18,12 @@ spec:
     - host: {{ . | quote }}
       http:
         paths:
+          {{- if $.Values.backend.fileStorage.enabled }}
+          # Same-origin signed upload/download URLs: no extra DNS or CORS.
+          - path: /api/file-storage-data
+            pathType: Prefix
+            backend: { service: { name: {{ include "studio-web.fullname" $ }}-backend, port: { name: file-storage } } }
+          {{- end }}
           - path: /cf
             pathType: Prefix
             backend: { service: { name: {{ include "studio-web.fullname" $ }}-backend, port: { name: http } } }

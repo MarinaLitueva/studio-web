@@ -26,6 +26,7 @@ use super::clone;
 use super::embed::Embedder;
 use super::graph::{GraphStore, GtsEdge, GtsNode};
 use super::gts;
+use super::object_store::ObjectStore;
 use super::tasks::{TaskRecord, TaskRegistry};
 use crate::connectors::driver::{ConnectionAuth, ConnectorDriver};
 
@@ -48,6 +49,24 @@ const EDGE_CHUNK: usize = 5_000;
 /// cost and the resulting text both scale with size; 15 MiB covers real specs
 /// and slide decks without letting a giant asset stall a sync.
 const MAX_PARSE_BYTES: u64 = 15 * 1024 * 1024;
+
+/// A coarse MIME type from a file extension — enough for the object store to
+/// tag content; defaults to `application/octet-stream`.
+fn mime_for(path: &str) -> &'static str {
+    let ext = path.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    match ext.as_str() {
+        "md" | "markdown" => "text/markdown",
+        "txt" | "text" | "log" => "text/plain",
+        "json" => "application/json",
+        "yaml" | "yml" => "application/yaml",
+        "toml" => "application/toml",
+        "csv" => "text/csv",
+        "html" | "htm" => "text/html",
+        "xml" => "application/xml",
+        "pdf" => "application/pdf",
+        _ => "application/octet-stream",
+    }
+}
 
 /// True when a path looks like a document the file-parser can turn into text —
 /// office formats, PDFs, e-books and rich text. Plain-text formats already come
@@ -87,15 +106,15 @@ fn node_text(n: &GtsNode) -> String {
     }
     // File content (connector-cloned, hand-added, or file-parser-extracted),
     // bounded to the model's input budget on a char boundary.
-    if let Some(s) = v.get("text").and_then(serde_json::Value::as_str)
-        && !s.trim().is_empty()
-    {
-        let end = s
-            .char_indices()
-            .map(|(i, _)| i)
-            .nth(MAX_EMBED_TEXT_CHARS)
-            .unwrap_or(s.len());
-        parts.push(s[..end].to_string());
+    if let Some(s) = v.get("text").and_then(serde_json::Value::as_str) {
+        if !s.trim().is_empty() {
+            let end = s
+                .char_indices()
+                .map(|(i, _)| i)
+                .nth(MAX_EMBED_TEXT_CHARS)
+                .unwrap_or(s.len());
+            parts.push(s[..end].to_string());
+        }
     }
     parts.join("\n")
 }
@@ -120,6 +139,10 @@ pub struct IngestService {
     /// documents (PDF/docx/…) so their content is indexed for search. `None`
     /// leaves binary files as metadata-only, exactly as before.
     file_parser: Option<Arc<dyn FileParserClientV1>>,
+    /// The object store (file-storage gear → S3), when configured. Content goes
+    /// here and the graph node keeps only an `ObjectRef`; `None` keeps content on
+    /// the workspace volume as before.
+    object_store: Option<Arc<dyn ObjectStore>>,
     /// The studio-session workspaces root (`STUDIO_WORKSPACES_ROOT`). When a
     /// sync names a workspace + repo dir and the session gear has already
     /// cloned it here, ingest reads that checkout instead of cloning its own —
@@ -158,6 +181,7 @@ impl IngestService {
         graph: Arc<dyn GraphStore>,
         embedder: Arc<dyn Embedder>,
         file_parser: Option<Arc<dyn FileParserClientV1>>,
+        object_store: Option<Arc<dyn ObjectStore>>,
         workspaces_root: Option<PathBuf>,
         work_root: Option<PathBuf>,
     ) -> Self {
@@ -167,6 +191,7 @@ impl IngestService {
             graph,
             embedder,
             file_parser,
+            object_store,
             workspaces_root,
             work_root,
             tasks: Arc::new(TaskRegistry::default()),
@@ -916,7 +941,7 @@ impl IngestService {
         &self,
         ctx: &SecurityContext,
         task_id: Option<&str>,
-        nodes: &mut [GtsNode],
+        nodes: &mut Vec<GtsNode>,
         flushed: &mut usize,
         workspace_id: Option<&str>,
         project_id: Option<&str>,
@@ -1035,8 +1060,38 @@ impl IngestService {
             Some(t) => self.materialize_artifact_file(scope, path, t).await,
             None => None,
         };
-        let node =
-            gts::manual_file_node(workspace_id, project_id, path, size, text, workspace_path);
+        // When an object store is configured, the content lives in S3 (via the
+        // file-storage gear) and the node keeps only a reference. Best-effort:
+        // a failure leaves the file on the volume / graph as before.
+        let object_ref = match (self.object_store.as_ref(), text.as_deref()) {
+            (Some(store), Some(t)) => {
+                match store.put(path, mime_for(path), t.as_bytes().to_vec()).await {
+                    Ok(r) => Some(serde_json::json!({
+                        "storage": r.storage,
+                        "file_id": r.file_id,
+                        "version_id": r.version_id,
+                        "name": r.name,
+                        "mime": r.mime,
+                        "size": r.size,
+                        "checksum": r.checksum,
+                    })),
+                    Err(e) => {
+                        tracing::warn!(error = %e, path, "studio-artifact-ingest: object-store put failed — keeping content on the volume only");
+                        None
+                    }
+                }
+            }
+            _ => None,
+        };
+        let node = gts::manual_file_node(
+            workspace_id,
+            project_id,
+            path,
+            size,
+            text,
+            workspace_path,
+            object_ref,
+        );
         let id = node.instance_id.clone();
         self.graph
             .upsert_nodes(ctx, std::slice::from_ref(&node))
@@ -1071,11 +1126,11 @@ impl IngestService {
             return None;
         }
         let target = root.join(scope).join("_artifacts").join(&rel);
-        if let Some(parent) = target.parent()
-            && let Err(e) = tokio::fs::create_dir_all(parent).await
-        {
-            tracing::warn!(error = %e, dir = %parent.display(), "studio-artifact-ingest: could not create _artifacts dir — file not materialized");
-            return None;
+        if let Some(parent) = target.parent() {
+            if let Err(e) = tokio::fs::create_dir_all(parent).await {
+                tracing::warn!(error = %e, dir = %parent.display(), "studio-artifact-ingest: could not create _artifacts dir — file not materialized");
+                return None;
+            }
         }
         match tokio::fs::write(&target, text).await {
             Ok(()) => Some(format!("_artifacts/{rel}")),

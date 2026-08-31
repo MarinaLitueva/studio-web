@@ -307,9 +307,14 @@ gears:
       server: "pg_main"
       dbname: "studio_file_storage"
     config:
-      # Dev-only Ed25519 seed so signed URLs survive restarts (generate your
-      # own for any shared environment).
+      # Stable Ed25519 seed; Helm loads it from the environment-specific
+      # file-storage signing Secret. The value is base64url without padding.
       signing_key_seed: "${STUDIO_FS_SIGNING_SEED}"
+      # JSON is valid YAML. Helm supplies one S3 entry in Kubernetes; an empty
+      # list preserves local-fs for non-S3/manual deployments.
+      sidecar_base_url: "${STUDIO_FS_SIDECAR_BASE_URL:-http://127.0.0.1:8087}"
+      default_backend_id: "${STUDIO_FS_BACKEND_ID:-local-fs}"
+      s3_backends: ${STUDIO_FS_S3_BACKENDS:-[]}
 
   # LLM egress chain: mini-chat -> oagw -> provider; secrets via credstore
   oagw:

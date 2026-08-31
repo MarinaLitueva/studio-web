@@ -116,7 +116,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: System dependencies
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler cmake
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev cmake pkg-config
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -134,6 +134,51 @@ jobs:
         with:
           name: studio-backend-linux-x86_64
           path: studio-backend/target/release/studio-backend
+
+  file-storage-sidecar-binary:
+    needs: require-ci
+    if: needs.require-ci.outputs.scope == 'services'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      # Cargo.lock is the single source of truth for the gears-rust revision.
+      # Building the sidecar from that same commit prevents control/data-plane
+      # protocol drift without duplicating a revision in this workflow.
+      - name: Resolve pinned gears-rust revision
+        id: gears
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_line=$(sed -n '/name = "cf-gears-file-storage"/,/^\[\[package\]\]/p' \
+            studio-backend/Cargo.lock | grep '^source = ' | head -n 1)
+          revision="${source_line##*#}"
+          revision="${revision%\"}"
+          test "${#revision}" -eq 40
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v6
+        with:
+          repository: constructorfabric/gears-rust
+          ref: ${{ steps.gears.outputs.revision }}
+          path: gears-rust
+
+      - name: System dependencies
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev cmake pkg-config
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: gears-rust
+
+      - name: Build file-storage sidecar
+        working-directory: gears-rust
+        run: cargo build --locked --release -p cf-gears-file-storage --bin sidecar
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: file-storage-sidecar-linux-x86_64
+          path: gears-rust/target/release/sidecar
 
   # Builds the FrontX-based studio-frontend/ — the deployed portal since it
   # replaced studio-frontend-prototype/ (now a playground with its own image).
@@ -187,12 +232,13 @@ jobs:
           path: studio-frontend-prototype/dist
 
   service-images:
-    needs: [require-ci, backend-binary, frontend-dist, prototype-dist]
+    needs: [require-ci, backend-binary, file-storage-sidecar-binary, frontend-dist, prototype-dist]
     if: >-
       always() &&
       needs.require-ci.result == 'success' &&
       needs.require-ci.outputs.scope == 'services' &&
       needs.backend-binary.result == 'success' &&
+      needs.file-storage-sidecar-binary.result == 'success' &&
       needs.frontend-dist.result == 'success' &&
       needs.prototype-dist.result == 'success'
     runs-on: ubuntu-latest
@@ -205,6 +251,10 @@ jobs:
         with:
           name: studio-backend-linux-x86_64
           path: studio-backend/.release/
+      - uses: actions/download-artifact@v7
+        with:
+          name: file-storage-sidecar-linux-x86_64
+          path: studio-backend/.release/file-storage-sidecar-download/
       - uses: actions/download-artifact@v7
         with:
           name: studio-frontend-dist
@@ -271,6 +321,16 @@ jobs:
           tag="${{ steps.tags.outputs.immutable }}"
           docker push "$IMAGE_PREFIX/studio-backend:$tag"
 
+      - name: Build and push file-storage sidecar image
+        run: |
+          set -euo pipefail
+          tag="${{ steps.tags.outputs.immutable }}"
+          mv studio-backend/.release/file-storage-sidecar-download/sidecar \
+            studio-backend/.release/file-storage-sidecar
+          docker build -f studio-backend/Dockerfile.file-storage-sidecar \
+            -t "$IMAGE_PREFIX/file-storage-sidecar:$tag" studio-backend
+          docker push "$IMAGE_PREFIX/file-storage-sidecar:$tag"
+
       - name: Build & push frontend image
         run: |
           set -euo pipefail
@@ -303,6 +363,7 @@ jobs:
           immutable="${{ steps.tags.outputs.immutable }}"
           images=(
             studio-backend
+            file-storage-sidecar
             studio-frontend
             studio-frontend-prototype
             cf-studio-theia
@@ -319,6 +380,7 @@ jobs:
             echo "### Images published"
             for t in ${{ steps.tags.outputs.immutable }} ${{ steps.tags.outputs.promotions }}; do
               echo "- \`$IMAGE_PREFIX/studio-backend:$t\`"
+              echo "- \`$IMAGE_PREFIX/file-storage-sidecar:$t\`"
               echo "- \`$IMAGE_PREFIX/studio-frontend:$t\`"
               echo "- \`$IMAGE_PREFIX/studio-frontend-prototype:$t\`"
               echo "- \`$IMAGE_PREFIX/cf-studio-theia:$t\`"

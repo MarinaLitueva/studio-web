@@ -32,6 +32,10 @@ backend:
     existingConfigMap: ""
   idpAdmin:
     baseUrl: "https://studio-dev.cfabric.org/auth"
+  fileStorage:
+    enabled: true
+    s3:
+      bucket: dev-webstudio
 
 frontend:
   image:

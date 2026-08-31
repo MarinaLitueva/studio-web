@@ -1,0 +1,21 @@
+# Runtime image for the file-storage data plane.
+# release.yml builds the binary from the exact gears-rust revision pinned in
+# studio-backend/Cargo.lock and places it in .release/file-storage-sidecar.
+FROM debian:trixie-slim
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl \
+ && rm -rf /var/lib/apt/lists/* \
+ && groupadd --gid 1000 studio \
+ && useradd --system --uid 1000 --gid 1000 --home /app studio
+
+WORKDIR /app
+COPY .release/file-storage-sidecar /app/file-storage-sidecar
+RUN chmod +x /app/file-storage-sidecar && chown -R studio:studio /app
+
+USER 1000
+EXPOSE 8087
+HEALTHCHECK --interval=10s --timeout=3s --retries=5 \
+  CMD curl -sf http://127.0.0.1:8087/healthz || exit 1
+
+ENTRYPOINT ["/app/file-storage-sidecar"]

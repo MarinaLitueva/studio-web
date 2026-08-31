@@ -6,4 +6,8 @@ metadata:
 spec:
   selector: {{- include "studio-web.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: backend
-  ports: [{ name: http, port: 80, targetPort: http }]
+  ports:
+    - { name: http, port: 80, targetPort: http }
+    {{- if .Values.backend.fileStorage.enabled }}
+    - { name: file-storage, port: 8087, targetPort: file-storage }
+    {{- end }}

@@ -18,6 +18,10 @@ spec:
     metadata:
       labels: {{- include "studio-web.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: backend
+      {{- if and .Values.backend.fileStorage.enabled .Values.backend.fileStorage.secretRevision }}
+      annotations:
+        checksum/file-storage-secrets: {{ .Values.backend.fileStorage.secretRevision | quote }}
+      {{- end }}
     spec:
       serviceAccountName: {{ include "studio-web.serviceAccountName" . }}
       {{- with .Values.imagePullSecrets }}
@@ -80,7 +84,23 @@ spec:
               value: {{ .Values.backend.llm.host | quote }}
             # file-storage URL-signing seed — per environment, never baked in.
             - name: STUDIO_FS_SIGNING_SEED
+              {{- if .Values.backend.fileStorage.enabled }}
+              valueFrom: { secretKeyRef: { name: {{ .Values.backend.fileStorage.secrets.signingExistingSecret }}, key: signing_seed } }
+              {{- else }}
               valueFrom: { secretKeyRef: { name: {{ .Values.backend.appSecrets.existingSecret }}, key: fs_signing_seed } }
+              {{- end }}
+            {{- if .Values.backend.fileStorage.enabled }}
+            - name: STUDIO_FS_SIDECAR_BASE_URL
+              value: {{ default (printf "https://%s" .Values.global.hostname) .Values.backend.fileStorage.publicBaseUrl | quote }}
+            - name: STUDIO_FS_BACKEND_ID
+              value: {{ .Values.backend.fileStorage.backendId | quote }}
+            - name: STUDIO_FS_S3_BACKENDS
+              value: {{ include "studio-web.fileStorageS3Backends" . | quote }}
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom: { secretKeyRef: { name: {{ .Values.backend.fileStorage.secrets.s3ExistingSecret }}, key: access_key_id } }
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom: { secretKeyRef: { name: {{ .Values.backend.fileStorage.secrets.s3ExistingSecret }}, key: secret_access_key } }
+            {{- end }}
             # Sealing key for the persistent credstore value store (#66),
             # base64 of 32 bytes. Optional by design: without it the gear
             # stands down with a WARN and the in-memory fallback wins — the
@@ -100,6 +120,28 @@ spec:
           readinessProbe: { httpGet: { path: /cf/health, port: http }, initialDelaySeconds: 5, periodSeconds: 10 }
           livenessProbe: { httpGet: { path: /cf/health, port: http }, initialDelaySeconds: 15, periodSeconds: 20 }
           resources: {{- toYaml .Values.backend.resources | nindent 12 }}
+        {{- if .Values.backend.fileStorage.enabled }}
+        - name: file-storage-sidecar
+          image: "{{ .Values.backend.fileStorage.image.repository }}:{{ default .Values.backend.image.tag .Values.backend.fileStorage.image.tag }}"
+          securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          ports: [{ name: file-storage, containerPort: 8087 }]
+          env:
+            - name: FS_SIDECAR_ADDR
+              value: "0.0.0.0:8087"
+            - name: FS_SIDECAR_PUBLIC_KEY
+              valueFrom: { secretKeyRef: { name: {{ .Values.backend.fileStorage.secrets.signingExistingSecret }}, key: sidecar_public_key } }
+            - name: FS_SIDECAR_CONTROL_URL
+              value: "http://127.0.0.1:{{ .Values.backend.port }}/cf"
+            - name: FS_SIDECAR_S3_BACKENDS
+              value: {{ include "studio-web.fileStorageS3Backends" . | quote }}
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom: { secretKeyRef: { name: {{ .Values.backend.fileStorage.secrets.s3ExistingSecret }}, key: access_key_id } }
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom: { secretKeyRef: { name: {{ .Values.backend.fileStorage.secrets.s3ExistingSecret }}, key: secret_access_key } }
+          readinessProbe: { httpGet: { path: /readyz, port: file-storage }, initialDelaySeconds: 5, periodSeconds: 10 }
+          livenessProbe: { httpGet: { path: /healthz, port: file-storage }, initialDelaySeconds: 10, periodSeconds: 20 }
+          resources: {{- toYaml .Values.backend.fileStorage.resources | nindent 12 }}
+        {{- end }}
       {{- if .Values.backend.configOverride.existingConfigMap }}
       volumes:
         - name: backend-config

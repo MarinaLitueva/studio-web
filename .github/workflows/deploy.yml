@@ -119,6 +119,44 @@ jobs:
             exit 1
           fi
 
+      - name: Synchronize file-storage secrets
+        id: file_storage
+        env:
+          S3_ACCESS_KEY_ID: ${{ secrets.FILE_STORAGE_S3_ACCESS_KEY_ID }}
+          S3_SECRET_ACCESS_KEY: ${{ secrets.FILE_STORAGE_S3_SECRET_ACCESS_KEY }}
+          SIGNING_SEED: ${{ secrets.FILE_STORAGE_SIGNING_SEED }}
+          SIDECAR_PUBLIC_KEY: ${{ secrets.FILE_STORAGE_SIDECAR_PUBLIC_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$S3_ACCESS_KEY_ID" || { echo "GitHub Environment secret FILE_STORAGE_S3_ACCESS_KEY_ID is empty" >&2; exit 1; }
+          test -n "$S3_SECRET_ACCESS_KEY" || { echo "GitHub Environment secret FILE_STORAGE_S3_SECRET_ACCESS_KEY is empty" >&2; exit 1; }
+          test -n "$SIGNING_SEED" || { echo "GitHub Environment secret FILE_STORAGE_SIGNING_SEED is empty" >&2; exit 1; }
+          test -n "$SIDECAR_PUBLIC_KEY" || { echo "GitHub Environment secret FILE_STORAGE_SIDECAR_PUBLIC_KEY is empty" >&2; exit 1; }
+          [[ "$SIGNING_SEED" =~ ^[A-Za-z0-9_-]{43}$ ]] || {
+            echo "FILE_STORAGE_SIGNING_SEED must be a 32-byte base64url value without padding" >&2
+            exit 1
+          }
+          [[ "$SIDECAR_PUBLIC_KEY" =~ ^[A-Za-z0-9_-]{43}$ ]] || {
+            echo "FILE_STORAGE_SIDECAR_PUBLIC_KEY must be a 32-byte base64url value without padding" >&2
+            exit 1
+          }
+
+          kubectl create secret generic studio-web-file-storage-s3 -n "$NAMESPACE" \
+            --from-literal=access_key_id="$S3_ACCESS_KEY_ID" \
+            --from-literal=secret_access_key="$S3_SECRET_ACCESS_KEY" \
+            --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+          kubectl create secret generic studio-web-file-storage-signing -n "$NAMESPACE" \
+            --from-literal=signing_seed="$SIGNING_SEED" \
+            --from-literal=sidecar_public_key="$SIDECAR_PUBLIC_KEY" \
+            --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+
+          revision=$(printf '%s\0%s\0%s\0%s' \
+            "$S3_ACCESS_KEY_ID" "$S3_SECRET_ACCESS_KEY" "$SIGNING_SEED" "$SIDECAR_PUBLIC_KEY" \
+            | sha256sum | cut -d' ' -f1)
+          echo "secret_revision=$revision" >> "$GITHUB_OUTPUT"
+          unset S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY SIGNING_SEED SIDECAR_PUBLIC_KEY
+
       - name: Verify images and namespace prerequisites
         id: versions
         shell: bash
@@ -155,6 +193,7 @@ jobs:
           esac
 
           docker manifest inspect "$IMAGE_PREFIX/studio-backend:$backend_tag" >/dev/null
+          docker manifest inspect "$IMAGE_PREFIX/file-storage-sidecar:$backend_tag" >/dev/null
           docker manifest inspect "$IMAGE_PREFIX/studio-frontend:$frontend_tag" >/dev/null
           docker manifest inspect "$IMAGE_PREFIX/studio-frontend-prototype:$prototype_tag" >/dev/null
           # The Kubernetes session driver follows the deployed backend tag;
@@ -171,6 +210,8 @@ jobs:
             studio-postgres-app \
             studio-web-idp \
             studio-web-app \
+            studio-web-file-storage-s3 \
+            studio-web-file-storage-signing \
             keycloak-postgres-app \
             studio-web-keycloak-admin \
             studio-web-keycloak-realm; do
@@ -185,6 +226,8 @@ jobs:
           common_args=(
             -f "$values"
             --set-string "backend.image.tag=${{ steps.versions.outputs.backend_tag }}"
+            --set-string "backend.fileStorage.image.tag=${{ steps.versions.outputs.backend_tag }}"
+            --set-string "backend.fileStorage.secretRevision=${{ steps.file_storage.outputs.secret_revision }}"
             --set-string "frontend.image.tag=${{ steps.versions.outputs.frontend_tag }}"
             --set-string "frontendPrototype.image.tag=${{ steps.versions.outputs.prototype_tag }}"
             --set-string "keycloak.image.tag=${{ steps.versions.outputs.keycloak_tag }}"
@@ -203,6 +246,8 @@ jobs:
             -n "$NAMESPACE" \
             -f "deploy/helm/values-${{ inputs.environment }}.example.yaml" \
             --set-string "backend.image.tag=${{ steps.versions.outputs.backend_tag }}" \
+            --set-string "backend.fileStorage.image.tag=${{ steps.versions.outputs.backend_tag }}" \
+            --set-string "backend.fileStorage.secretRevision=${{ steps.file_storage.outputs.secret_revision }}" \
             --set-string "frontend.image.tag=${{ steps.versions.outputs.frontend_tag }}" \
             --set-string "frontendPrototype.image.tag=${{ steps.versions.outputs.prototype_tag }}" \
             --set-string "keycloak.image.tag=${{ steps.versions.outputs.keycloak_tag }}" \

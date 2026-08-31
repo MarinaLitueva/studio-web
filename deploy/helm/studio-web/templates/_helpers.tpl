@@ -19,3 +19,9 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- define "studio-web.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create }}{{ .Values.serviceAccount.name | default (include "studio-web.fullname" .) }}{{ else }}default{{ end -}}
 {{- end -}}
+
+{{/* One canonical S3 backend document, consumed by both control and data planes. */}}
+{{- define "studio-web.fileStorageS3Backends" -}}
+{{- $s3 := .Values.backend.fileStorage.s3 -}}
+{{- list (dict "id" .Values.backend.fileStorage.backendId "endpoint" $s3.endpoint "region" $s3.region "bucket" (required "backend.fileStorage.s3.bucket is required when fileStorage is enabled" $s3.bucket) "path_style" $s3.pathStyle) | toJson -}}
+{{- end -}}

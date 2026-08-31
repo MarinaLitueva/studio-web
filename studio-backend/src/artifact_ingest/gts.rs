@@ -357,6 +357,7 @@ pub fn file_instance_id(connector_id: &str, repo_full_path: &str, path: &str) ->
 /// path, so re-uploading the same name upserts. `origin: "manual"` distinguishes
 /// it from connector-ingested files; `repo` is set to the workspace id so the
 /// graph still has something to group it under.
+#[allow(clippy::too_many_arguments)]
 pub fn manual_file_node(
     workspace_id: &str,
     project_id: Option<&str>,
@@ -364,6 +365,7 @@ pub fn manual_file_node(
     size: u64,
     text: Option<String>,
     workspace_path: Option<String>,
+    object_ref: Option<Value>,
 ) -> GtsNode {
     // Identity is keyed on the narrowest tenant it belongs to (the project when
     // present, else the workspace) plus the path, so re-uploading the same name
@@ -384,6 +386,10 @@ pub fn manual_file_node(
             "workspace_id": workspace_id,
             "project_id": project_id,
             "workspace_path": workspace_path,
+            // When set, the content lives in the object store (S3 via
+            // file-storage); the graph keeps only this reference.
+            "storage": if object_ref.is_some() { "file-storage" } else { "graph" },
+            "object_ref": object_ref,
             "has_text": text.is_some(),
             "text": text,
         }),
