@@ -243,10 +243,10 @@ impl FileStorageStore {
                 .json()
                 .await
                 .context("decode versions")?;
-            if let Some(v) = list.0.into_iter().find(|v| v.version_id == version_id) {
-                if v.status == "available" {
-                    return Ok(v);
-                }
+            if let Some(v) = list.0.into_iter().find(|v| v.version_id == version_id)
+                && v.status == "available"
+            {
+                return Ok(v);
             }
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
