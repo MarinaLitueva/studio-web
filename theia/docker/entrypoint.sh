@@ -25,28 +25,42 @@ const lines = [
   "Counting commits so you don’t have to…",
   "Almost there — polishing the editor pixels…",
 ];
-http.createServer((_, res) => {
-  res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-  res.end(`<!doctype html><meta http-equiv="refresh" content="3">
-<title>Constructor Studio — preparing…</title>
+http.createServer((req, res) => {
+  // Kubernetes must not publish the Pod behind its Service until the splash
+  // has handed port 3003 to the authenticated gate below. A generic TCP probe
+  // sees this server too early and creates a short, user-visible 502 race.
+  if (req.url === "/__studio_session_ready__") {
+    res.writeHead(503, { "Cache-Control": "no-store", "Retry-After": "1" });
+    return res.end("preparing");
+  }
+  res.writeHead(200, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "no-store, no-cache, must-revalidate",
+  });
+  res.end(`<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="3">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Constructor Studio — preparing…</title>
 <style>
- body{margin:0;height:100vh;display:flex;flex-direction:column;align-items:center;
-      justify-content:center;background:#1e1e2e;color:#cdd6f4;
-      font:16px/1.6 system-ui,sans-serif}
- .g{font-size:64px;animation:spin 4s linear infinite;display:inline-block}
- @keyframes spin{to{transform:rotate(360deg)}}
- .l{margin-top:18px;opacity:.85}
- .d::after{content:"";animation:d 1.5s steps(4) infinite}
- @keyframes d{0%{content:""}25%{content:"."}50%{content:".."}75%{content:"..."}}
- small{margin-top:26px;opacity:.4}
-</style>
-<div class="g">⚙️</div>
-<div class="l" id="l"></div><div class="d"></div>
-<small>Constructor Studio is cloning your workspace sources</small>
-<script>
- const L=${JSON.stringify(lines)};
- document.getElementById("l").textContent=L[Math.floor(Math.random()*L.length)];
-</script>`);
+ :root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+ *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;overflow:hidden;
+ background:radial-gradient(circle at 50% 15%,#263652 0,#151d2d 42%,#0c111b 100%);color:#f3f7ff}
+ body:before{content:"";position:fixed;inset:-40%;background:conic-gradient(from 180deg,transparent,#4f8cff18,transparent 30%);
+ animation:orbit 9s linear infinite}.card{position:relative;width:min(560px,calc(100vw - 40px));padding:42px 46px;
+ border:1px solid #ffffff1c;border-radius:24px;background:#111927d9;box-shadow:0 28px 90px #0008;backdrop-filter:blur(18px)}
+ .brand{display:flex;align-items:center;gap:14px;font-weight:750;letter-spacing:.01em}.mark{display:grid;place-items:center;
+ width:42px;height:42px;border-radius:13px;background:linear-gradient(145deg,#55a7ff,#6f5cff);box-shadow:0 10px 30px #4f7fff55}
+ h1{margin:32px 0 10px;font-size:28px;letter-spacing:-.025em}.sub{margin:0;color:#aebbd0}.status{display:flex;align-items:center;
+ gap:11px;margin-top:28px;color:#d9e5f7}.dot{width:9px;height:9px;border-radius:50%;background:#62a8ff;box-shadow:0 0 0 7px #62a8ff18;
+ animation:pulse 1.4s ease-in-out infinite}.track{height:4px;margin-top:28px;overflow:hidden;border-radius:999px;background:#ffffff12}
+ .bar{width:38%;height:100%;border-radius:inherit;background:linear-gradient(90deg,#5ab0ff,#8d70ff);animation:slide 1.8s ease-in-out infinite}
+ .steps{display:flex;justify-content:space-between;margin-top:13px;color:#71809a;font-size:12px}.steps b{color:#b9c8dc;font-weight:600}
+ @keyframes orbit{to{transform:rotate(360deg)}}@keyframes pulse{50%{opacity:.45;transform:scale(.72)}}
+ @keyframes slide{0%{transform:translateX(-115%)}100%{transform:translateX(365%)}}
+</style></head><body><main class="card"><div class="brand"><span class="mark">CS</span><span>Constructor Studio</span></div>
+<h1>Preparing your workspace</h1><p class="sub">Repositories and workspace settings are being assembled securely.</p>
+<div class="status"><span class="dot"></span><span id="l"></span></div><div class="track"><div class="bar"></div></div>
+<div class="steps"><b>Prepare</b><span>Clone sources</span><span>Start IDE</span></div></main>
+<script>const L=${JSON.stringify(lines)};document.getElementById("l").textContent=L[Math.floor(Math.random()*L.length)];</script>
+</body></html>`);
 }).listen(3003, "0.0.0.0");
 SPLASH
 node /tmp/splash.js &
@@ -216,6 +230,13 @@ const controlApiOk = (req) => req.url.startsWith("/internal/theia/v1/");
 
 http
   .createServer((req, res) => {
+    // Dedicated readiness contract for the Kubernetes Pod. This endpoint is
+    // intentionally served by the gate itself, not by Theia, so readiness is
+    // stable while the IDE continues booting behind the gate's own splash.
+    if (req.url === "/__studio_session_ready__") {
+      res.writeHead(204, { "Cache-Control": "no-store" });
+      return res.end();
+    }
     if (!controlApiOk(req) && !bearerApiOk(req) && !cookieOk(req)) {
       const url = new URL(req.url, "http://x");
       if (url.searchParams.get("token") === TOKEN) {

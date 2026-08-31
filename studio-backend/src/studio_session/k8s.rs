@@ -13,9 +13,9 @@ use std::collections::BTreeMap;
 use anyhow::{Context, anyhow};
 use async_trait::async_trait;
 use k8s_openapi::api::core::v1::{
-    Capabilities, Container, ContainerPort, EmptyDirVolumeSource, EnvVar, LocalObjectReference,
-    Pod, PodSecurityContext, PodSpec, ResourceRequirements, SeccompProfile, SecurityContext,
-    Service, ServicePort, ServiceSpec, Volume, VolumeMount,
+    Capabilities, Container, ContainerPort, EmptyDirVolumeSource, EnvVar, HTTPGetAction,
+    LocalObjectReference, Pod, PodSecurityContext, PodSpec, Probe, ResourceRequirements,
+    SeccompProfile, SecurityContext, Service, ServicePort, ServiceSpec, Volume, VolumeMount,
 };
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
@@ -33,6 +33,7 @@ const TENANT_LABEL: &str = "cf.studio.tenant_id";
 const PORT_LABEL: &str = "cf.studio.port";
 const POD_LABEL: &str = "cf.studio.pod";
 const THEIA_PORT: i32 = 3003;
+const SESSION_READY_PATH: &str = "/__studio_session_ready__";
 const SESSION_TOKEN_ENV: &str = "STUDIO_SESSION_TOKEN";
 
 pub struct KubernetesDriver {
@@ -186,6 +187,26 @@ impl SessionDriver for KubernetesDriver {
                     resources: Some(ResourceRequirements {
                         requests: Some(requests),
                         limits: Some(limits),
+                        ..Default::default()
+                    }),
+                    // The entrypoint first holds port 3003 with a preparation
+                    // splash, then hands it to the authenticated session gate.
+                    // A bare TCP probe would mark the splash as ready and let
+                    // the portal hit the tiny hand-over gap, producing a 502.
+                    // The splash answers this path with 503; only the gate
+                    // answers 204, so the Service publishes an endpoint after
+                    // the hand-over has completed.
+                    readiness_probe: Some(Probe {
+                        http_get: Some(HTTPGetAction {
+                            path: Some(SESSION_READY_PATH.to_string()),
+                            port: IntOrString::Int(THEIA_PORT),
+                            ..Default::default()
+                        }),
+                        initial_delay_seconds: Some(1),
+                        period_seconds: Some(1),
+                        timeout_seconds: Some(1),
+                        failure_threshold: Some(180),
+                        success_threshold: Some(1),
                         ..Default::default()
                     }),
                     security_context: Some(SecurityContext {
