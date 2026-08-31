@@ -39,6 +39,11 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       scope: ${{ steps.classify.outputs.scope }}
+      backend: ${{ steps.changes.outputs.backend }}
+      frontend: ${{ steps.changes.outputs.frontend }}
+      prototype: ${{ steps.changes.outputs.prototype }}
+      theia: ${{ steps.changes.outputs.theia }}
+      any_service: ${{ steps.changes.outputs.any_service }}
     permissions:
       actions: read
       contents: read
@@ -101,9 +106,74 @@ jobs:
           echo "Timed out waiting for successful tests for $GITHUB_SHA" >&2
           exit 1
 
+      - uses: actions/checkout@v6
+        if: steps.classify.outputs.scope == 'services'
+        with:
+          # A push can contain several commits; the component diff must reach
+          # github.event.before rather than only HEAD^.
+          fetch-depth: 0
+
+      - name: Select service components
+        id: changes
+        if: steps.classify.outputs.scope == 'services'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          full=false
+          changed_file="$RUNNER_TEMP/service-image-paths"
+          : > "$changed_file"
+
+          # Tags and manual runs are explicit publication points: always
+          # produce a complete, independently reproducible image set.
+          if [ "${{ github.ref_type }}" = "tag" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            full=true
+          else
+            before="${{ github.event.before }}"
+            if [ -z "$before" ] || [[ "$before" =~ ^0+$ ]] || ! git cat-file -e "$before^{commit}" 2>/dev/null; then
+              full=true
+            else
+              git diff --name-only "$before" "$GITHUB_SHA" > "$changed_file"
+              # A change to the image pipeline itself gets one full proving
+              # build, so condition/output mistakes cannot silently skip it.
+              if grep -Eq '^\.github/workflows/release\.yml$' "$changed_file"; then
+                full=true
+              fi
+            fi
+          fi
+
+          selected() {
+            local pattern="$1"
+            if [ "$full" = true ] || grep -Eq "$pattern" "$changed_file"; then
+              printf 'true'
+            else
+              printf 'false'
+            fi
+          }
+
+          backend="$(selected '^studio-backend/')"
+          frontend="$(selected '^studio-frontend/')"
+          prototype="$(selected '^studio-frontend-prototype/')"
+          theia="$(selected '^theia/')"
+          if [ "$backend" = true ] || [ "$frontend" = true ] || [ "$prototype" = true ] || [ "$theia" = true ]; then
+            any_service=true
+          else
+            any_service=false
+          fi
+
+          {
+            echo "backend=$backend"
+            echo "frontend=$frontend"
+            echo "prototype=$prototype"
+            echo "theia=$theia"
+            echo "any_service=$any_service"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Selected: backend=$backend frontend=$frontend prototype=$prototype theia=$theia"
+
   backend-binary:
     needs: require-ci
-    if: needs.require-ci.outputs.scope == 'services'
+    if: needs.require-ci.outputs.scope == 'services' && needs.require-ci.outputs.backend == 'true'
     # Pinned, not `-latest`: the binary links the builder's glibc, and the
     # runtime image (Dockerfile, debian:trixie-slim, glibc 2.41) must be at
     # least as new. `ubuntu-latest` moving to a newer glibc than trixie would
@@ -137,7 +207,7 @@ jobs:
 
   file-storage-sidecar-binary:
     needs: require-ci
-    if: needs.require-ci.outputs.scope == 'services'
+    if: needs.require-ci.outputs.scope == 'services' && needs.require-ci.outputs.backend == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -184,7 +254,7 @@ jobs:
   # replaced studio-frontend-prototype/ (now a playground with its own image).
   frontend-dist:
     needs: require-ci
-    if: needs.require-ci.outputs.scope == 'services'
+    if: needs.require-ci.outputs.scope == 'services' && needs.require-ci.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -211,7 +281,7 @@ jobs:
   # ci.yml deliberately does not gate on it.
   prototype-dist:
     needs: require-ci
-    if: needs.require-ci.outputs.scope == 'services'
+    if: needs.require-ci.outputs.scope == 'services' && needs.require-ci.outputs.prototype == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -237,10 +307,11 @@ jobs:
       always() &&
       needs.require-ci.result == 'success' &&
       needs.require-ci.outputs.scope == 'services' &&
-      needs.backend-binary.result == 'success' &&
-      needs.file-storage-sidecar-binary.result == 'success' &&
-      needs.frontend-dist.result == 'success' &&
-      needs.prototype-dist.result == 'success'
+      needs.require-ci.outputs.any_service == 'true' &&
+      (needs.backend-binary.result == 'success' || needs.backend-binary.result == 'skipped') &&
+      (needs.file-storage-sidecar-binary.result == 'success' || needs.file-storage-sidecar-binary.result == 'skipped') &&
+      (needs.frontend-dist.result == 'success' || needs.frontend-dist.result == 'skipped') &&
+      (needs.prototype-dist.result == 'success' || needs.prototype-dist.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -248,18 +319,22 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: actions/download-artifact@v7
+        if: needs.require-ci.outputs.backend == 'true'
         with:
           name: studio-backend-linux-x86_64
           path: studio-backend/.release/
       - uses: actions/download-artifact@v7
+        if: needs.require-ci.outputs.backend == 'true'
         with:
           name: file-storage-sidecar-linux-x86_64
           path: studio-backend/.release/file-storage-sidecar-download/
       - uses: actions/download-artifact@v7
+        if: needs.require-ci.outputs.frontend == 'true'
         with:
           name: studio-frontend-dist
           path: studio-frontend/dist
       - uses: actions/download-artifact@v7
+        if: needs.require-ci.outputs.prototype == 'true'
         with:
           name: studio-frontend-prototype-dist
           path: studio-frontend-prototype/dist
@@ -310,18 +385,21 @@ jobs:
           echo "promotions=$promotions" >> "$GITHUB_OUTPUT"
 
       - name: Build backend image
+        if: needs.require-ci.outputs.backend == 'true'
         run: |
           set -euo pipefail
           tag="${{ steps.tags.outputs.immutable }}"
           docker build -f studio-backend/Dockerfile -t "$IMAGE_PREFIX/studio-backend:$tag" studio-backend
 
       - name: Push immutable backend image
+        if: needs.require-ci.outputs.backend == 'true'
         run: |
           set -euo pipefail
           tag="${{ steps.tags.outputs.immutable }}"
           docker push "$IMAGE_PREFIX/studio-backend:$tag"
 
       - name: Build and push file-storage sidecar image
+        if: needs.require-ci.outputs.backend == 'true'
         run: |
           set -euo pipefail
           tag="${{ steps.tags.outputs.immutable }}"
@@ -332,6 +410,7 @@ jobs:
           docker push "$IMAGE_PREFIX/file-storage-sidecar:$tag"
 
       - name: Build & push frontend image
+        if: needs.require-ci.outputs.frontend == 'true'
         run: |
           set -euo pipefail
           tag="${{ steps.tags.outputs.immutable }}"
@@ -340,6 +419,7 @@ jobs:
 
       # Same nginx runtime recipe as the main frontend, its own dist and name.
       - name: Build & push frontend prototype image
+        if: needs.require-ci.outputs.prototype == 'true'
         run: |
           set -euo pipefail
           tag="${{ steps.tags.outputs.immutable }}"
@@ -351,11 +431,48 @@ jobs:
       # it downloads Theia plugins at build time (needs network, ~10 min).
       # studio-session pulls this by the `image:` in config/*.yaml.
       - name: Build & push Theia session image
+        if: needs.require-ci.outputs.theia == 'true'
         run: |
           set -euo pipefail
           tag="${{ steps.tags.outputs.immutable }}"
           docker build -f theia/Dockerfile -t "$IMAGE_PREFIX/cf-studio-theia:$tag" theia
           docker push "$IMAGE_PREFIX/cf-studio-theia:$tag"
+
+      # Preserve a complete immutable snapshot without rebuilding unchanged
+      # components. `edge` is moved only after a successful complete set, so it
+      # is the last known-good source for a remote registry-side copy.
+      - name: Copy unchanged images into the immutable snapshot
+        if: github.ref_type != 'tag' && github.event_name != 'workflow_dispatch'
+        env:
+          BUILD_BACKEND: ${{ needs.require-ci.outputs.backend }}
+          BUILD_FRONTEND: ${{ needs.require-ci.outputs.frontend }}
+          BUILD_PROTOTYPE: ${{ needs.require-ci.outputs.prototype }}
+          BUILD_THEIA: ${{ needs.require-ci.outputs.theia }}
+        run: |
+          set -euo pipefail
+          immutable="${{ steps.tags.outputs.immutable }}"
+
+          copy_image() {
+            local image="$1"
+            docker buildx imagetools create \
+              --tag "$IMAGE_PREFIX/$image:$immutable" \
+              "$IMAGE_PREFIX/$image:edge"
+          }
+
+          if [ "$BUILD_BACKEND" != true ]; then
+            copy_image studio-backend
+            copy_image file-storage-sidecar
+          fi
+          if [ "$BUILD_FRONTEND" != true ]; then
+            copy_image studio-frontend
+          fi
+          if [ "$BUILD_PROTOTYPE" != true ]; then
+            copy_image studio-frontend-prototype
+          fi
+          if [ "$BUILD_THEIA" != true ]; then
+            copy_image cf-studio-theia
+          fi
+
       - name: Promote the complete service image set
         if: steps.tags.outputs.promotions != ''
         run: |
@@ -370,8 +487,9 @@ jobs:
           )
           for promotion in ${{ steps.tags.outputs.promotions }}; do
             for image in "${images[@]}"; do
-              docker tag "$IMAGE_PREFIX/$image:$immutable" "$IMAGE_PREFIX/$image:$promotion"
-              docker push "$IMAGE_PREFIX/$image:$promotion"
+              docker buildx imagetools create \
+                --tag "$IMAGE_PREFIX/$image:$promotion" \
+                "$IMAGE_PREFIX/$image:$immutable"
             done
           done
       - name: Summary

@@ -194,10 +194,15 @@ stays untouched.
 - **`release.yml` / Build Images** — service tags `v*` publish backend,
   frontend, prototype, and Theia images; infrastructure tags `infra-v*`
   publish graph PostgreSQL and Keycloak images. Every publication requires Test
-  success for the exact commit.
+  success for the exact commit. Main-branch snapshots rebuild only components
+  whose build contexts changed (`studio-backend/`, `studio-frontend/`,
+  `studio-frontend-prototype/`, or `theia/`). Unchanged images are copied from
+  the last successful `edge` set to the new immutable `sha-*` tag, so every
+  snapshot remains complete and can still be deployed with `component=all`.
+  Version tags and manual Build Images runs always perform a full build.
 - **`deploy.yml` / Deploy Services** — manually deploys backend, frontend, or
-  both. Branch snapshots are dev-only; `v*` releases may target any configured
-  application environment.
+  prototype independently, or all services together. Branch snapshots are
+  dev-only; `v*` releases may target any configured application environment.
 - **`deploy-infra.yml` / Deploy Infra** — manually reconciles graph PostgreSQL
   and Keycloak from a published `infra-v*` release.
 
