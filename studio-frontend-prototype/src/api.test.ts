@@ -256,6 +256,9 @@ describe("uploadProjectArtifact", () => {
     });
     const createBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
     expect(createBody.owner_id).toBe("0198af9a-77bc-7e01-b620-bb237979866a");
+    expect(createBody.gts_file_type).toBe(
+      "gts.cf.fstorage.file.type.v1~cf.studio.artifact.file.v1~",
+    );
     expect(createBody.custom_metadata).toContainEqual({
       key: "studio.artifact_origin",
       value: "manual",

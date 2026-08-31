@@ -429,6 +429,12 @@ export interface StoredFile {
 
 export type ProjectArtifactOrigin = "manual" | "generated";
 
+// File Storage expects a concrete classifier derived from its base file type.
+// A single-segment `gts.cf.file_storage.file.v1~` looks plausible but is not a
+// valid GTS type chain and is rejected before an upload ticket is created.
+const PROJECT_ARTIFACT_GTS_FILE_TYPE =
+  "gts.cf.fstorage.file.type.v1~cf.studio.artifact.file.v1~";
+
 export interface ProjectArtifactScope {
   organization_id: string;
   workspace_id: string;
@@ -581,7 +587,7 @@ export async function uploadProjectArtifact(
         owner_kind: "app",
         owner_id: scope.project_id,
         name: file.name,
-        gts_file_type: "gts.cf.file_storage.file.v1~",
+        gts_file_type: PROJECT_ARTIFACT_GTS_FILE_TYPE,
         mime_type: file.type || "application/octet-stream",
         idempotency_key: crypto.randomUUID(),
         custom_metadata: [
