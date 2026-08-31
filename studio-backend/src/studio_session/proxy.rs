@@ -79,7 +79,26 @@ async fn proxy(
         .query()
         .map(|q| format!("?{q}"))
         .unwrap_or_default();
-    let upstream: Uri = match format!("http://{host}:{port}/{rest}{query}").parse() {
+    // Resolve the Kubernetes Service explicitly before handing the request to
+    // hyper.  The backend's Tokio resolver already drives the readiness probe;
+    // using it here avoids relying on hyper's per-request DNS connector, which
+    // can reject otherwise reachable `*.svc.cluster.local` names in minimal
+    // runtime images. `SocketAddr` also formats IPv6 addresses with brackets,
+    // so the resulting URI remains valid for either address family.
+    let resolved = match tokio::net::lookup_host((host.as_str(), port)).await {
+        Ok(mut addresses) => match addresses.next() {
+            Some(address) => address,
+            None => {
+                tracing::warn!(%host, port, "studio-session: IDE service DNS returned no addresses");
+                return (StatusCode::BAD_GATEWAY, "session service has no address").into_response();
+            }
+        },
+        Err(error) => {
+            tracing::warn!(%host, port, %error, "studio-session: IDE service DNS lookup failed");
+            return (StatusCode::BAD_GATEWAY, "session service lookup failed").into_response();
+        }
+    };
+    let upstream: Uri = match format!("http://{resolved}/{rest}{query}").parse() {
         Ok(u) => u,
         Err(e) => {
             return (StatusCode::BAD_GATEWAY, format!("bad upstream uri: {e}")).into_response();
@@ -119,12 +138,15 @@ async fn proxy(
     let client: Client<_, Body> = Client::builder(TokioExecutor::new()).build_http();
     let mut upstream_resp = match client.request(forwarded).await {
         Ok(r) => r.map(Body::new),
-        Err(e) => {
-            return (
-                StatusCode::BAD_GATEWAY,
-                format!("session upstream unreachable: {e}"),
-            )
-                .into_response();
+        Err(_e) => {
+            // Do not log the URI: the first IDE navigation carries the
+            // per-session gate token in its query string.
+            tracing::warn!(
+                %host,
+                port,
+                "studio-session: IDE upstream request failed"
+            );
+            return (StatusCode::BAD_GATEWAY, "session upstream unreachable").into_response();
         }
     };
 
