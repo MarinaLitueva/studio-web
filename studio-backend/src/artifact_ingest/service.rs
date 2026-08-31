@@ -151,6 +151,19 @@ pub struct QualityLink {
     pub to: String,
 }
 
+/// Validated project-artifact metadata passed from the REST boundary to the
+/// graph adapter. Keeping it as one value prevents hierarchy fields from being
+/// accidentally reordered or omitted as the contract evolves.
+pub struct ProjectArtifact<'a> {
+    pub organization_id: &'a str,
+    pub workspace_id: &'a str,
+    pub project_id: &'a str,
+    pub origin: &'a str,
+    pub path: &'a str,
+    pub size: u64,
+    pub object_ref: serde_json::Value,
+}
+
 impl IngestService {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -1018,23 +1031,17 @@ impl IngestService {
     pub async fn upsert_project_artifact(
         &self,
         ctx: &SecurityContext,
-        organization_id: &str,
-        workspace_id: &str,
-        project_id: &str,
-        origin: &str,
-        path: &str,
-        size: u64,
-        object_ref: serde_json::Value,
+        artifact: ProjectArtifact<'_>,
     ) -> anyhow::Result<String> {
         use super::gts;
         let node = gts::project_artifact_file_node(
-            organization_id,
-            workspace_id,
-            project_id,
-            origin,
-            path,
-            size,
-            object_ref,
+            artifact.organization_id,
+            artifact.workspace_id,
+            artifact.project_id,
+            artifact.origin,
+            artifact.path,
+            artifact.size,
+            artifact.object_ref,
         );
         let id = node.instance_id.clone();
         self.graph

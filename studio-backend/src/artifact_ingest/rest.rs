@@ -14,7 +14,7 @@ use toolkit::api::{OpenApiRegistry, OperationBuilder};
 use toolkit_canonical_errors::resource_error;
 use toolkit_security::SecurityContext;
 
-use super::service::IngestService;
+use super::service::{IngestService, ProjectArtifact};
 
 /// Errors attributable to an artifact-ingest resource (e.g. an unknown task).
 /// Five tokens in the segment (`vendor.package.namespace.type.vN`); `_` is the
@@ -640,13 +640,15 @@ async fn add_file(
     let instance_id = svc
         .upsert_project_artifact(
             &ctx,
-            &organization_id,
-            &workspace_id,
-            &project_id,
-            &origin,
-            &path,
-            req.size,
-            object_ref,
+            ProjectArtifact {
+                organization_id: &organization_id,
+                workspace_id: &workspace_id,
+                project_id: &project_id,
+                origin: &origin,
+                path: &path,
+                size: req.size,
+                object_ref,
+            },
         )
         .await
         .map_err(|e| CanonicalError::internal(format!("{e:#}")).create())?;
