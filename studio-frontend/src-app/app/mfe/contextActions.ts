@@ -46,6 +46,15 @@ export const STUDIO_SHARED_PROPERTY_CONTEXT_ORGANIZATION =
   'gts.frontx.mfes.comm.shared_property.v1~constructor_studio.context.organization.selected.v1~';
 
 /**
+ * The workspace the session is working in, as `{id, name}` or `null`.
+ */
+export const STUDIO_SHARED_PROPERTY_CONTEXT_WORKSPACE =
+  'gts.frontx.mfes.comm.shared_property.v1~constructor_studio.context.workspace.selected.v1~';
+
+export const STUDIO_ACTION_WORKSPACES_PUBLISH =
+  'gts.frontx.mfes.comm.action.v1~constructor_studio.context.workspaces.publish.v1~';
+
+/**
  * Who is signed in, for display: `{id, displayName?, email?}` or `null`.
  * Display only. Every authorization decision stays with the backend, which
  * verifies the signature.
@@ -88,5 +97,33 @@ export function createContextPublishHandler(): ActionHandler {
     if (kind === 'closed') {
       eventBus.emit('app/context/project/closed');
     }
+  });
+}
+
+/**
+ * Handler for the workspace action, registered on the screen and the overlay
+ * domain.
+ *
+ * Two kinds, and neither publishes a list — the shell reads the workspaces
+ * itself:
+ *
+ * - `created` is one row the shell would otherwise have to refetch to learn
+ *   about, and it becomes the current workspace.
+ * - `scoped` is the mounted screen saying it works inside a workspace, which is
+ *   what puts the workspace slot in the top bar. It is only ever turned ON here;
+ *   `Menu` turns it off when it mounts another screen, exactly as it does for
+ *   the project slot next to it.
+ */
+// @cpt-dod:cpt-studiofrontend-dod-workspace-scope-announce:p1
+// @cpt-dod:cpt-studiofrontend-dod-workspace-scope-slot:p1
+export function createWorkspacePublishHandler(): ActionHandler {
+  return ActionHandler.fromFunction(async (_actionTypeId, payload) => {
+    if (payload?.kind === 'scoped') {
+      eventBus.emit('app/context/workspace/scoped');
+      return;
+    }
+    if (payload?.kind !== 'created') return;
+    if (!isEntity(payload?.workspace)) return;
+    eventBus.emit('app/context/workspace/created', payload.workspace);
   });
 }

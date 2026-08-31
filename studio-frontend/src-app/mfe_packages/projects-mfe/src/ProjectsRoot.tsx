@@ -1,9 +1,15 @@
 import React, { useEffect, useRef } from 'react';
-import { useAppDispatch, useAppSelector, useSharedProperty } from '@gears-frontx/react';
+import {
+  useAppDispatch,
+  useAppSelector,
+  useMfeBridge,
+  useSharedProperty,
+} from '@gears-frontx/react';
 import { STUDIO_SHARED_PROPERTY_CONTEXT_PROJECT, useHostChrome } from '@constructor-studio/mfe-shared';
 import { ProjectListScreen } from './screens/project-list/ProjectListScreen';
 import { ProjectScreen } from './screens/project/ProjectScreen';
 import { NAV_SLICE_KEY, closeProject, openProject } from './slices/navSlice';
+import { publishWorkspaceScope } from './actions/workspaceActions';
 import styles from './ProjectsRoot.module.css';
 
 /**
@@ -16,9 +22,15 @@ import styles from './ProjectsRoot.module.css';
  * Which screen shows is `projects/nav`, not a route — the shell has no router,
  * and ADR-0008 puts the project's own rail inside this frame.
  */
+// @cpt-dod:cpt-studiofrontend-dod-workspace-scope-slot:p1
 export const ProjectsRoot: React.FC = () => {
   const { containerRef, dataTheme } = useHostChrome();
+  const bridge = useMfeBridge();
   const dispatch = useAppDispatch();
+
+  useEffect(() => {
+    publishWorkspaceScope(bridge);
+  }, [bridge]);
   const projectId = useAppSelector((state) => state[NAV_SLICE_KEY].projectId);
 
   // Read inside the subscription without re-subscribing on every navigation.

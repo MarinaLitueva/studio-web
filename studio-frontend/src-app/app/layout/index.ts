@@ -27,4 +27,5 @@ export type { OverlayProps } from './Overlay';
 
 export { OverlayDialog } from './OverlayDialog';
 export { ContextSwitcher } from './ContextSwitcher';
+export { WorkspaceSwitcher } from './WorkspaceSwitcher';
 export { UserMenu } from './UserMenu';

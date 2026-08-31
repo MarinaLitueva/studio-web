@@ -12,6 +12,7 @@
  */
 
 // @cpt-dod:cpt-studiofrontend-dod-project-create-write:p1
+// @cpt-dod:cpt-studiofrontend-dod-workspace-scope-project-parent:p1
 // @cpt-dod:cpt-studiofrontend-dod-project-create-announce:p1
 // @cpt-algo:cpt-studiofrontend-algo-project-create-write:p2
 // @cpt-flow:cpt-studiofrontend-flow-project-create-greenfield:p1
@@ -51,7 +52,7 @@ function toProjectConfig(draft: ProjectDraft): ProjectConfig {
 }
 
 export function initWizardEffects(dispatch: AppDispatch): void {
-  eventBus.on('mfe/projects/create-requested', ({ orgId, draft }) => {
+  eventBus.on('mfe/projects/create-requested', ({ workspaceId, draft }) => {
     const accounts = apiRegistry.getService(AccountsApiService);
 
     // @cpt-begin:cpt-studiofrontend-algo-project-create-write:p2:inst-1
@@ -67,7 +68,7 @@ export function initWizardEffects(dispatch: AppDispatch): void {
         // @cpt-begin:cpt-studiofrontend-algo-project-create-write:p2:inst-2
         const tenant = await accounts.createTenant.fetch({
           name,
-          parent_id: orgId,
+          parent_id: workspaceId,
           tenant_type: TENANT_TYPES.project,
         });
         tenantId = tenant.id;

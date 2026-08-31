@@ -14,3 +14,7 @@ export const STUDIO_SHARED_PROPERTY_CONTEXT_ORGANIZATION =
 /** `{id, displayName?, email?}` of the signed-in subject, or `null`. */
 export const STUDIO_SHARED_PROPERTY_SESSION_PROFILE =
   'gts.frontx.mfes.comm.shared_property.v1~constructor_studio.session.user.profile.v1~';
+
+/** `{id, name}` of the workspace in scope, or `null` when the organization has none. */
+export const STUDIO_SHARED_PROPERTY_CONTEXT_WORKSPACE =
+  'gts.frontx.mfes.comm.shared_property.v1~constructor_studio.context.workspace.selected.v1~';

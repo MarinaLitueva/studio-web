@@ -18,10 +18,12 @@ const SCREENSET = 'projects';
 const LIST_SCREEN = 'list';
 const PROJECT_SCREEN = 'project';
 const CREATE_SCREEN = 'create';
+const WORKSPACE_SCREEN = 'workspace';
 
 export const PROJECT_LIST_NAMESPACE = `screen.${SCREENSET}.${LIST_SCREEN}`;
 export const PROJECT_NAMESPACE = `screen.${SCREENSET}.${PROJECT_SCREEN}`;
 export const PROJECT_CREATE_NAMESPACE = `screen.${SCREENSET}.${CREATE_SCREEN}`;
+export const WORKSPACE_CREATE_NAMESPACE = `screen.${SCREENSET}.${WORKSPACE_SCREEN}`;
 
 type JsonModule = { default: Record<string, string> };
 type ModuleMap = Record<string, () => Promise<JsonModule>>;
@@ -30,6 +32,7 @@ type ModuleMap = Record<string, () => Promise<JsonModule>>;
 const listModules = import.meta.glob('./screens/project-list/i18n/*.json') as ModuleMap;
 const projectModules = import.meta.glob('./screens/project/i18n/*.json') as ModuleMap;
 const createModules = import.meta.glob('./screens/project-create/i18n/*.json') as ModuleMap;
+const workspaceModules = import.meta.glob('./screens/workspace-create/i18n/*.json') as ModuleMap;
 
 /**
  * A language with no file resolves to an empty dictionary rather than to
@@ -47,6 +50,7 @@ function loadFrom(modules: ModuleMap, directory: string) {
 const loadListTranslations = loadFrom(listModules, './screens/project-list/i18n');
 const loadProjectTranslations = loadFrom(projectModules, './screens/project/i18n');
 const loadCreateTranslations = loadFrom(createModules, './screens/project-create/i18n');
+const loadWorkspaceTranslations = loadFrom(workspaceModules, './screens/workspace-create/i18n');
 
 /** Loads the list screen's dictionary. One call, in `ProjectListScreen`. */
 export function useProjectListScreenTranslations(): UseScreenTranslationsReturn {
@@ -68,6 +72,11 @@ export function useProjectCreateScreenTranslations(): UseScreenTranslationsRetur
   return useScreenTranslations(SCREENSET, CREATE_SCREEN, loadCreateTranslations);
 }
 
+/** Loads the New workspace form's dictionary. One call, in `NewWorkspaceForm`. */
+export function useWorkspaceCreateScreenTranslations(): UseScreenTranslationsReturn {
+  return useScreenTranslations(SCREENSET, WORKSPACE_SCREEN, loadWorkspaceTranslations);
+}
+
 export type ScreenText = (
   key: string,
   params?: Record<string, string | number | boolean>
@@ -86,3 +95,4 @@ function createText(namespace: string): () => ScreenText {
 export const useProjectListText = createText(PROJECT_LIST_NAMESPACE);
 export const useProjectText = createText(PROJECT_NAMESPACE);
 export const useProjectCreateText = createText(PROJECT_CREATE_NAMESPACE);
+export const useWorkspaceCreateText = createText(WORKSPACE_CREATE_NAMESPACE);

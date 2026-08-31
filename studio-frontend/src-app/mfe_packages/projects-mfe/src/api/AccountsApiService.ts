@@ -9,6 +9,7 @@ import {
   type EndpointDescriptor,
 } from '@gears-frontx/react';
 import { orNullOnNotFound } from '../shared/notFound';
+import { TENANT_TYPES } from './types';
 import type { Me, MetadataEntry, Page, ProjectConfig, TenantDto, User } from './types';
 
 /** `POST /tenants`. AM accepts these three fields on create. */
@@ -45,12 +46,8 @@ export interface ChildrenParams {
   cursor?: string;
 }
 
-/**
- * Parameters of the one page the tree reads per node — and therefore the cache
- * key the wizard has to invalidate for a created project to appear in the list.
- */
 export function childrenPageParams(tenantId: string): ChildrenParams {
-  return { tenantId, limit: CHILDREN_PAGE_LIMIT };
+  return { tenantId, tenantType: TENANT_TYPES.project, limit: CHILDREN_PAGE_LIMIT };
 }
 
 function childrenPath({ tenantId, tenantType, limit, cursor }: ChildrenParams): string {

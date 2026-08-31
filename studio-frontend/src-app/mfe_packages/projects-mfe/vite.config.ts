@@ -32,6 +32,9 @@ export default defineConfig({
         // the shell's overlay domain while the screen entry stays mounted
         // behind the scrim, and one lifecycle singleton cannot hold two roots.
         './overlayLifecycle': './src/overlayLifecycle.tsx',
+        // Third entry, same reasoning: the New workspace form is its own
+        // overlay root, and the wizard's lifecycle singleton cannot hold it.
+        './workspaceOverlayLifecycle': './src/workspaceOverlayLifecycle.tsx',
       },
       // Empty shared config — MF 2.0's shared dep mechanism is bypassed.
       // Shared deps are externalized via rollupOptions.external and provided

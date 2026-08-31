@@ -12,12 +12,6 @@ import {
 import type { Me, Page, Tenant } from './types';
 import { accountsMockMap } from './mocks';
 
-/**
- * The real account-management gear behind the /cf gateway prefix
- * (vite dev proxy / nginx location — same-origin in every environment).
- * Exported so raw probes (LoginScreen's pre-session token check) stay on
- * the same base as the service.
- */
 export const ACCOUNTS_API_BASE_URL = '/cf/account-management/v1';
 
 /**
@@ -60,13 +54,22 @@ export class AccountsApiService extends BaseApiService {
   );
 
   /**
-   * A tenant's children. Organizations the user can switch to are the children
-   * of their home tenant whose `tenant_type` is the organization type — the
-   * filtering is the caller's, since account-management has no type query
-   * parameter.
+   * A tenant's children, unfiltered. Organizations the user can switch to are
+   * the children of their home tenant whose `tenant_type` is the organization
+   * type, and that partition is done on the client: the home tenant has few
+   * children and this page is also the mock map's key.
    */
   readonly tenantChildren = this.protocol(RestEndpointProtocol).queryWith<
     Page<Tenant>,
     { tenantId: string }
   >(({ tenantId }) => `/tenants/${tenantId}/children`);
+
+  readonly tenantChildrenOfType = this.protocol(RestEndpointProtocol).queryWith<
+    Page<Tenant>,
+    { tenantId: string; tenantType: string; limit?: number }
+  >(({ tenantId, tenantType, limit }) => {
+    const query = new URLSearchParams({ $filter: `tenant_type eq '${tenantType}'` });
+    if (limit !== undefined) query.set('limit', String(limit));
+    return `/tenants/${tenantId}/children?${query.toString()}`;
+  });
 }

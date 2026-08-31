@@ -6,29 +6,8 @@ import { TENANT_TYPES, type ProjectConfig, type TenantDto, type User } from '../
 
 export type StatusTone = 'success' | 'warning' | 'info' | 'danger' | 'muted';
 
-export function isWorkspace(tenant: TenantDto): boolean {
-  return tenant.tenant_type === TENANT_TYPES.workspace;
-}
-
 export function isProject(tenant: TenantDto): boolean {
   return tenant.tenant_type === TENANT_TYPES.project;
-}
-
-export function isOrganization(tenant: TenantDto): boolean {
-  return tenant.tenant_type === TENANT_TYPES.organization;
-}
-
-/**
- * Order inside one parent: workspaces first, then projects, then anything else
- * — a tenant tree may legitimately carry types this screen knows nothing about,
- * and dropping them would hide real rows. This is the "sort by tenant type on
- * the client" half of the tree: the children request is unfiltered, so one page
- * carries every kind at once.
- */
-export function tenantTypeRank(tenant: TenantDto): number {
-  if (isWorkspace(tenant)) return 0;
-  if (isProject(tenant)) return 1;
-  return 2;
 }
 
 /** The list's sort, applied entirely on the client. */
@@ -57,15 +36,13 @@ export function sortDirection(option: ProjectSortOption): 'asc' | 'desc' {
 }
 
 /**
- * Sibling order for a chosen sort. Tenant type stays the primary key whatever
- * the user picked: a workspace is a container, and interleaving containers with
- * their peers' contents alphabetically reads as a broken tree rather than as a
- * sorted one. Inside one type, the option decides.
+ * Row order for a chosen sort. One rule and no tie-breaker by tenant type: every
+ * row is a project now that the list is rooted at a workspace.
  */
 export function tenantComparator(
   option: ProjectSortOption
 ): (a: TenantDto, b: TenantDto) => number {
-  const within = (a: TenantDto, b: TenantDto): number => {
+  return (a, b) => {
     switch (option) {
       case 'alphabetical':
         return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
@@ -76,12 +53,6 @@ export function tenantComparator(
         return b.updated_at.localeCompare(a.updated_at);
     }
   };
-  return (a, b) => tenantTypeRank(a) - tenantTypeRank(b) || within(a, b);
-}
-
-/** Stable: AM's `(created_at ASC, id ASC)` order survives inside each group. */
-export function sortForTree(tenants: readonly TenantDto[]): TenantDto[] {
-  return [...tenants].sort((a, b) => tenantTypeRank(a) - tenantTypeRank(b));
 }
 
 /**

@@ -20,11 +20,14 @@
  *
  * Until projects-mfe emits those, the slot simply stays at `org` scope. That is
  * the designed resting state, not a missing feature.
+ *
+ * The workspace is a THIRD pair (`workspace`/`workspaces`) rather than a third
+ * scope: it is in scope at the same time as the organization, while `org` and
+ * `project` are alternatives to each other.
  */
 
 import { createSlice, type ReducerPayload } from '@gears-frontx/react';
 
-/** Anything the slot can name: an id to switch by and a name to show. */
 export interface ContextEntity {
   id: string;
   name: string;
@@ -32,18 +35,18 @@ export interface ContextEntity {
 
 /** Which list the chevron opens. */
 export type ContextScope = 'org' | 'project';
+export type WorkspacesStatus = 'pending' | 'ready' | 'failed';
 
 export interface AppContextState {
   scope: ContextScope;
-  /** The organization in scope. Null until account-management answers. */
   org: ContextEntity | null;
-  /** Organizations the user may switch to, current one included. */
   orgs: ContextEntity[];
-  /** The open project. Non-null exactly when `scope` is `project`. */
+  workspace: ContextEntity | null;
+  workspaces: ContextEntity[];
+  workspacesStatus: WorkspacesStatus;
+  screenUsesWorkspace: boolean;
   project: ContextEntity | null;
-  /** Projects the switcher offers, as published by projects-mfe. */
   projects: ContextEntity[];
-  /** True while the organization lookup is in flight. */
   loading: boolean;
 }
 
@@ -53,6 +56,10 @@ const initialState: AppContextState = {
   scope: 'org',
   org: null,
   orgs: [],
+  workspace: null,
+  workspaces: [],
+  workspacesStatus: 'pending',
+  screenUsesWorkspace: false,
   project: null,
   projects: [],
   loading: false,
@@ -63,6 +70,11 @@ const {
   setContextLoading,
   setContextOrganizations,
   setContextOrg,
+  setContextWorkspaces,
+  setContextWorkspacesStatus,
+  setContextWorkspace,
+  addContextWorkspace,
+  setScreenUsesWorkspace,
   setContextProjects,
   openContextProject,
   closeContextProject,
@@ -83,19 +95,66 @@ const {
       state.orgs = action.payload.items;
     },
 
-    /**
-     * Switch organization. Kept separate from the list so a switch does not
-     * have to restate every option, and resolved against `orgs` so an unknown
-     * id cannot leave the slot naming an organization that is not offered.
-     */
     setContextOrg: (state: AppContextState, action: ReducerPayload<string>) => {
       const next = state.orgs.find((org) => org.id === action.payload);
-      if (!next) return;
+      if (!next || next.id === state.org?.id) return;
       state.org = next;
       // Leaving the organization invalidates anything scoped under it.
       state.scope = 'org';
+      state.workspace = null;
+      state.workspaces = [];
+      state.workspacesStatus = 'pending';
       state.project = null;
       state.projects = [];
+    },
+
+    // @cpt-begin:cpt-studiofrontend-algo-workspace-scope-resolve:p1:inst-6
+    setContextWorkspaces: (
+      state: AppContextState,
+      action: ReducerPayload<ContextEntity[]>
+    ) => {
+      state.workspaces = action.payload;
+      const kept = action.payload.find((item) => item.id === state.workspace?.id);
+      state.workspace = kept ?? action.payload[0] ?? null;
+    },
+    // @cpt-end:cpt-studiofrontend-algo-workspace-scope-resolve:p1:inst-6
+
+    // @cpt-begin:cpt-studiofrontend-algo-workspace-scope-resolve:p1:inst-5
+    setContextWorkspacesStatus: (
+      state: AppContextState,
+      action: ReducerPayload<WorkspacesStatus>
+    ) => {
+      state.workspacesStatus = action.payload;
+    },
+    // @cpt-end:cpt-studiofrontend-algo-workspace-scope-resolve:p1:inst-5
+
+    setContextWorkspace: (state: AppContextState, action: ReducerPayload<string>) => {
+      const next = state.workspaces.find((workspace) => workspace.id === action.payload);
+      if (!next || next.id === state.workspace?.id) return;
+      state.workspace = next;
+      state.scope = 'org';
+      state.project = null;
+      state.projects = [];
+    },
+
+    addContextWorkspace: (
+      state: AppContextState,
+      action: ReducerPayload<ContextEntity>
+    ) => {
+      if (!state.workspaces.some((workspace) => workspace.id === action.payload.id)) {
+        state.workspaces = [...state.workspaces, action.payload];
+      }
+      state.workspace = action.payload;
+      state.scope = 'org';
+      state.project = null;
+      state.projects = [];
+    },
+
+    setScreenUsesWorkspace: (
+      state: AppContextState,
+      action: ReducerPayload<boolean>
+    ) => {
+      state.screenUsesWorkspace = action.payload;
     },
 
     setContextProjects: (
@@ -113,12 +172,6 @@ const {
       state.scope = 'project';
       state.project = action.payload;
     },
-
-    /**
-     * Back up to the organization. The shell triggers this itself whenever a
-     * global screen mounts from the drawer: choosing Projects or People means
-     * you are no longer inside a project, and no MFE has to tell us so.
-     */
     closeContextProject: (state: AppContextState) => {
       state.scope = 'org';
       state.project = null;
@@ -131,6 +184,11 @@ export {
   setContextLoading,
   setContextOrganizations,
   setContextOrg,
+  setContextWorkspaces,
+  setContextWorkspacesStatus,
+  setContextWorkspace,
+  addContextWorkspace,
+  setScreenUsesWorkspace,
   setContextProjects,
   openContextProject,
   closeContextProject,

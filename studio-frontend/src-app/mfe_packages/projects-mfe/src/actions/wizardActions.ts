@@ -39,6 +39,6 @@ export function closeProjectWizard(bridge: ChildMfeBridge | null): void {
   send(bridge, UNMOUNT_EXT, OVERLAY_DOMAIN, WIZARD_EXTENSION_ID);
 }
 
-export function requestProjectCreate(orgId: string, draft: ProjectDraft): void {
-  eventBus.emit('mfe/projects/create-requested', { orgId, draft });
+export function requestProjectCreate(workspaceId: string, draft: ProjectDraft): void {
+  eventBus.emit('mfe/projects/create-requested', { workspaceId, draft });
 }
