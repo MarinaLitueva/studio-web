@@ -222,7 +222,12 @@ http
         url.searchParams.delete("token");
         res.writeHead(302, {
           "Set-Cookie": `${COOKIE}=${TOKEN}; HttpOnly; Path=/; SameSite=Lax`,
-          Location: url.pathname + url.search,
+          // Keep the redirect relative to the browser-facing session mount.
+          // In Kubernetes the gate sees upstream `/`, but the browser opened
+          // `/studio/{sessionId}/`; an absolute `/` would navigate the iframe
+          // back to the portal/prototype SPA. `./` works for both the proxied
+          // mount and a standalone loopback session.
+          Location: "./" + url.search,
         });
         return res.end();
       }

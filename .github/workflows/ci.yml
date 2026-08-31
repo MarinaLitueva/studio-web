@@ -19,6 +19,7 @@ jobs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
       prototype: ${{ steps.filter.outputs.prototype }}
+      theia: ${{ steps.filter.outputs.theia }}
       infra: ${{ steps.filter.outputs.infra }}
       deployment: ${{ steps.filter.outputs.deployment }}
     steps:
@@ -35,6 +36,9 @@ jobs:
               - '.github/workflows/**'
             prototype:
               - 'studio-frontend-prototype/**'
+              - '.github/workflows/**'
+            theia:
+              - 'theia/**'
               - '.github/workflows/**'
             infra:
               - 'studio-backend/docker/graph-postgres/**'
@@ -136,6 +140,21 @@ jobs:
           name: studio-frontend-prototype-dist
           path: studio-frontend-prototype/dist
           retention-days: 7
+
+  # Fast integration test for the authentication redirect implemented inside
+  # the generated Theia session gate. In Kubernetes an absolute Location: /
+  # escapes /studio/{sessionId}/ and embeds the portal SPA inside its own
+  # iframe; this test boots the real generated gate and locks the redirect.
+  theia-session-gate:
+    needs: changes
+    if: needs.changes.outputs.theia == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: node theia/docker/gate.test.mjs
 
   infra:
     needs: changes

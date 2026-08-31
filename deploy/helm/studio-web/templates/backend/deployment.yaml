@@ -51,7 +51,9 @@ spec:
             - name: STUDIO_SESSION_IMAGE
               value: "{{ .Values.backend.sessions.image.repository }}:{{ default .Values.backend.image.tag .Values.backend.sessions.image.tag }}"
             - name: STUDIO_SESSION_GATEWAY_URL
-              value: "http://{{ include "studio-web.fullname" . }}-backend:{{ .Values.backend.port }}/cf"
+              # Address the Kubernetes Service port (80), not the backend
+              # container port (8090). The Service maps 80 -> targetPort http.
+              value: "http://{{ include "studio-web.fullname" . }}-backend/cf"
             - name: STUDIO_PG_HOST
               valueFrom: { secretKeyRef: { name: {{ .Values.backend.database.existingSecret }}, key: {{ .Values.backend.database.keys.host }} } }
             - name: STUDIO_PG_PORT
