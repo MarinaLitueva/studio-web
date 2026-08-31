@@ -19,7 +19,7 @@ Start the backend first (`../studio-backend`, `cargo run -- --config config/dev.
 | resource-group | Projects (RG groups + metadata binding) · project members (memberships) |
 | mini-chat (+ oagw, credstore, model-policy) | Ask AI on the dashboard · **Chats view**: thread list, history, streamed replies, delete, model catalog |
 | simple-user-settings | Profile → Preferences (server-side theme/language; dark theme) |
-| file-storage | **Files view**: files + storages (read-only until an upload sidecar is deployed) |
+| file-storage | **Project artifacts**: signed S3 upload for manual/generated files; Files view for observability |
 | gear-orchestrator, oagw, types-registry | **System view**: live gears list, OAGW upstreams (the LLM egress), GTS entities |
 | api-gateway, authn/authz, tenant-resolver, grpc-hub, nodes-registry, credstore | infrastructure — exercised by every call rather than shown as screens |
 

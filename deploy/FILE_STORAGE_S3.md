@@ -41,8 +41,23 @@ The sidecar is exposed through the existing Studio hostname. No additional DNS
 record and no cross-origin browser configuration are required. Only signed data
 paths are public; `/healthz` and `/readyz` remain cluster-internal probes.
 
-The graph stores an object reference, not file bytes. The storage key layout is
-owned by the gear (`file_id/version_id`), not by Studio business paths.
+The graph stores an object reference, not file bytes. Studio currently uses S3
+for user-uploaded and Studio-generated project artifacts only. Repository
+issues, pull requests, commits and files stay in Git plus Artifact Graph and are
+not copied to S3.
+
+Each project artifact is tagged with the logical ownership hierarchy:
+
+```text
+organization_id -> workspace_id -> project_id -> file_id -> version_id
+```
+
+These values are file-storage custom metadata and are repeated on the standard
+Artifact Graph file node. Physical S3 keys remain owned by the platform
+file-storage gear (`file_id/version_id`). Changing that platform layout to an
+`organizations/.../workspaces/.../projects/...` prefix requires a separately
+reviewed file-storage change; Studio must not bypass the gear or modify Graph
+Storage for this purpose.
 
 ## Image ownership and versioning
 
@@ -128,11 +143,19 @@ The end-to-end smoke test is an authenticated upload through the Studio UI:
 4. the object appears in the environment's S3 bucket;
 5. a download returns identical bytes.
 
-## Backend artifact-ingest integration
+## Project artifact integration
 
-`artifact_ingest::object_store` is deliberately config-gated. Do not set
-`STUDIO_FILE_STORAGE_BASE_URL` or `STUDIO_FILE_STORAGE_TOKEN` in Kubernetes yet.
-The current REST implementation needs a service bearer token for authenticated
-control-plane routes. The preferred follow-up is to expose the required
-in-process `FileStorageClientV1` operations in `gears-rust` and replace the REST
-implementation behind the existing `ObjectStore` trait.
+The authenticated browser drives the existing file-storage contract:
+
+1. create a file (or presign a new immutable version of an existing file);
+2. PUT arbitrary bytes to the returned signed data-plane URL;
+3. wait until file-storage reports the version as `available`;
+4. bind that version as current;
+5. register a standard file node through `studio-artifact-ingest`, containing
+   only hierarchy metadata and the `file_id`/`version_id`/checksum reference.
+
+`origin` is restricted to `manual` or `generated`. Repository sync follows its
+existing connector/checkout path and never invokes project artifact upload.
+Graph Storage remains an external platform component and is used exclusively
+through its existing adapter; this feature adds no Graph Storage schema or API
+changes.

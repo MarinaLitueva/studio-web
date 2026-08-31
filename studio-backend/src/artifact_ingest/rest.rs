@@ -286,10 +286,28 @@ pub struct SearchRequest {
     pub limit: Option<u32>,
 }
 
-/// A manually-added file to store in the graph as a `file` node (no connector).
+/// A durable file-storage reference. Artifact Graph stores this metadata, not
+/// the object bytes.
+#[derive(Debug)]
+#[toolkit_macros::api_dto(request)]
+pub struct ArtifactObjectRefRequest {
+    pub storage: String,
+    pub file_id: String,
+    pub version_id: String,
+    pub name: String,
+    pub mime: String,
+    pub size: u64,
+    #[serde(default)]
+    pub checksum: Option<String>,
+}
+
+/// A manually-added or Studio-generated project file to register in the graph.
+/// Its bytes must already be available through file-storage.
 #[derive(Debug)]
 #[toolkit_macros::api_dto(request)]
 pub struct ManualFileRequest {
+    /// Organization owning the workspace/project hierarchy.
+    pub organization_id: String,
     /// Workspace tenant this file belongs to (the parent of `project_id`).
     /// Tagged onto the node so a workspace-level graph shows it. Also keys the
     /// node's identity, so re-uploading the same name upserts.
@@ -297,15 +315,14 @@ pub struct ManualFileRequest {
     /// Project tenant this file belongs to. Tagged onto the node so a
     /// project-level graph shows only its own files. Omitted = workspace-only.
     #[serde(default)]
-    pub project_id: Option<String>,
+    pub project_id: String,
+    /// `manual` for a user upload, `generated` for Studio-produced output.
+    pub origin: String,
     /// File name or relative path.
     pub path: String,
-    /// Text content (for text files). Omit for binary — only metadata is kept.
-    #[serde(default)]
-    pub text: Option<String>,
-    /// Size in bytes (defaults to the text length when omitted).
-    #[serde(default)]
-    pub size: Option<u64>,
+    pub size: u64,
+    /// Reference returned by file-storage after the signed upload finalized.
+    pub object_ref: ArtifactObjectRefRequest,
 }
 
 /// The stored file node's id.
@@ -581,28 +598,55 @@ async fn add_file(
     Json(req): Json<ManualFileRequest>,
 ) -> ApiResult<JsonBody<ManualFileResponse>> {
     let svc = ingest.get()?;
+    let organization_id = req.organization_id.trim().to_string();
     let workspace_id = req.workspace_id.trim().to_string();
-    let project_id = req
-        .project_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string);
+    let project_id = req.project_id.trim().to_string();
+    let origin = req.origin.trim().to_ascii_lowercase();
     let path = req.path.trim().to_string();
-    if workspace_id.is_empty() || path.is_empty() {
-        return Err(CanonicalError::internal("workspace_id and path are required").create());
+    if organization_id.is_empty()
+        || workspace_id.is_empty()
+        || project_id.is_empty()
+        || path.is_empty()
+    {
+        return Err(CanonicalError::internal(
+            "organization_id, workspace_id, project_id and path are required",
+        )
+        .create());
     }
-    let size = req
-        .size
-        .unwrap_or_else(|| req.text.as_ref().map(|t| t.len() as u64).unwrap_or(0));
+    if !matches!(origin.as_str(), "manual" | "generated") {
+        return Err(CanonicalError::internal("origin must be 'manual' or 'generated'").create());
+    }
+    if req.object_ref.storage != "file-storage"
+        || uuid::Uuid::parse_str(&req.object_ref.file_id).is_err()
+        || uuid::Uuid::parse_str(&req.object_ref.version_id).is_err()
+    {
+        return Err(CanonicalError::internal(
+            "object_ref must contain valid file-storage file_id and version_id values",
+        )
+        .create());
+    }
+    if req.size != req.object_ref.size {
+        return Err(CanonicalError::internal("size must match object_ref.size").create());
+    }
+    let object_ref = serde_json::json!({
+        "storage": req.object_ref.storage,
+        "file_id": req.object_ref.file_id,
+        "version_id": req.object_ref.version_id,
+        "name": req.object_ref.name,
+        "mime": req.object_ref.mime,
+        "size": req.object_ref.size,
+        "checksum": req.object_ref.checksum,
+    });
     let instance_id = svc
-        .upsert_manual_file(
+        .upsert_project_artifact(
             &ctx,
+            &organization_id,
             &workspace_id,
-            project_id.as_deref(),
+            &project_id,
+            &origin,
             &path,
-            size,
-            req.text,
+            req.size,
+            object_ref,
         )
         .await
         .map_err(|e| CanonicalError::internal(format!("{e:#}")).create())?;
@@ -757,12 +801,13 @@ pub fn register_routes(
 
     let router = OperationBuilder::post("/studio-artifact-ingest/v1/files")
         .operation_id("studio_artifact_ingest.add_file")
-        .summary("Add a manually-uploaded file to the artifact graph")
+        .summary("Register an uploaded or generated project artifact")
         .description(
-            "Stores a hand-added file as a `file` node (origin=manual) in the \
-             graph, scoped to a workspace — no connector or file-storage \
-             data-plane needed. Text content is kept for text files; binary \
-             uploads keep only metadata. Idempotent by (workspace, path).",
+            "Registers a file-storage object reference as a standard `file` node, \
+             scoped by organization, workspace and project. The object bytes are \
+             never sent to Graph Storage. Origin is `manual` or `generated`; \
+             repository-ingested files use the separate sync path. Idempotent by \
+             (project, path).",
         )
         .tag("StudioArtifactIngest")
         .authenticated()

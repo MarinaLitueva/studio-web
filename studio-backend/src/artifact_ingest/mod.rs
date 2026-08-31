@@ -17,7 +17,6 @@ mod graph;
 #[cfg(feature = "graph")]
 mod graph_backend;
 mod gts;
-mod object_store;
 mod rest;
 mod service;
 mod tasks;
@@ -210,28 +209,12 @@ impl RestApiCapability for StudioArtifactIngestGear {
                 }
             };
 
-            // Object store seam: the file-storage gear (S3-backed) when
-            // configured, so file content lives in S3 and the graph keeps only a
-            // reference. Config-gated — unset means we keep content on the
-            // workspace volume as today.
-            let object_store: Option<Arc<dyn object_store::ObjectStore>> =
-                match object_store::FileStorageStore::from_env() {
-                    Some(s) => {
-                        info!(
-                            "studio-artifact-ingest: file-storage object store configured — content goes to S3, graph keeps a reference"
-                        );
-                        Some(Arc::new(s))
-                    }
-                    None => None,
-                };
-
             Some(Arc::new(IngestService::new(
                 credstore,
                 drivers,
                 graph,
                 embedder,
                 file_parser,
-                object_store,
                 workspaces_root,
                 work_root,
             )))

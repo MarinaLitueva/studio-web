@@ -353,45 +353,36 @@ pub fn file_instance_id(connector_id: &str, repo_full_path: &str, path: &str) ->
     anon_id(&[connector_id, repo_full_path, "file", path])
 }
 
-/// A manually-uploaded file node (no connector/repo). Keyed on the workspace and
-/// path, so re-uploading the same name upserts. `origin: "manual"` distinguishes
-/// it from connector-ingested files; `repo` is set to the workspace id so the
-/// graph still has something to group it under.
-#[allow(clippy::too_many_arguments)]
-pub fn manual_file_node(
+/// A user-uploaded or Studio-generated file node (no connector/repo). Bytes
+/// remain in file-storage; this node carries hierarchy metadata and a durable
+/// file/version reference. Repository-ingested file nodes use `file_node`
+/// instead and never enter this path.
+pub fn project_artifact_file_node(
+    organization_id: &str,
     workspace_id: &str,
-    project_id: Option<&str>,
+    project_id: &str,
+    origin: &str,
     path: &str,
     size: u64,
-    text: Option<String>,
-    workspace_path: Option<String>,
-    object_ref: Option<Value>,
+    object_ref: Value,
 ) -> GtsNode {
-    // Identity is keyed on the narrowest tenant it belongs to (the project when
-    // present, else the workspace) plus the path, so re-uploading the same name
-    // upserts within that tenant. `repo` groups it under that same tenant.
-    // `workspace_path`, when set, is where the content was materialized inside
-    // the IDE's workspace checkout (`_artifacts/<name>`), so the portal can open
-    // it in the editor as a real file.
-    let scope = project_id.unwrap_or(workspace_id);
+    // A repeated upload of the same project/path creates a new immutable
+    // file-storage version and updates this stable node's object_ref.
     GtsNode {
         type_id: FILE_TYPE,
-        instance_id: anon_id(&[scope, "manual_file", path]),
+        instance_id: anon_id(&[project_id, "project_artifact", path]),
         value: json!({
-            "repo": scope,
+            "repo": project_id,
             "path": path,
             "is_dir": false,
             "size": size,
-            "origin": "manual",
+            "origin": origin,
+            "organization_id": organization_id,
             "workspace_id": workspace_id,
             "project_id": project_id,
-            "workspace_path": workspace_path,
-            // When set, the content lives in the object store (S3 via
-            // file-storage); the graph keeps only this reference.
-            "storage": if object_ref.is_some() { "file-storage" } else { "graph" },
+            "storage": "file-storage",
             "object_ref": object_ref,
-            "has_text": text.is_some(),
-            "text": text,
+            "has_text": false,
         }),
     }
 }
@@ -493,5 +484,62 @@ pub fn traces_to_edge(from: &str, to: &str) -> GtsEdge {
         type_id: REL_TRACES_TO,
         from: from.to_string(),
         to: to.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn project_artifact_node_keeps_hierarchy_and_only_an_object_reference() {
+        let object_ref = json!({
+            "storage": "file-storage",
+            "file_id": "0198af9a-77bc-7e01-b620-bb237979866b",
+            "version_id": "0198af9a-77bc-7e01-b620-bb237979866c",
+            "checksum": "sha256:abc123",
+        });
+        let node = project_artifact_file_node(
+            "organization-1",
+            "workspace-1",
+            "project-1",
+            "generated",
+            "report.pdf",
+            42,
+            object_ref.clone(),
+        );
+
+        assert_eq!(node.value["organization_id"], "organization-1");
+        assert_eq!(node.value["workspace_id"], "workspace-1");
+        assert_eq!(node.value["project_id"], "project-1");
+        assert_eq!(node.value["origin"], "generated");
+        assert_eq!(node.value["storage"], "file-storage");
+        assert_eq!(node.value["object_ref"], object_ref);
+        assert!(node.value.get("text").is_none());
+    }
+
+    #[test]
+    fn project_artifact_identity_is_stable_across_versions() {
+        let first = project_artifact_file_node(
+            "organization-1",
+            "workspace-1",
+            "project-1",
+            "manual",
+            "brief.md",
+            1,
+            json!({ "version_id": "version-1" }),
+        );
+        let second = project_artifact_file_node(
+            "organization-1",
+            "workspace-1",
+            "project-1",
+            "manual",
+            "brief.md",
+            2,
+            json!({ "version_id": "version-2" }),
+        );
+
+        assert_eq!(first.instance_id, second.instance_id);
+        assert_ne!(first.value["object_ref"], second.value["object_ref"]);
     }
 }

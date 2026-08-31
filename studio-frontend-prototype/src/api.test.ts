@@ -1,11 +1,13 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
   alignSessionHost,
   apiUrl,
   sessionOrigin,
+  sameOriginFileStorageUrl,
   type StudioSession,
   waitForStudioSessionReady,
+  uploadProjectArtifact,
 } from "./api";
 
 describe("apiUrl", () => {
@@ -97,6 +99,42 @@ describe("sessionOrigin", () => {
   });
 });
 
+describe("sameOriginFileStorageUrl", () => {
+  afterEach(() => {
+    delete (globalThis as { window?: unknown }).window;
+  });
+
+  it("keeps the signed data path but moves it onto the prototype origin", () => {
+    (globalThis as { window?: unknown }).window = {
+      location: {
+        href: "https://studio-dev-poc.cfabric.org/artifacts",
+        protocol: "https:",
+        host: "studio-dev-poc.cfabric.org",
+      },
+    };
+    expect(
+      sameOriginFileStorageUrl(
+        "https://studio-dev.cfabric.org/api/file-storage-data/v1/upload/signed-token",
+      ),
+    ).toBe(
+      "https://studio-dev-poc.cfabric.org/api/file-storage-data/v1/upload/signed-token",
+    );
+  });
+
+  it("does not rewrite unrelated signed URLs", () => {
+    (globalThis as { window?: unknown }).window = {
+      location: {
+        href: "https://studio-dev-poc.cfabric.org/",
+        protocol: "https:",
+        host: "studio-dev-poc.cfabric.org",
+      },
+    };
+    expect(sameOriginFileStorageUrl("https://storage.example/object")).toBe(
+      "https://storage.example/object",
+    );
+  });
+});
+
 describe("waitForStudioSessionReady", () => {
   const session = (state: StudioSession["state"]): StudioSession => ({
     id: "session-1",
@@ -148,5 +186,80 @@ describe("waitForStudioSessionReady", () => {
         },
       }),
     ).rejects.toThrow("did not become ready");
+  });
+});
+
+describe("uploadProjectArtifact", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("uploads bytes through the signed URL and returns a durable object reference", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            file_id: "0198af9a-77bc-7e01-b620-bb237979866b",
+            version_id: "0198af9a-77bc-7e01-b620-bb237979866c",
+            upload_url: "https://storage.example/upload/signed",
+          }),
+          { status: 201, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(undefined, { status: 204 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              version_id: "0198af9a-77bc-7e01-b620-bb237979866c",
+              mime_type: "application/pdf",
+              size: 3,
+              hash_algorithm: "sha256",
+              hash: "abc123",
+              status: "available",
+              is_current: false,
+            },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ file_id: "0198af9a-77bc-7e01-b620-bb237979866b" }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await uploadProjectArtifact(
+      "access-token",
+      new File([new Uint8Array([1, 2, 3])], "architecture.pdf", {
+        type: "application/pdf",
+      }),
+      {
+        organization_id: "0198af9a-77bc-7e01-b620-bb2379798668",
+        workspace_id: "0198af9a-77bc-7e01-b620-bb2379798669",
+        project_id: "0198af9a-77bc-7e01-b620-bb237979866a",
+      },
+      "manual",
+    );
+
+    expect(result).toEqual({
+      storage: "file-storage",
+      file_id: "0198af9a-77bc-7e01-b620-bb237979866b",
+      version_id: "0198af9a-77bc-7e01-b620-bb237979866c",
+      name: "architecture.pdf",
+      mime: "application/pdf",
+      size: 3,
+      checksum: "sha256:abc123",
+    });
+    const createBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(createBody.owner_id).toBe("0198af9a-77bc-7e01-b620-bb237979866a");
+    expect(createBody.custom_metadata).toContainEqual({
+      key: "studio.artifact_origin",
+      value: "manual",
+    });
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("https://storage.example/upload/signed");
   });
 });

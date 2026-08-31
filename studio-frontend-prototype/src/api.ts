@@ -427,6 +427,45 @@ export interface StoredFile {
   created_at?: string;
 }
 
+export type ProjectArtifactOrigin = "manual" | "generated";
+
+export interface ProjectArtifactScope {
+  organization_id: string;
+  workspace_id: string;
+  project_id: string;
+}
+
+export interface ProjectArtifactObjectRef {
+  storage: "file-storage";
+  file_id: string;
+  version_id: string;
+  name: string;
+  mime: string;
+  size: number;
+  checksum?: string;
+}
+
+interface FileUploadTicket {
+  file_id: string;
+  version_id: string;
+  upload_url: string;
+}
+
+interface FileStorageVersion {
+  version_id: string;
+  mime_type: string;
+  size: number;
+  hash_algorithm: string;
+  hash: string;
+  status: string;
+  is_current: boolean;
+}
+
+interface FileStorageFile {
+  file_id: string;
+  etag?: string;
+}
+
 export interface Group {
   id: string;
   type: string;
@@ -489,6 +528,122 @@ async function request<T>(path: string, token: string, init?: RequestInit): Prom
     throw new ApiError(res.status, body);
   }
   return body as T;
+}
+
+const artifactSleep = (milliseconds: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+
+export function sameOriginFileStorageUrl(signedUrl: string): string {
+  if (typeof window === "undefined") return signedUrl;
+  try {
+    const url = new URL(signedUrl, window.location.href);
+    if (url.pathname.startsWith("/api/file-storage-data/")) {
+      url.protocol = window.location.protocol;
+      url.host = window.location.host;
+    }
+    return url.toString();
+  } catch {
+    return signedUrl;
+  }
+}
+
+/**
+ * Upload one user-created or Studio-generated artifact through file-storage's
+ * signed data plane. Repository-ingested files deliberately do not use this
+ * path. The hierarchy is durable metadata today; the platform gear remains the
+ * sole owner of the physical S3 object-key layout.
+ */
+export async function uploadProjectArtifact(
+  token: string,
+  file: File,
+  scope: ProjectArtifactScope,
+  origin: ProjectArtifactOrigin,
+  existingFileId?: string,
+): Promise<ProjectArtifactObjectRef> {
+  let ticket: FileUploadTicket;
+  let currentEtag: string | undefined;
+
+  if (existingFileId) {
+    const current = await request<FileStorageFile>(
+      `/api/file-storage/v1/files/${encodeURIComponent(existingFileId)}`,
+      token,
+    );
+    currentEtag = current.etag;
+    ticket = await request<FileUploadTicket>(
+      `/api/file-storage/v1/files/${encodeURIComponent(existingFileId)}/versions`,
+      token,
+      { method: "POST", body: "{}" },
+    );
+  } else {
+    ticket = await request<FileUploadTicket>("/api/file-storage/v1/files", token, {
+      method: "POST",
+      body: JSON.stringify({
+        owner_kind: "app",
+        owner_id: scope.project_id,
+        name: file.name,
+        gts_file_type: "gts.cf.file_storage.file.v1~",
+        mime_type: file.type || "application/octet-stream",
+        idempotency_key: crypto.randomUUID(),
+        custom_metadata: [
+          { key: "studio.organization_id", value: scope.organization_id },
+          { key: "studio.workspace_id", value: scope.workspace_id },
+          { key: "studio.project_id", value: scope.project_id },
+          { key: "studio.artifact_origin", value: origin },
+          { key: "studio.original_name", value: file.name },
+        ],
+      }),
+    });
+  }
+
+  const upload = await fetch(sameOriginFileStorageUrl(ticket.upload_url), {
+    method: "PUT",
+    headers: { "Content-Type": file.type || "application/octet-stream" },
+    body: file,
+  });
+  if (!upload.ok) {
+    throw new ApiError(upload.status, { title: "Artifact upload failed" });
+  }
+
+  const deadline = Date.now() + 120_000;
+  let stored: FileStorageVersion | undefined;
+  while (Date.now() < deadline) {
+    const versions = await request<FileStorageVersion[]>(
+      `/api/file-storage/v1/files/${encodeURIComponent(ticket.file_id)}/versions`,
+      token,
+    );
+    stored = versions.find((version) => version.version_id === ticket.version_id);
+    if (stored?.status === "available") break;
+    if (stored && !["pending", "uploading"].includes(stored.status)) {
+      throw new Error(`Artifact upload ended in state '${stored.status}'`);
+    }
+    await artifactSleep(500);
+  }
+  if (!stored || stored.status !== "available") {
+    throw new Error("Artifact upload did not finalize within 120 seconds");
+  }
+
+  await request<FileStorageFile>(
+    `/api/file-storage/v1/files/${encodeURIComponent(ticket.file_id)}/bind`,
+    token,
+    {
+      method: "POST",
+      headers: currentEtag ? { "If-Match": currentEtag } : undefined,
+      body: JSON.stringify({ version_id: ticket.version_id }),
+    },
+  );
+
+  return {
+    storage: "file-storage",
+    file_id: ticket.file_id,
+    version_id: ticket.version_id,
+    name: file.name,
+    mime: stored.mime_type,
+    size: stored.size,
+    checksum:
+      stored.hash_algorithm && stored.hash
+        ? `${stored.hash_algorithm}:${stored.hash}`
+        : undefined,
+  };
 }
 
 export const api = {
@@ -870,17 +1025,18 @@ export const api = {
       token,
     ),
 
-  /** Store a manually-added file in the artifact graph as a `file` node
-   *  (origin=manual), scoped to a workspace + project — no file-storage
-   *  data-plane needed. Idempotent by (tenant, path). */
-  addManualFile: (
+  /** Register an already-uploaded manual/generated file in the artifact graph.
+   * The graph stores metadata and the file-storage reference, never bytes. */
+  addProjectArtifact: (
     token: string,
     body: {
+      organization_id: string;
       workspace_id: string;
-      project_id?: string;
+      project_id: string;
+      origin: ProjectArtifactOrigin;
       path: string;
-      text?: string;
-      size?: number;
+      size: number;
+      object_ref: ProjectArtifactObjectRef;
     },
   ) =>
     request<{ instance_id: string }>("/studio-artifact-ingest/v1/files", token, {

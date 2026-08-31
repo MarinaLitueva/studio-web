@@ -20,6 +20,14 @@ spec:
           # Keep API traffic same-origin for the browser. IDE `/studio/...`
           # traffic falls through to the prototype nginx, which performs the
           # required rewrite and WebSocket proxying to the backend.
+          {{- if .Values.backend.fileStorage.enabled }}
+          - path: /api/file-storage-data
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "studio-web.fullname" . }}-backend
+                port: { name: file-storage }
+          {{- end }}
           - path: /cf
             pathType: Prefix
             backend:

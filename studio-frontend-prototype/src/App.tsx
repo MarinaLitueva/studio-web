@@ -34,6 +34,7 @@ import {
   type WorkspaceSettings,
   sessionOrigin,
   waitForStudioSessionReady,
+  uploadProjectArtifact,
 } from "./api";
 
 // Portal (личный кабинет): sign in with a bearer token, then an app shell
@@ -3678,11 +3679,8 @@ async function attachReposToWorkspace(
  *  launch. Lives on the Nested projects tab (next to the projects they feed):
  *  it lists what is attached, lets you detach, and adds new sources by picking
  *  them straight from one of the project's connectors. */
-/** Artifacts — everything a project works on, in one place: repositories
- *  attached as sources (cloned into the IDE on launch) and files added by hand.
- *  Two honest halves: repository sources are real and addable today; manual
- *  file upload waits on the file-storage data-plane (not deployed here), so
- *  that list is read-only for now. */
+/** Artifacts — repository sources stay in Git/Graph Storage, while user-added
+ *  and Studio-generated file bytes use file-storage/S3. */
 function ArtifactsView({
   token,
   workspace,
@@ -3721,7 +3719,7 @@ function ArtifactsView({
 /** Ask every embedded Studio (Theia) iframe to open a file in its editor. The
  *  IDE's portal-bridge maps `studio.openInEditor` onto the editor open against
  *  the workspace roots (ADR-0010). `path` is checkout-relative — a repo file's
- *  path, or a manual file's `_artifacts/<name>`. No-op when no session is open. */
+ *  path. No-op when no session is open. */
 function openInStudioEditor(path?: string): void {
   if (!path) return;
   document.querySelectorAll<HTMLIFrameElement>("iframe.space-frame").forEach((f) => {
@@ -3895,11 +3893,9 @@ function IngestedArtifacts({
  *  back from the graph and draws each repository with its issues, pull requests
  *  and files as a radial hub-and-spoke. Edges are derived from each node's
  *  `repo` reference — no extra endpoint needed. */
-/** The manual-file half of Artifacts. file-storage is the platform blob store,
- *  but uploads go through its signed-URL data-plane sidecar, which this assembly
- *  does not run — so the list is read-only and "Add file" says why rather than
- *  offering a button that cannot finish. Per-project association arrives with
- *  the project-as-tenant work (phase 2). */
+/** Manual project artifacts. Bytes live in file-storage/S3; Graph Storage keeps
+ *  only searchable metadata and the durable file/version reference. Generated
+ *  artifacts use the same upload helper with `origin=generated`. */
 function ProjectFiles({
   token,
   workspace,
@@ -3912,7 +3908,13 @@ function ProjectFiles({
   parentWorkspaceId?: string;
 }) {
   const [files, setFiles] = useState<
-    { id: string; path: string; size?: number; has_text?: boolean; workspace_path?: string }[] | null
+    {
+      id: string;
+      path: string;
+      size?: number;
+      file_id?: string;
+      version_id?: string;
+    }[] | null
   >(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -3931,12 +3933,16 @@ function ProjectFiles({
         })
         .map((n) => {
           const v = (n.value ?? {}) as Record<string, unknown>;
+          const objectRef =
+            v.object_ref && typeof v.object_ref === "object"
+              ? (v.object_ref as Record<string, unknown>)
+              : undefined;
           return {
             id: n.instance_id,
             path: typeof v.path === "string" ? v.path : n.instance_id,
             size: typeof v.size === "number" ? v.size : undefined,
-            has_text: v.has_text === true,
-            workspace_path: typeof v.workspace_path === "string" ? v.workspace_path : undefined,
+            file_id: typeof objectRef?.file_id === "string" ? objectRef.file_id : undefined,
+            version_id: typeof objectRef?.version_id === "string" ? objectRef.version_id : undefined,
           };
         });
       setFiles(mine);
@@ -3949,8 +3955,6 @@ function ProjectFiles({
     void reload();
   }, [reload]);
 
-  const TEXT_RE = /\.(md|markdown|txt|json|ya?ml|rst|adoc|csv|tsv|toml|ini|cfg|xml|html?|css|jsx?|tsx?|py|rs|go|java|sql|sh)$/i;
-
   const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = ""; // allow re-picking the same file
@@ -3958,15 +3962,27 @@ function ProjectFiles({
     setBusy(true);
     setErr(null);
     try {
-      const text = TEXT_RE.test(file.name) ? await file.text() : undefined;
-      await api.addManualFile(token, {
-        // `workspace` is the project tenant; tag both so the file shows in a
-        // workspace-level graph and a project-level one alike.
-        workspace_id: parentWorkspaceId ?? workspace.id,
+      const workspaceId = parentWorkspaceId ?? workspace.id;
+      const existingFileId = files?.find((stored) => stored.path === file.name)?.file_id;
+      const objectRef = await uploadProjectArtifact(
+        token,
+        file,
+        {
+          organization_id: workspace.orgId,
+          workspace_id: workspaceId,
+          project_id: workspace.id,
+        },
+        "manual",
+        existingFileId,
+      );
+      await api.addProjectArtifact(token, {
+        organization_id: workspace.orgId,
+        workspace_id: workspaceId,
         project_id: workspace.id,
+        origin: "manual",
         path: file.name,
-        text,
         size: file.size,
+        object_ref: objectRef,
       });
       await reload();
     } catch (e) {
@@ -3988,9 +4004,9 @@ function ProjectFiles({
       </div>
       <input ref={inputRef} type="file" style={{ display: "none" }} onChange={onPick} />
       <p className="hint">
-        Manually added files are stored as file nodes in the artifact graph, scoped to this project —
-        no file-storage data-plane needed. Text files keep their content (searchable and graph-ready);
-        binary files keep only metadata.
+        Manually added file bytes are stored in S3 through file-storage. The artifact graph keeps
+        their organization/workspace/project scope and a durable file-version reference. Uploading
+        the same name creates a new immutable version.
       </p>
       {err && <p className="error">{err}</p>}
       {files === null ? (
@@ -4005,18 +4021,9 @@ function ProjectFiles({
                 <div className="name">{f.path}</div>
                 <div className="sub">
                   {typeof f.size === "number" ? `${(f.size / 1024).toFixed(1)} KB` : ""}
-                  {f.has_text ? " · text" : " · metadata only"}
+                  {f.version_id ? ` · version ${f.version_id.slice(0, 8)}…` : ""}
                 </div>
               </div>
-              {f.workspace_path && (
-                <button
-                  className="ghost"
-                  onClick={() => openInStudioEditor(f.workspace_path)}
-                  title="Open this file in the embedded Studio editor (materialized into the workspace)"
-                >
-                  Open in editor
-                </button>
-              )}
             </li>
           ))}
         </ul>

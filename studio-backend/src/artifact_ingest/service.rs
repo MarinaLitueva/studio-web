@@ -26,7 +26,6 @@ use super::clone;
 use super::embed::Embedder;
 use super::graph::{GraphStore, GtsEdge, GtsNode};
 use super::gts;
-use super::object_store::ObjectStore;
 use super::tasks::{TaskRecord, TaskRegistry};
 use crate::connectors::driver::{ConnectionAuth, ConnectorDriver};
 
@@ -49,24 +48,6 @@ const EDGE_CHUNK: usize = 5_000;
 /// cost and the resulting text both scale with size; 15 MiB covers real specs
 /// and slide decks without letting a giant asset stall a sync.
 const MAX_PARSE_BYTES: u64 = 15 * 1024 * 1024;
-
-/// A coarse MIME type from a file extension — enough for the object store to
-/// tag content; defaults to `application/octet-stream`.
-fn mime_for(path: &str) -> &'static str {
-    let ext = path.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
-    match ext.as_str() {
-        "md" | "markdown" => "text/markdown",
-        "txt" | "text" | "log" => "text/plain",
-        "json" => "application/json",
-        "yaml" | "yml" => "application/yaml",
-        "toml" => "application/toml",
-        "csv" => "text/csv",
-        "html" | "htm" => "text/html",
-        "xml" => "application/xml",
-        "pdf" => "application/pdf",
-        _ => "application/octet-stream",
-    }
-}
 
 /// True when a path looks like a document the file-parser can turn into text —
 /// office formats, PDFs, e-books and rich text. Plain-text formats already come
@@ -139,10 +120,6 @@ pub struct IngestService {
     /// documents (PDF/docx/…) so their content is indexed for search. `None`
     /// leaves binary files as metadata-only, exactly as before.
     file_parser: Option<Arc<dyn FileParserClientV1>>,
-    /// The object store (file-storage gear → S3), when configured. Content goes
-    /// here and the graph node keeps only an `ObjectRef`; `None` keeps content on
-    /// the workspace volume as before.
-    object_store: Option<Arc<dyn ObjectStore>>,
     /// The studio-session workspaces root (`STUDIO_WORKSPACES_ROOT`). When a
     /// sync names a workspace + repo dir and the session gear has already
     /// cloned it here, ingest reads that checkout instead of cloning its own —
@@ -182,7 +159,6 @@ impl IngestService {
         graph: Arc<dyn GraphStore>,
         embedder: Arc<dyn Embedder>,
         file_parser: Option<Arc<dyn FileParserClientV1>>,
-        object_store: Option<Arc<dyn ObjectStore>>,
         workspaces_root: Option<PathBuf>,
         work_root: Option<PathBuf>,
     ) -> Self {
@@ -192,7 +168,6 @@ impl IngestService {
             graph,
             embedder,
             file_parser,
-            object_store,
             workspaces_root,
             work_root,
             tasks: Arc::new(TaskRegistry::default()),
@@ -1037,60 +1012,28 @@ impl IngestService {
             .await
     }
 
-    /// Upsert a single manually-added file into the graph as a `file` node
-    /// (no connector). Idempotent by (workspace, path). Returns the node id.
-    ///
-    /// For a text file, the content is also materialized into the IDE's
-    /// workspace checkout under `_artifacts/<name>` (the same volume repos clone
-    /// into), so the portal can open it in the editor as a real file — the node
-    /// records that `workspace_path`.
-    pub async fn upsert_manual_file(
+    /// Register a user-uploaded or Studio-generated project artifact after its
+    /// bytes have been finalized by file-storage. Graph Storage receives only
+    /// normalized metadata and the durable object reference.
+    pub async fn upsert_project_artifact(
         &self,
         ctx: &SecurityContext,
+        organization_id: &str,
         workspace_id: &str,
-        project_id: Option<&str>,
+        project_id: &str,
+        origin: &str,
         path: &str,
         size: u64,
-        text: Option<String>,
+        object_ref: serde_json::Value,
     ) -> anyhow::Result<String> {
         use super::gts;
-        // Scope dir == the node's identity scope == the checkout key: the
-        // project tenant when present, else the workspace.
-        let scope = project_id.unwrap_or(workspace_id);
-        let workspace_path = match text.as_deref() {
-            Some(t) => self.materialize_artifact_file(scope, path, t).await,
-            None => None,
-        };
-        // When an object store is configured, the content lives in S3 (via the
-        // file-storage gear) and the node keeps only a reference. Best-effort:
-        // a failure leaves the file on the volume / graph as before.
-        let object_ref = match (self.object_store.as_ref(), text.as_deref()) {
-            (Some(store), Some(t)) => {
-                match store.put(path, mime_for(path), t.as_bytes().to_vec()).await {
-                    Ok(r) => Some(serde_json::json!({
-                        "storage": r.storage,
-                        "file_id": r.file_id,
-                        "version_id": r.version_id,
-                        "name": r.name,
-                        "mime": r.mime,
-                        "size": r.size,
-                        "checksum": r.checksum,
-                    })),
-                    Err(e) => {
-                        tracing::warn!(error = %e, path, "studio-artifact-ingest: object-store put failed — keeping content on the volume only");
-                        None
-                    }
-                }
-            }
-            _ => None,
-        };
-        let node = gts::manual_file_node(
+        let node = gts::project_artifact_file_node(
+            organization_id,
             workspace_id,
             project_id,
+            origin,
             path,
             size,
-            text,
-            workspace_path,
             object_ref,
         );
         let id = node.instance_id.clone();
@@ -1098,48 +1041,6 @@ impl IngestService {
             .upsert_nodes(ctx, std::slice::from_ref(&node))
             .await?;
         Ok(id)
-    }
-
-    /// Write a hand-added text file into the workspace checkout under
-    /// `{workspaces_root}/{scope}/_artifacts/<name>` — the same volume the IDE
-    /// bind-mounts as `/workspace` — so `openInEditor("_artifacts/<name>")`
-    /// finds it. Returns that repo-relative path on success. Best-effort:
-    /// `None` when no workspaces root is configured, the name is unsafe, or the
-    /// write fails (the graph node is still stored either way).
-    async fn materialize_artifact_file(
-        &self,
-        scope: &str,
-        path: &str,
-        text: &str,
-    ) -> Option<String> {
-        let root = self.workspaces_root.as_ref()?;
-        let scope = scope.trim();
-        if scope.is_empty() || scope.contains('/') || scope.contains('\\') || scope.contains("..") {
-            return None;
-        }
-        // Sanitize the name to a safe, checkout-relative path: strip leading
-        // slashes, reject any `..`/empty segment, normalize separators.
-        let rel = path
-            .trim()
-            .trim_start_matches(['/', '\\'])
-            .replace('\\', "/");
-        if rel.is_empty() || rel.split('/').any(|s| s.is_empty() || s == "..") {
-            return None;
-        }
-        let target = root.join(scope).join("_artifacts").join(&rel);
-        if let Some(parent) = target.parent()
-            && let Err(e) = tokio::fs::create_dir_all(parent).await
-        {
-            tracing::warn!(error = %e, dir = %parent.display(), "studio-artifact-ingest: could not create _artifacts dir — file not materialized");
-            return None;
-        }
-        match tokio::fs::write(&target, text).await {
-            Ok(()) => Some(format!("_artifacts/{rel}")),
-            Err(e) => {
-                tracing::warn!(error = %e, path = %target.display(), "studio-artifact-ingest: manual file materialization failed — editor open unavailable");
-                None
-            }
-        }
     }
 
     /// Persist spec-quality detector results the portal has parsed: one finding
