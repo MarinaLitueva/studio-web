@@ -10,7 +10,11 @@ spec:
   {{- if not .Values.backend.autoscaling.enabled }}
   replicas: {{ .Values.backend.replicas }}
   {{- end }}
-  strategy: { type: RollingUpdate, rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } }
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: {{ .Values.backend.rollingUpdate.maxUnavailable }}
+      maxSurge: {{ .Values.backend.rollingUpdate.maxSurge }}
   selector:
     matchLabels: {{- include "studio-web.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: backend

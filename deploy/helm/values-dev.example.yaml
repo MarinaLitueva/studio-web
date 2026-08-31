@@ -7,6 +7,9 @@ backend:
   image:
     tag: "sha-REPLACE_ME"
   replicas: 1
+  # Dev commonly runs at CPU quota while IDE session Pods are active. Replace
+  # the single replica in place instead of requiring temporary surge capacity.
+  rollingUpdate: { maxUnavailable: 1, maxSurge: 0 }
   database:
     existingSecret: studio-postgres-app
     keys:
@@ -41,6 +44,7 @@ frontend:
   image:
     tag: "sha-REPLACE_ME"
   replicas: 1
+  rollingUpdate: { maxUnavailable: 1, maxSurge: 0 }
   autoscaling:
     enabled: false
 
@@ -49,6 +53,7 @@ frontendPrototype:
   hostname: studio-dev-poc.cfabric.org
   image:
     tag: "sha-REPLACE_ME"
+  rollingUpdate: { maxUnavailable: 1, maxSurge: 0 }
 
 keycloak:
   enabled: true
