@@ -289,7 +289,15 @@ http
       },
     );
     up.on("error", () => {
-      res.writeHead(502, { "Content-Type": "text/html; charset=utf-8" });
+      // The gate is healthy while Theia is still binding its private port.
+      // Returning 502 here makes Cloudflare replace this useful splash with
+      // its own Bad Gateway page, even though the session is starting
+      // normally. Keep the response successful and non-cacheable; the page
+      // refreshes itself until Theia is available.
+      res.writeHead(200, {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+      });
       res.end(bootSplash());
     });
     req.pipe(up);

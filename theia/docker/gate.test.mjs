@@ -19,13 +19,21 @@ const child = spawn(process.execPath, [gatePath], {
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 
-const request = () =>
+const request = (requestPath, headers = {}) =>
   new Promise((resolve, reject) => {
     const req = http.get(
-      `http://127.0.0.1:3003/?token=${encodeURIComponent(token)}`,
+      {
+        hostname: '127.0.0.1',
+        port: 3003,
+        path: requestPath,
+        headers,
+      },
       (response) => {
-        response.resume();
-        response.on('end', () => resolve(response));
+        const chunks = [];
+        response.on('data', (chunk) => chunks.push(chunk));
+        response.on('end', () =>
+          resolve({ response, body: Buffer.concat(chunks).toString('utf8') }),
+        );
       },
     );
     req.on('error', reject);
@@ -35,7 +43,7 @@ try {
   let response;
   for (let attempt = 0; attempt < 40; attempt += 1) {
     try {
-      response = await request();
+      ({ response } = await request(`/?token=${encodeURIComponent(token)}`));
       break;
     } catch (error) {
       if (attempt === 39) throw error;
@@ -46,7 +54,20 @@ try {
   assert.equal(response.statusCode, 302);
   assert.equal(response.headers.location, './');
   assert.match(String(response.headers['set-cookie']), /studio_session_token=/);
-  console.log('session gate redirect stays inside the browser-facing mount');
+
+  const cookie = String(response.headers['set-cookie']).split(';', 1)[0];
+  const readiness = await request('/__studio_session_ready__');
+  assert.equal(readiness.response.statusCode, 204);
+
+  // There is deliberately no Theia process on port 3004 in this integration
+  // test. The authenticated request therefore exercises the normal boot gap:
+  // it must receive our non-cacheable splash as HTTP 200 so a CDN cannot
+  // replace it with a generic Bad Gateway page.
+  const starting = await request('/', { Cookie: cookie });
+  assert.equal(starting.response.statusCode, 200);
+  assert.match(String(starting.response.headers['cache-control']), /no-store/);
+  assert.match(starting.body, /Constructor Studio is starting the IDE/);
+  console.log('session gate keeps redirect and IDE boot splash CDN-safe');
 } finally {
   child.kill('SIGTERM');
   await new Promise((resolve) => child.once('exit', resolve));
