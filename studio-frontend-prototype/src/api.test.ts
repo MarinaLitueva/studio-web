@@ -3,6 +3,7 @@ import {
   ApiError,
   alignSessionHost,
   apiUrl,
+  sessionOrigin,
   type StudioSession,
   waitForStudioSessionReady,
 } from "./api";
@@ -69,6 +70,30 @@ describe("alignSessionHost", () => {
   it("hands back anything that is not a URL", () => {
     at("127.0.0.1");
     expect(alignSessionHost("")).toBe("");
+  });
+});
+
+describe("sessionOrigin", () => {
+  afterEach(() => {
+    delete (globalThis as { window?: unknown }).window;
+  });
+
+  it("resolves a relative Kubernetes session URL against the portal", () => {
+    (globalThis as { window?: unknown }).window = {
+      location: { href: "https://studio-dev-poc.cfabric.org/space/workspace-1" },
+    };
+    expect(sessionOrigin("/studio/session-1/?token=secret")).toBe(
+      "https://studio-dev-poc.cfabric.org",
+    );
+  });
+
+  it("keeps the origin of an absolute session URL", () => {
+    (globalThis as { window?: unknown }).window = {
+      location: { href: "https://studio-dev-poc.cfabric.org/" },
+    };
+    expect(sessionOrigin("http://127.0.0.1:41000/?token=secret")).toBe(
+      "http://127.0.0.1:41000",
+    );
   });
 });
 

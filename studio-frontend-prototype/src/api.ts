@@ -397,6 +397,23 @@ export function alignSessionHost(url: string): string {
   }
 }
 
+/**
+ * Browser origin used by the portal ↔ embedded IDE postMessage bridge.
+ *
+ * Kubernetes session URLs are intentionally relative (`/studio/<id>/`) so
+ * they stay on the portal host. `new URL(relative)` throws, which used to
+ * leave the iframe without a target origin and silently prevented the portal
+ * from sending its API token to Theia.
+ */
+export function sessionOrigin(url: string): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return new URL(url, window.location.href).origin;
+  } catch {
+    return "";
+  }
+}
+
 const withAlignedHost = (s: StudioSession): StudioSession => ({
   ...s,
   url: alignSessionHost(s.url),

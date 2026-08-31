@@ -32,6 +32,7 @@ import {
   type RepoEntry,
   type Tenant,
   type WorkspaceSettings,
+  sessionOrigin,
   waitForStudioSessionReady,
 } from "./api";
 
@@ -734,13 +735,7 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
   /* ── Portal ↔ IDE bridge (postMessage) ──
      Outbound: theme on iframe load + on portal theme change. Inbound:
      studio.status {dirty} — origin-checked against known space URLs. */
-  const spaceOrigin = (url: string): string => {
-    try {
-      return new URL(url).origin;
-    } catch {
-      return "";
-    }
-  };
+  const spaceOrigin = sessionOrigin;
 
   /* studio.init retry: the iframe's first load events are the session gate's
      redirect/splash pages — Theia's bridge isn't listening yet, so a single
