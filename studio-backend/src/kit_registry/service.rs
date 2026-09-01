@@ -148,7 +148,7 @@ impl KitRegistryService {
         ctx: &SecurityContext,
         project_id: Uuid,
         kit_slug: &str,
-        repository_id: Option<String>,
+        _repository_id: Option<String>,
     ) -> Result<KitInstallation> {
         let kit_slug = normalize_slug(kit_slug)?;
         let mut installations = self.list_installations(ctx, project_id).await?;
@@ -177,7 +177,7 @@ impl KitRegistryService {
                     &InstallKit {
                         kit_slug: installations[index].kit_slug.clone(),
                         version: installations[index].version.clone(),
-                        repository_id,
+                        repository_id: _repository_id,
                     },
                 )
                 .await
