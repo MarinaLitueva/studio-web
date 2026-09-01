@@ -87,9 +87,7 @@ impl TheiaService {
                 .and_then(|body| extract_upstream_detail(&body));
             let detail = upstream_detail.map_or_else(
                 || format!("Theia control '{method}' returned HTTP {status}"),
-                |message| {
-                    format!("Theia control '{method}' returned HTTP {status}: {message}")
-                },
+                |message| format!("Theia control '{method}' returned HTTP {status}: {message}"),
             );
             return Err(CanonicalError::service_unavailable()
                 .with_detail(detail)
@@ -138,6 +136,9 @@ mod tests {
     #[test]
     fn truncates_unstructured_upstream_body() {
         let body = "x".repeat(3_000);
-        assert_eq!(extract_upstream_detail(&body).unwrap().chars().count(), 2_048);
+        assert_eq!(
+            extract_upstream_detail(&body).unwrap().chars().count(),
+            2_048
+        );
     }
 }
