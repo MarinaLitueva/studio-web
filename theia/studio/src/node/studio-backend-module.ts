@@ -166,6 +166,8 @@ export class StudioRuntimeEndpoint implements StudioRuntimeService, BackendAppli
             }),
             getSession: () => this.getSession(),
             getRepositories: () => this.getRepositories(),
+            projectRepositoryId: () =>
+                this.repositoryRegistry.configuredRepository?.descriptor.repositoryId,
             enqueueOperation: request => this.enqueueOperation(request),
             getOperationDeltas: request => this.getOperationDeltas(request),
             retryOperation: request => this.retryOperation(request),

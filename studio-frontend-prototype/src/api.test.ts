@@ -88,6 +88,47 @@ describe("kit registry client", () => {
       expect.objectContaining({ method: "POST", body: "{}" }),
     );
   });
+
+  it("materializes into the repository the caller chose", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ kit_slug: "sdlc", status: "installed" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.materializeKitInstallation("token", "project/one", "sdlc", "repo-app");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/cf/studio-kits/v1/projects/project%2Fone/installations/sdlc/materialize",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ repository_id: "repo-app" }),
+      }),
+    );
+  });
+
+  it("lists the repositories the project's IDE has mounted", async () => {
+    const items = [
+      { repository_id: "repo-project", label: "workspace", kind: "project" },
+      { repository_id: "repo-app", label: "app", kind: "source" },
+    ];
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ items }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.projectRepositories("token", "project/one")).resolves.toEqual({ items });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/cf/studio-kits/v1/projects/project%2Fone/repositories",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer token" }),
+      }),
+    );
+  });
 });
 
 describe("apiUrl", () => {

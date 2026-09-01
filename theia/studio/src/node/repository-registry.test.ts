@@ -40,6 +40,26 @@ describe('repository registry', () => {
         expect(owner.descriptor.workspaceRelativeRoot).toBe('sources/nested');
     });
 
+    it('resolves the project repository by identity rather than list position', async () => {
+        await registry.replace([
+            { repositoryRoot: rootRepository },
+            { repositoryRoot: nestedRepository }
+        ]);
+
+        // Deepest-first ordering puts the nested checkout at [0]. The project
+        // repository is the configured root, so anything that reaches for the
+        // head of the list gets a source clone instead -- which is how a kit
+        // ends up installed in the wrong tree.
+        expect(registry.repositories[0].canonicalRoot).toBe(await fs.realpath(nestedRepository));
+        expect(registry.configuredRepository?.canonicalRoot).toBe(await fs.realpath(rootRepository));
+    });
+
+    it('reports no project repository until the configured root is registered', async () => {
+        await registry.replace([{ repositoryRoot: nestedRepository }]);
+
+        expect(registry.configuredRepository).toBeUndefined();
+    });
+
     it('selects the workspace-root repository for files outside nested repositories', async () => {
         const rootFile = path.join(workspaceRoot, 'README.md');
         await fs.writeFile(rootFile, '# Root');

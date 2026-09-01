@@ -57,7 +57,32 @@ describe('kit installer', () => {
         expect(run).not.toHaveBeenCalled();
     });
 
-    it('requires an explicit repository for a multi-repository workspace', async () => {
+    it('defaults to the project repository in a multi-repository workspace', async () => {
+        const directories: string[] = [];
+        jest.spyOn(childProcess, 'execFile').mockImplementation(((executable, args, options, callback) => {
+            directories.push(options && typeof options === 'object' ? String(options.cwd) : '');
+            (callback as ExecFileCallback)(null, 'ok', '');
+            return {} as childProcess.ChildProcess;
+        }) as typeof childProcess.execFile);
+
+        const result = await new KitInstallerImpl().install(
+            { kitSlug: 'sdlc', version: 'main' },
+            registry([
+                { id: 'repo-app', label: 'app', root: '/workspace/app' },
+                { id: 'repo-docs', label: 'docs', root: '/workspace/docs' },
+                { id: 'repo-project', label: 'project', root: '/workspace' }
+            ], '/workspace')
+        );
+
+        // Deliberately not the first entry: the registry is ordered
+        // deepest-first, so a positional default would have installed the kit
+        // into a source clone instead of the project root.
+        expect(result).toMatchObject({ repositoryId: 'repo-project', repositoryLabel: 'project' });
+        expect(directories).toEqual(['/workspace', '/workspace']);
+    });
+
+    it('requires an explicit repository when the project repository is not registered', async () => {
+        const run = jest.spyOn(childProcess, 'execFile');
         await expect(new KitInstallerImpl().install(
             { kitSlug: 'sdlc', version: 'main' },
             registry([
@@ -65,16 +90,21 @@ describe('kit installer', () => {
                 { id: 'repo-2', label: 'docs', root: '/workspace/docs' }
             ])
         )).rejects.toThrow('repositoryId is required');
+        expect(run).not.toHaveBeenCalled();
     });
 });
 
-function registry(entries: Array<{ id: string; label: string; root: string }>): RepositoryRegistry {
+function registry(
+    entries: Array<{ id: string; label: string; root: string }>,
+    configuredRoot?: string
+): RepositoryRegistry {
     const repositories = entries.map(entry => ({
         canonicalRoot: entry.root,
         descriptor: { repositoryId: entry.id, label: entry.label }
     }));
     return {
         repositories,
+        configuredRepository: repositories.find(candidate => candidate.canonicalRoot === configuredRoot),
         requireRepository: (id: string) => {
             const repository = repositories.find(candidate => candidate.descriptor.repositoryId === id);
             if (!repository) throw new Error(`Unknown repository: ${id}`);

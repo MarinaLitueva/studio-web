@@ -47,6 +47,15 @@ export interface StudioControlContext {
     runtimeStatus(): StudioControlRuntimeStatus;
     getSession(): Promise<StudioRuntimeSession>;
     getRepositories(): Promise<readonly StudioRepositoryDescriptor[]>;
+    /**
+     * Repository id of the project's own repository -- the configured
+     * repository root. Undefined only when the registry has not registered
+     * it. Kept beside `getRepositories` rather than on the descriptor
+     * because the registry is the single authority on which working tree is
+     * the project, and `StudioRepositoryDescriptor` is constructed in a
+     * dozen places that have no way to know.
+     */
+    projectRepositoryId(): string | undefined;
     enqueueOperation(request: EnqueueStudioOperationRequest): Promise<EnqueueStudioOperationResponse>;
     getOperationDeltas(request: StudioOperationDeltaRequest): Promise<StudioOperationDeltaResponse>;
     retryOperation(request: StudioRetryOperationRequest): Promise<StudioOperationSnapshot>;
@@ -90,14 +99,24 @@ export function mountStudioControlApi(app: express.Application, context: StudioC
         };
     });
 
+    // `kind` tells the portal which working tree is the project itself: the
+    // synthetic `/workspace` host in a managed workspace, the single checkout in
+    // a classic one. It is the default target for project-level operations --
+    // `.cf-studio-kit.toml` lives there -- so a caller that offers a choice needs
+    // to be able to preselect it, and one that offers none needs to know what the
+    // node will pick. Derived here from the registry rather than read off the
+    // descriptor: the registry is the only component that knows the configured
+    // root, and the descriptor is built in places that do not.
     handle(router, '/getRepositories', async () => {
         const repositories = await context.getRepositories();
+        const projectRepositoryId = context.projectRepositoryId();
         return repositories.map(repository => ({
             repositoryId: repository.repositoryId,
             fingerprint: repository.fingerprint,
             rootUri: repository.rootUri,
             label: repository.label,
-            gitMode: repository.git.mode
+            gitMode: repository.git.mode,
+            kind: repository.repositoryId === projectRepositoryId ? 'project' : 'source'
         }));
     });
 

@@ -36,7 +36,7 @@ export class KitInstallerImpl {
         }
         const repository = request.repositoryId
             ? repositories.requireRepository(request.repositoryId)
-            : requireSingleRepository(repositories);
+            : requireDefaultRepository(repositories);
         if (this.activeRepositories.has(repository.descriptor.repositoryId)) {
             throw new Error(`A kit operation is already running for ${repository.descriptor.label}`);
         }
@@ -80,10 +80,34 @@ export class KitInstallerImpl {
     }
 }
 
-function requireSingleRepository(repositories: RepositoryRegistry) {
+/*
+ * The project repository is the default kit target. `.cf-studio-kit.toml` is a
+ * project-level manifest and lives at the configured repository root -- the
+ * synthetic `/workspace` host in a managed workspace, the single checkout in a
+ * classic one. Source clones below it receive a kit only when the caller names
+ * one explicitly.
+ *
+ * Resolved through `configuredRepository`, never positionally: the registry is
+ * ordered deepest-first (compareRepositoriesForDepth), so `repositories[0]` is
+ * the deepest source clone and a positional default would silently install the
+ * kit into the wrong tree.
+ *
+ * The fallback covers a registry that has not registered the configured root at
+ * all -- a startup race, or a host `.git` that discovery could not read. With a
+ * single repository there is no ambiguity to resolve; with several there is no
+ * safe guess, and the caller has to name one.
+ */
+function requireDefaultRepository(repositories: RepositoryRegistry) {
+    const configured = repositories.configuredRepository;
+    if (configured) {
+        return configured;
+    }
     const available = repositories.repositories;
     if (available.length !== 1) {
-        throw new Error('repositoryId is required when the workspace contains multiple repositories');
+        throw new Error(
+            'repositoryId is required: the project repository is not registered '
+            + 'and the workspace contains several repositories'
+        );
     }
     return available[0];
 }

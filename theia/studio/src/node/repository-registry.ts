@@ -80,6 +80,29 @@ export class RepositoryRegistry implements Disposable {
         return repository;
     }
 
+    /**
+     * The repository whose root is the configured repository root: the
+     * synthetic `/workspace` host in a managed workspace, and the single
+     * checkout in a classic one. The project's `.cf-studio-kit.toml` is a
+     * project-level manifest that lives there, so this is the default target
+     * for project-level operations such as kit installation.
+     *
+     * Resolved by identity rather than by position, because
+     * `repositoriesByDepth` is ordered DEEPEST FIRST: the project repository
+     * is the LAST entry, and `repositories[0]` is the deepest source clone.
+     *
+     * Undefined only before `replace()` has registered it.
+     */
+    get configuredRepository(): RegisteredRepository | undefined {
+        const configuredRoot = this.canonicalConfiguredRepositoryRoot;
+        if (!configuredRoot) {
+            return undefined;
+        }
+        return this.repositoriesByDepth.find(candidate =>
+            samePath(candidate.canonicalRoot, configuredRoot)
+        );
+    }
+
     updateGitDescriptor(repositoryId: string, git: StudioRepositoryGitDescriptor): StudioRepositoryDescriptor {
         const repository = this.requireRepository(repositoryId);
         const updated: RegisteredRepository = {

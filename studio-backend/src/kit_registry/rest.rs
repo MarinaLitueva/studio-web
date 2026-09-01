@@ -8,7 +8,9 @@ use toolkit_canonical_errors::resource_error;
 use toolkit_security::SecurityContext;
 use uuid::Uuid;
 
-use super::service::{KitDescriptor, KitInstallation, KitRegistryService};
+use super::service::{
+    KitDescriptor, KitInstallation, KitMaterialization, KitRegistryService, ProjectRepository,
+};
 
 #[resource_error(gts_id!("cf.studio.kits.registry.v1~"))]
 pub struct KitRegistryError;
@@ -43,6 +45,20 @@ pub struct KitListDto {
 
 #[derive(Debug)]
 #[toolkit_macros::api_dto(response)]
+pub struct KitMaterializationDto {
+    pub repository_id: String,
+    pub repository_label: Option<String>,
+    /// The version actually in this repository, which can lag the
+    /// installation's `version` when a bump has not reached every target.
+    pub version: String,
+    /// "installed" or "failed", for this repository alone.
+    pub status: String,
+    pub materialized_at: String,
+    pub failure_reason: Option<String>,
+}
+
+#[derive(Debug)]
+#[toolkit_macros::api_dto(response)]
 pub struct KitInstallationDto {
     pub kit_slug: String,
     pub version: String,
@@ -53,7 +69,14 @@ pub struct KitInstallationDto {
     pub requested_by: String,
     pub requested_at: String,
     pub installed_at: Option<String>,
+    /// The most recently materialized target, derived from `materializations`
+    /// rather than stored. Kept because "install this again where it already
+    /// is" is the common case and a caller should not have to sort the list to
+    /// find it -- but it is a view of the list, so it cannot drift from it.
     pub repository_id: Option<String>,
+    /// Every repository this kit has been materialized into, with its own
+    /// version and outcome.
+    pub materializations: Vec<KitMaterializationDto>,
     pub failure_reason: Option<String>,
 }
 
@@ -61,6 +84,24 @@ pub struct KitInstallationDto {
 #[toolkit_macros::api_dto(response)]
 pub struct KitInstallationListDto {
     pub items: Vec<KitInstallationDto>,
+}
+
+#[derive(Debug)]
+#[toolkit_macros::api_dto(response)]
+pub struct ProjectRepositoryDto {
+    pub repository_id: String,
+    pub label: String,
+    /// "project" for the project's own repository (where `.cf-studio-kit.toml`
+    /// lives, and the target the IDE picks when none is named), "source" for a
+    /// checkout mounted below it.
+    pub kind: String,
+    pub git_mode: Option<String>,
+}
+
+#[derive(Debug)]
+#[toolkit_macros::api_dto(response)]
+pub struct ProjectRepositoryListDto {
+    pub items: Vec<ProjectRepositoryDto>,
 }
 
 #[derive(Debug)]
@@ -93,8 +134,39 @@ impl From<KitDescriptor> for KitDto {
     }
 }
 
+impl From<ProjectRepository> for ProjectRepositoryDto {
+    fn from(value: ProjectRepository) -> Self {
+        Self {
+            repository_id: value.repository_id,
+            label: value.label,
+            kind: value.kind,
+            git_mode: value.git_mode,
+        }
+    }
+}
+
+impl From<KitMaterialization> for KitMaterializationDto {
+    fn from(value: KitMaterialization) -> Self {
+        Self {
+            repository_id: value.repository_id,
+            repository_label: value.repository_label,
+            version: value.version,
+            status: value.status,
+            materialized_at: value.materialized_at,
+            failure_reason: value.failure_reason,
+        }
+    }
+}
+
 impl From<KitInstallation> for KitInstallationDto {
     fn from(value: KitInstallation) -> Self {
+        // Timestamps are RFC 3339 UTC written by one writer, so the lexical
+        // maximum is the chronological one.
+        let repository_id = value
+            .materializations
+            .iter()
+            .max_by(|left, right| left.materialized_at.cmp(&right.materialized_at))
+            .map(|entry| entry.repository_id.clone());
         Self {
             kit_slug: value.kit_slug,
             version: value.version,
@@ -105,7 +177,8 @@ impl From<KitInstallation> for KitInstallationDto {
             requested_by: value.requested_by,
             requested_at: value.requested_at,
             installed_at: value.installed_at,
-            repository_id: value.repository_id,
+            repository_id,
+            materializations: value.materializations.into_iter().map(Into::into).collect(),
             failure_reason: value.failure_reason,
         }
     }
@@ -171,6 +244,29 @@ async fn remove_installation(
         .await
         .map_err(internal)?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// A missing bridge or a stopped IDE is an expected state, not a defect: the
+/// repository set only exists while a session runs. 503 lets the portal say
+/// "open the IDE first" instead of surfacing an internal error.
+fn session_unavailable(error: anyhow::Error) -> CanonicalError {
+    CanonicalError::service_unavailable()
+        .with_detail(format!("project repositories are unavailable: {error:#}"))
+        .create()
+}
+
+async fn list_repositories(
+    Extension(ctx): Extension<SecurityContext>,
+    Extension(service): Extension<Arc<KitRegistryService>>,
+    Path(project_id): Path<Uuid>,
+) -> ApiResult<JsonBody<ProjectRepositoryListDto>> {
+    let items = service
+        .list_repositories(&ctx, project_id)
+        .await
+        .map_err(session_unavailable)?;
+    Ok(Json(ProjectRepositoryListDto {
+        items: items.into_iter().map(Into::into).collect(),
+    }))
 }
 
 async fn materialize_installation(
@@ -250,6 +346,25 @@ pub fn register_routes(
     .error_403(openapi)
     .error_500(openapi)
     .register(router, openapi);
+
+    router = OperationBuilder::get("/studio-kits/v1/projects/{project_id}/repositories")
+        .operation_id("studio_kits.list_project_repositories")
+        .summary("List the repositories the project's running IDE has mounted")
+        .description("Live view from the IDE, not stored state: the project repository is listed first and is the target a materialize call without repositoryId will use. Requires a running session.")
+        .tag("StudioKits")
+        .authenticated()
+        .require_license_features::<License>([])
+        .path_param("project_id", "Project tenant id")
+        .handler(list_repositories)
+        .json_response_with_schema::<ProjectRepositoryListDto>(
+            openapi,
+            StatusCode::OK,
+            "Project repositories",
+        )
+        .error_401(openapi)
+        .error_403(openapi)
+        .error_500(openapi)
+        .register(router, openapi);
 
     OperationBuilder::delete("/studio-kits/v1/projects/{project_id}/installations/{kit_slug}")
         .operation_id("studio_kits.remove_installation")

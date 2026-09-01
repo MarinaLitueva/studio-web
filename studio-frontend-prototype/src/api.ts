@@ -279,6 +279,19 @@ export interface StudioKit {
   manifest_path: string;
 }
 
+/** One repository this kit has been materialized into. A kit is installed into
+ * a PROJECT and materialized per repository, so this is a list: a project can
+ * gain a repository after the kit was requested, and each target carries its
+ * own version and outcome. */
+export interface KitMaterialization {
+  repository_id: string;
+  repository_label?: string;
+  version: string;
+  status: "installed" | "failed";
+  materialized_at: string;
+  failure_reason?: string;
+}
+
 /** Project-scoped desired state. The trusted IDE runner advances `pending` to
  * `installed`; the browser never executes kit scripts itself. */
 export interface KitInstallation {
@@ -291,8 +304,26 @@ export interface KitInstallation {
   requested_by: string;
   requested_at: string;
   installed_at?: string;
+  /** The most recently materialized target, derived by the backend from
+   *  `materializations`. */
   repository_id?: string;
+  /** Optional on purpose: during a rolling deploy the portal can be newer than
+   *  the backend answering it, and a missing list must degrade to "no detail"
+   *  rather than throw in the render. */
+  materializations?: KitMaterialization[];
   failure_reason?: string;
+}
+
+/** One repository the project's running IDE has mounted. Live state, not
+ * stored: it exists only while a session runs, and the backend answers 503
+ * when there is none. `project` marks the project's own repository -- where
+ * `.cf-studio-kit.toml` lives and where a materialize call with no
+ * `repository_id` lands. The backend lists it first. */
+export interface ProjectRepository {
+  repository_id: string;
+  label: string;
+  kind: "project" | "source";
+  git_mode?: string | null;
 }
 
 // simple-user-settings gear stores exactly these two per-user fields.
@@ -692,6 +723,12 @@ export const api = {
   kitInstallations: (token: string, projectId: string) =>
     request<{ items: KitInstallation[] }>(
       `/studio-kits/v1/projects/${encodeURIComponent(projectId)}/installations`,
+      token,
+    ),
+
+  projectRepositories: (token: string, projectId: string) =>
+    request<{ items: ProjectRepository[] }>(
+      `/studio-kits/v1/projects/${encodeURIComponent(projectId)}/repositories`,
       token,
     ),
 

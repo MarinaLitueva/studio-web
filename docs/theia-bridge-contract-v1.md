@@ -59,13 +59,26 @@ Included (exact signatures from `studio-protocol.ts`):
 | S2S method | Maps to | Purpose in portal |
 |---|---|---|
 | `getSession()` → `StudioRuntimeSession` | `StudioRuntimeService.getSession` | IDE identity + feature flags (git mode, allowed origins) |
-| `getRepositories()` → `readonly StudioRepositoryDescriptor[]` | `getRepositories` | list repos the IDE has mounted, with git descriptors |
+| `getRepositories()` → `readonly StudioRepositoryDescriptor[]` | `getRepositories` | list repos the IDE has mounted, with git descriptors and `kind` |
 | `resolveWorkspacePath(StudioWorkspaceRequest)` → `StudioWorkspaceLocation` | `resolveWorkspacePath` | map a portal path to its owning repo/rel-path |
 | `enqueueOperation(EnqueueStudioOperationRequest)` → `EnqueueStudioOperationResponse` | `enqueueOperation` | **primary write** — queue a save/commit/push through the journal |
 | `getOperationDeltas(StudioOperationDeltaRequest)` → `StudioOperationDeltaResponse` | `getOperationDeltas` | cursor backfill of operation events after a sequence |
 | `getAuditDeltas(StudioAuditDeltaRequest)` → `StudioAuditDeltaResponse` | `getAuditDeltas` | cursor backfill of audit entries |
 | `retryOperation(StudioRetryOperationRequest)` → `StudioOperationSnapshot` | `retryOperation` | retry a failed operation by id |
 | `getWorkspaceSnapshot(WorkspaceSnapshotRequest)` → `WorkspaceSnapshotResponse` | `getWorkspaceSnapshot` | read workspace sources / sync / migration state (read-only) |
+
+`kind` is `"project"` for the repository whose root is the configured
+repository root -- the synthetic `/workspace` host in a managed workspace, the
+single checkout in a classic one -- and `"source"` for a checkout mounted below
+it. It is not a field of `StudioRepositoryDescriptor`: only `RepositoryRegistry`
+knows the configured root, and the descriptor is built in places that do not, so
+the node derives `kind` in the control-API projection. Consumers that predate the
+field see nothing; the Rust DTO defaults it to `"source"`.
+
+The project repository is where `.cf-studio-kit.toml` lives and is what
+`installKit` targets when the caller sends no `repositoryId`, so a portal that
+offers a repository picker uses `kind` to preselect the same target the node
+would have chosen on its own.
 
 The delta methods matter for reliability: they are already sequence-cursored, so
 the push events in §3 are an optimization and `getOperationDeltas`/`getAuditDeltas`

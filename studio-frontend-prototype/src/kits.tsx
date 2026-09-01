@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, type KitInstallation, type StudioKit } from "./api";
+import {
+  api,
+  type KitInstallation,
+  type KitMaterialization,
+  type ProjectRepository,
+  type StudioKit,
+} from "./api";
 import { errText } from "./format";
 
 export function ProjectKits({ token, projectId }: { token: string; projectId: string }) {
@@ -8,6 +14,9 @@ export function ProjectKits({ token, projectId }: { token: string; projectId: st
   const [versions, setVersions] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [repositories, setRepositories] = useState<ProjectRepository[] | null>(null);
+  const [repositoriesNote, setRepositoriesNote] = useState<string | null>(null);
+  const [targets, setTargets] = useState<Record<string, string>>({});
 
   const reload = useCallback(async () => {
     setError(null);
@@ -30,6 +39,19 @@ export function ProjectKits({ token, projectId }: { token: string; projectId: st
       setError(errText(cause));
       setCatalog([]);
     }
+
+    // Loaded apart from the catalogue, and its failure is not an error banner.
+    // The repository list comes from the running IDE, so "no session yet" is
+    // the ordinary state of this page -- folding it into the load above would
+    // blank the kit grid every time someone opens the tab before the IDE.
+    try {
+      const mounted = await api.projectRepositories(token, projectId);
+      setRepositories(mounted.items);
+      setRepositoriesNote(null);
+    } catch (cause) {
+      setRepositories(null);
+      setRepositoriesNote(errText(cause));
+    }
   }, [projectId, token]);
 
   useEffect(() => {
@@ -40,6 +62,40 @@ export function ProjectKits({ token, projectId }: { token: string; projectId: st
     () => new Map(installed.map((installation) => [installation.kit_slug, installation])),
     [installed],
   );
+
+  /*
+   * Where a kit lands, most specific first: what the user picked, then the
+   * repository this kit was last materialized into (so "Reinstall / update"
+   * does not silently move it), then the project repository.
+   *
+   * Undefined is a valid answer -- with no session the list is unknown, the
+   * request goes out without `repository_id`, and the IDE resolves the project
+   * repository itself. That is the same call this page made before the picker
+   * existed.
+   */
+  const defaultRepositoryId = useMemo(
+    () =>
+      repositories?.find((repository) => repository.kind === "project")?.repository_id ??
+      repositories?.[0]?.repository_id,
+    [repositories],
+  );
+
+  const targetFor = (slug: string): string | undefined =>
+    targets[slug] ?? bySlug.get(slug)?.repository_id ?? defaultRepositoryId;
+
+  /*
+   * The label recorded at materialization time wins: it is what the repository
+   * was called when the kit landed there, and it stays readable after the IDE
+   * is closed. The live list only fills gaps -- rows upgraded from a
+   * pre-materializations document have no label of their own.
+   */
+  const repositoryLabel = (entry: KitMaterialization): string => {
+    const mounted = repositories?.find(
+      (repository) => repository.repository_id === entry.repository_id,
+    );
+    const name = entry.repository_label ?? mounted?.label ?? entry.repository_id;
+    return mounted?.kind === "project" ? `${name} · whole project` : name;
+  };
 
   const install = async (kit: StudioKit) => {
     const version = (versions[kit.slug] ?? kit.default_version).trim();
@@ -52,7 +108,7 @@ export function ProjectKits({ token, projectId }: { token: string; projectId: st
         version,
         install_mode: "copy",
       });
-      await api.materializeKitInstallation(token, projectId, kit.slug);
+      await api.materializeKitInstallation(token, projectId, kit.slug, targetFor(kit.slug));
       await reload();
     } catch (cause) {
       await reload();
@@ -93,6 +149,12 @@ export function ProjectKits({ token, projectId }: { token: string; projectId: st
         Open this project's IDE first. Install requests are sent through the authenticated backend
         to its trusted <code>cfs</code> runner; the browser never executes repository scripts.
       </div>
+      {repositoriesNote && (
+        <div className="notice">
+          The IDE has not reported its repositories yet, so a kit will be installed into the
+          project repository. Open the IDE and press Refresh to choose a different one.
+        </div>
+      )}
       {error && <div className="error">{error}</div>}
 
       {catalog === null ? (
@@ -136,6 +198,25 @@ export function ProjectKits({ token, projectId }: { token: string; projectId: st
                     Source policy
                     <input value="Official GitHub kit · managed copy" disabled />
                   </label>
+                  {repositories && repositories.length > 1 && (
+                    <label>
+                      Repository
+                      <select
+                        value={targetFor(kit.slug) ?? ""}
+                        onChange={(event) =>
+                          setTargets((current) => ({ ...current, [kit.slug]: event.target.value }))
+                        }
+                      >
+                        {repositories.map((repository) => (
+                          <option key={repository.repository_id} value={repository.repository_id}>
+                            {repository.kind === "project"
+                              ? `${repository.label} · whole project`
+                              : repository.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
                 </div>
                 {installation && (
                   <p className="sub">
@@ -143,6 +224,19 @@ export function ProjectKits({ token, projectId }: { token: string; projectId: st
                     {new Date(installation.requested_at).toLocaleString()}
                   </p>
                 )}
+                {installation && installation.materializations?.length ? (
+                  <ul className="sub kit-materializations">
+                    {installation.materializations.map((entry) => (
+                      <li key={entry.repository_id}>
+                        {repositoryLabel(entry)} · <code>{entry.version}</code> ·{" "}
+                        {new Date(entry.materialized_at).toLocaleString()}
+                        {entry.status === "failed" && (
+                          <span className="badge failed"> failed</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
                 {installation?.failure_reason && (
                   <div className="error">{installation.failure_reason}</div>
                 )}

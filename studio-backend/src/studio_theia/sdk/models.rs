@@ -27,6 +27,21 @@ pub struct RepositoryDescriptor {
     pub label: String,
     #[serde(default)]
     pub git_mode: Option<String>,
+    /// `"project"` for the project's own repository -- the configured
+    /// repository root, which is where `.cf-studio-kit.toml` lives and what the
+    /// node installs a kit into when the caller names no target -- and
+    /// `"source"` for a checkout mounted below it.
+    ///
+    /// Defaults to `"source"` rather than being required: an older Theia image
+    /// whose `getRepositories` predates the field must still deserialize. The
+    /// cost of that is a repository list with no project entry to preselect,
+    /// which is a degraded picker rather than a failed call.
+    #[serde(default = "default_repository_kind")]
+    pub kind: String,
+}
+
+fn default_repository_kind() -> String {
+    "source".to_owned()
 }
 
 /// Session identity + feature summary (subset of `StudioRuntimeSession`).
