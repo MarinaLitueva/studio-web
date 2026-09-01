@@ -186,13 +186,14 @@ fn normalize_slug(value: &str) -> Result<String> {
 }
 
 fn normalize_version(value: &str) -> Result<String> {
-    let value = value.trim();
-    if value.is_empty()
-        || value.len() > 120
-        || value
-            .chars()
-            .any(|character| matches!(character, '\0' | '\n' | '\r'))
+    if value
+        .chars()
+        .any(|character| matches!(character, '\0' | '\n' | '\r'))
     {
+        bail!("kit version must not contain control characters");
+    }
+    let value = value.trim();
+    if value.is_empty() || value.len() > 120 {
         bail!("kit version must be a non-empty Git ref of at most 120 characters");
     }
     Ok(value.to_owned())
