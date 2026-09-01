@@ -486,14 +486,26 @@ export class StudioRuntimeEndpoint implements StudioRuntimeService, BackendAppli
     }
 
     protected async refreshRepositoryProjection(): Promise<void> {
-        const [hostRepository, sourceRepositories] = await Promise.all([
-            this.repositoryDiscovery.discoverConfiguredRepositoryRegistration(),
-            this.workspaceSourceRegistry.projectRepositories()
-        ]);
+        const sourceRepositories = await this.workspaceSourceRegistry.projectRepositories();
+        let hostRepository;
+        try {
+            hostRepository = await this.repositoryDiscovery.discoverConfiguredRepositoryRegistration();
+        } catch (error) {
+            // Managed Kubernetes workspaces keep the canonical manifest in a
+            // synthetic /workspace repository and clone real sources below
+            // it. The synthetic repository is optional for SCM operations;
+            // a startup race or an absent host .git must not discard valid,
+            // configured source checkouts from RepositoryRegistry.
+            if (sourceRepositories.length === 0) {
+                throw error;
+            }
+        }
         // The host registration carries the authoritative Git descriptor. Keep it
         // last so canonical-root deduplication cannot replace it with a source-only
         // registration for the same working tree.
-        const registrations = [...sourceRepositories, hostRepository];
+        const registrations = hostRepository
+            ? [...sourceRepositories, hostRepository]
+            : [...sourceRepositories];
         const externalRoots = registrations
             .map(registration => registration.repositoryRoot)
             .filter(repositoryRoot => !isWithin(this.workspaceRoot, repositoryRoot));

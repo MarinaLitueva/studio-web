@@ -74,6 +74,27 @@ describe('StudioRuntimeEndpoint', () => {
         );
     });
 
+    it('keeps configured source repositories when the synthetic host repository is unavailable', async () => {
+        const projectedRepository = {
+            repositoryRoot: '/workspace/studio-web',
+            gitDirectory: '/workspace/studio-web/.git',
+            commonDirectory: '/workspace/studio-web/.git'
+        };
+        const harness = createHarness({
+            loadResult: validLoadResult(configPath, 'rev-managed'),
+            startupMode: 'canonical-active',
+            projectedRepositories: [projectedRepository],
+            hostDiscoveryError: new Error('git rev-parse failed with exit code 128')
+        });
+
+        await expect(harness.endpoint.onStart()).resolves.toBeUndefined();
+
+        expect(harness.repositoryRegistry.replace).toHaveBeenCalledWith(
+            [projectedRepository],
+            { allowConfiguredExternalRoots: [] }
+        );
+    });
+
     it('preserves single-folder startup when canonical config is missing without recursive SCM discovery', async () => {
         const harness = createHarness({
             loadResult: {
@@ -430,6 +451,7 @@ function createHarness(options: {
     scanResponse?: WorkspaceScanResponse;
     suggestion?: WorkspaceRepositorySuggestion;
     projectedRepositories?: readonly any[];
+    hostDiscoveryError?: Error;
     syncAfterMutation?: WorkspaceSyncResponse;
     cancelResponse?: WorkspaceSyncResponse;
     retryResponse?: WorkspaceSyncResponse;
@@ -470,11 +492,16 @@ function createHarness(options: {
     };
     const repositoryDiscovery = {
         initialize: jest.fn(),
-        discoverConfiguredRepositoryRegistration: jest.fn(async () => ({
-            repositoryRoot: '/workspace',
-            gitDirectory: '/workspace/.git',
-            commonDirectory: '/workspace/.git'
-        })),
+        discoverConfiguredRepositoryRegistration: jest.fn(async () => {
+            if (options.hostDiscoveryError) {
+                throw options.hostDiscoveryError;
+            }
+            return {
+                repositoryRoot: '/workspace',
+                gitDirectory: '/workspace/.git',
+                commonDirectory: '/workspace/.git'
+            };
+        }),
         dispose: jest.fn()
     };
     const repositoryRegistry = {

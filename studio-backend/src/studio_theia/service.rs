@@ -80,8 +80,19 @@ impl TheiaService {
             .map_err(|e| upstream_error(method, e))?;
         if !response.status().is_success() {
             let status = response.status();
+            let upstream_detail = response
+                .text()
+                .await
+                .ok()
+                .and_then(|body| extract_upstream_detail(&body));
+            let detail = upstream_detail.map_or_else(
+                || format!("Theia control '{method}' returned HTTP {status}"),
+                |message| {
+                    format!("Theia control '{method}' returned HTTP {status}: {message}")
+                },
+            );
             return Err(CanonicalError::service_unavailable()
-                .with_detail(format!("Theia control '{method}' returned HTTP {status}"))
+                .with_detail(detail)
                 .create());
         }
         response
@@ -91,8 +102,42 @@ impl TheiaService {
     }
 }
 
+fn extract_upstream_detail(body: &str) -> Option<String> {
+    const MAX_DETAIL_CHARS: usize = 2_048;
+    let parsed = serde_json::from_str::<serde_json::Value>(body).ok();
+    let raw = parsed
+        .as_ref()
+        .and_then(|value| value.get("error"))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or(body)
+        .trim();
+    if raw.is_empty() {
+        return None;
+    }
+    Some(raw.chars().take(MAX_DETAIL_CHARS).collect())
+}
+
 fn upstream_error(method: &str, e: reqwest::Error) -> TheiaControlError {
     CanonicalError::service_unavailable()
         .with_detail(format!("Theia control '{method}' failed: {e}"))
         .create()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_upstream_detail;
+
+    #[test]
+    fn extracts_structured_theia_error() {
+        assert_eq!(
+            extract_upstream_detail(r#"{"error":"No registered repository"}"#).as_deref(),
+            Some("No registered repository")
+        );
+    }
+
+    #[test]
+    fn truncates_unstructured_upstream_body() {
+        let body = "x".repeat(3_000);
+        assert_eq!(extract_upstream_detail(&body).unwrap().chars().count(), 2_048);
+    }
 }
