@@ -266,6 +266,32 @@ export interface WorkspaceSettings {
   repos?: RepoEntry[];
 }
 
+/** A versioned capability bundle published in the Studio kit registry. */
+export interface StudioKit {
+  slug: string;
+  name: string;
+  description: string;
+  publisher: string;
+  visibility: string;
+  source: string;
+  repository_url: string;
+  default_version: string;
+  manifest_path: string;
+}
+
+/** Project-scoped desired state. The trusted IDE runner advances `pending` to
+ * `installed`; the browser never executes kit scripts itself. */
+export interface KitInstallation {
+  kit_slug: string;
+  version: string;
+  source: string;
+  repository_url: string;
+  install_mode: "copy" | "register";
+  status: "pending" | "installing" | "installed" | "failed";
+  requested_by: string;
+  requested_at: string;
+}
+
 // simple-user-settings gear stores exactly these two per-user fields.
 export interface UserPrefs {
   theme?: string;
@@ -655,6 +681,34 @@ export async function uploadProjectArtifact(
 export const api = {
   /** Login = validate the token by asking the backend who we are. */
   me: (token: string) => request<Me>("/account-management/v1/me", token),
+
+  /* ── Studio kit registry (prototype only) ── */
+
+  kits: (token: string) => request<{ items: StudioKit[] }>("/studio-kits/v1/catalog", token),
+
+  kitInstallations: (token: string, projectId: string) =>
+    request<{ items: KitInstallation[] }>(
+      `/studio-kits/v1/projects/${encodeURIComponent(projectId)}/installations`,
+      token,
+    ),
+
+  requestKitInstallation: (
+    token: string,
+    projectId: string,
+    input: { kit_slug: string; version: string; install_mode: "copy" | "register" },
+  ) =>
+    request<KitInstallation>(
+      `/studio-kits/v1/projects/${encodeURIComponent(projectId)}/installations`,
+      token,
+      { method: "POST", body: JSON.stringify(input) },
+    ),
+
+  removeKitInstallation: (token: string, projectId: string, kitSlug: string) =>
+    request<void>(
+      `/studio-kits/v1/projects/${encodeURIComponent(projectId)}/installations/${encodeURIComponent(kitSlug)}`,
+      token,
+      { method: "DELETE" },
+    ),
 
   tenant: (token: string, tenantId: string) =>
     request<Tenant>(`/account-management/v1/tenants/${tenantId}`, token),

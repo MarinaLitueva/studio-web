@@ -1,0 +1,8 @@
+.git
+**/.git
+**/node_modules
+**/target
+**/dist
+**/coverage
+**/.vite
+*.log

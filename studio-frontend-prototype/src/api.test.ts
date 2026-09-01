@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
+  api,
   alignSessionHost,
   apiUrl,
   sessionOrigin,
@@ -9,6 +10,69 @@ import {
   waitForStudioSessionReady,
   uploadProjectArtifact,
 } from "./api";
+
+describe("kit registry client", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("loads the catalog through the shared /cf gateway", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ items: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.kits("token")).resolves.toEqual({ items: [] });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/cf/studio-kits/v1/catalog",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer token" }),
+      }),
+    );
+  });
+
+  it("creates a project-scoped, version-pinned install request", async () => {
+    const installation = {
+      kit_slug: "sdlc",
+      version: "v1.2.3",
+      source: "github",
+      repository_url: "https://github.com/constructorfabric/studio-kit-sdlc",
+      install_mode: "copy",
+      status: "pending",
+      requested_by: "user-1",
+      requested_at: "2026-09-01T00:00:00Z",
+    };
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify(installation), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      api.requestKitInstallation("token", "project/one", {
+        kit_slug: "sdlc",
+        version: "v1.2.3",
+        install_mode: "copy",
+      }),
+    ).resolves.toEqual(installation);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/cf/studio-kits/v1/projects/project%2Fone/installations",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          kit_slug: "sdlc",
+          version: "v1.2.3",
+          install_mode: "copy",
+        }),
+      }),
+    );
+  });
+});
 
 describe("apiUrl", () => {
   it("prefixes paths with /cf", () => {
