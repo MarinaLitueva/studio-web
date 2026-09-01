@@ -290,6 +290,9 @@ export interface KitInstallation {
   status: "pending" | "installing" | "installed" | "failed";
   requested_by: string;
   requested_at: string;
+  installed_at?: string;
+  repository_id?: string;
+  failure_reason?: string;
 }
 
 // simple-user-settings gear stores exactly these two per-user fields.
@@ -701,6 +704,18 @@ export const api = {
       `/studio-kits/v1/projects/${encodeURIComponent(projectId)}/installations`,
       token,
       { method: "POST", body: JSON.stringify(input) },
+    ),
+
+  materializeKitInstallation: (
+    token: string,
+    projectId: string,
+    kitSlug: string,
+    repositoryId?: string,
+  ) =>
+    request<KitInstallation>(
+      `/studio-kits/v1/projects/${encodeURIComponent(projectId)}/installations/${encodeURIComponent(kitSlug)}/materialize`,
+      token,
+      { method: "POST", body: JSON.stringify({ repository_id: repositoryId }) },
     ),
 
   removeKitInstallation: (token: string, projectId: string, kitSlug: string) =>

@@ -23,6 +23,8 @@ import {
     StudioRepositoryDescriptor,
     StudioOpenInEditorRequest,
     StudioOpenInEditorResult,
+    StudioKitInstallRequest,
+    StudioKitInstallResult,
     StudioRetryOperationRequest,
     StudioRuntimeSession
 } from '../common/studio-protocol';
@@ -49,6 +51,7 @@ export interface StudioControlContext {
     getOperationDeltas(request: StudioOperationDeltaRequest): Promise<StudioOperationDeltaResponse>;
     retryOperation(request: StudioRetryOperationRequest): Promise<StudioOperationSnapshot>;
     openInEditor(request: StudioOpenInEditorRequest): Promise<StudioOpenInEditorResult>;
+    installKit(request: StudioKitInstallRequest): Promise<StudioKitInstallResult>;
 }
 
 /**
@@ -122,6 +125,12 @@ export function mountStudioControlApi(app: express.Application, context: StudioC
         preview: asBoolean(req.body?.preview)
     }));
 
+    handle(router, '/installKit', async req => context.installKit({
+        kitSlug: asString(req.body?.kitSlug),
+        version: asString(req.body?.version),
+        repositoryId: optionalString(req.body?.repositoryId)
+    }));
+
     app.use(STUDIO_CONTROL_BASE_PATH, router);
     return true;
 }
@@ -142,6 +151,11 @@ function handle(
 
 function asString(value: unknown): string {
     return typeof value === 'string' ? value : '';
+}
+
+function optionalString(value: unknown): string | undefined {
+    const parsed = asString(value).trim();
+    return parsed || undefined;
 }
 
 function asNumber(value: unknown): number {

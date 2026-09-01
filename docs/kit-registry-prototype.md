@@ -11,18 +11,19 @@ whose canonical content remains in Git. The initial official entry is:
 - slug: `sdlc`
 - repository: `https://github.com/constructorfabric/studio-kit-sdlc`
 - manifest: `.cf-studio-kit.toml`
-- default Git ref: `main`
+- default Git ref: `5c5b85c870cb4b62ed0506ae1a8ca196156d1c74`
 
 ## User flow
 
 1. Open an organization, workspace and project in the prototype.
 2. Select **Kits** in the project sidebar.
-3. Choose a Git ref and installation mode.
-4. Select **Install** or **Update request**.
+3. Start the project's IDE session.
+4. Choose a Git ref and select **Install in IDE**.
 
-The request is stored as project-scoped desired state with status `pending`.
-Removing it deletes that desired-state entry. The browser does not clone a
-repository and does not execute kit code.
+The request is first stored as project-scoped desired state and then sent over
+the authenticated backend-to-Theia bridge. Status advances through `pending`,
+`installing`, and `installed` or `failed`. Removing it deletes the desired-state
+entry. The browser never receives the bridge token and never executes kit code.
 
 ## Backend API
 
@@ -33,6 +34,7 @@ All endpoints require the normal authenticated Studio security context.
 | `GET` | `/studio-kits/v1/catalog` | List registry entries |
 | `GET` | `/studio-kits/v1/projects/{project_id}/installations` | Read project desired state |
 | `POST` | `/studio-kits/v1/projects/{project_id}/installations` | Create or replace one request |
+| `POST` | `/studio-kits/v1/projects/{project_id}/installations/{kit_slug}/materialize` | Run the request in the live IDE |
 | `DELETE` | `/studio-kits/v1/projects/{project_id}/installations/{kit_slug}` | Remove one request |
 
 Installations are persisted through Account Management tenant metadata using:
@@ -54,28 +56,29 @@ Example request:
 
 ## Installation boundary
 
-This slice deliberately stops before materialization. A later trusted runner
-inside the project IDE session will:
+The trusted runner inside the project IDE session:
 
-1. read pending desired state from Studio backend;
-2. resolve the allow-listed registry repository and exact Git ref;
-3. validate the kit manifest and compatibility;
-4. invoke `cfs` with structured arguments in the workspace checkout;
-5. report `installing`, `installed` or `failed` back to Studio;
-6. keep an audit record with project, kit, version, actor and result.
+1. accepts only the S2S-token-gated internal control request;
+2. independently resolves `sdlc` to `constructorfabric/studio-kit-sdlc`;
+3. validates the Git ref and selects the sole repository (or an explicit id);
+4. invokes `cfs kit install ... --version ...` without a shell;
+5. invokes `cfs generate-agents` after a successful install;
+6. reports `installed` or a bounded failure reason to project metadata.
 
-The runner must not accept arbitrary repository URLs or shell fragments from
-the browser. Private registries should use Studio Connections/Secrets and
+The Theia image contains the official `cfs` CLI in an isolated Python virtual
+environment. Release builds can pin `STUDIO_CFS_REF` to a reviewed tag or
+commit. The runner does not accept arbitrary repository URLs or shell
+fragments. Private registries should later use Studio Connections/Secrets and
 short-lived credentials, never return credentials to the UI.
 
 ## Verification
 
 - Prototype: `npm run build`
 - Prototype tests: `npm test`
-- Backend release image:
+- Backend release image (the bridge is required):
 
 ```text
 docker build -f studio-backend/Dockerfile.src \
   -t studio-backend-kits-check \
-  --build-arg "CARGO_FEATURES=--no-default-features --features graph" .
+  --build-arg "CARGO_FEATURES=--no-default-features --features graph,theia-bridge" .
 ```

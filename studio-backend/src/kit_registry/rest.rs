@@ -52,6 +52,9 @@ pub struct KitInstallationDto {
     pub status: String,
     pub requested_by: String,
     pub requested_at: String,
+    pub installed_at: Option<String>,
+    pub repository_id: Option<String>,
+    pub failure_reason: Option<String>,
 }
 
 #[derive(Debug)]
@@ -66,6 +69,12 @@ pub struct RequestKitInstallationDto {
     pub kit_slug: String,
     pub version: String,
     pub install_mode: String,
+}
+
+#[derive(Debug)]
+#[toolkit_macros::api_dto(request)]
+pub struct MaterializeKitInstallationDto {
+    pub repository_id: Option<String>,
 }
 
 impl From<KitDescriptor> for KitDto {
@@ -95,6 +104,9 @@ impl From<KitInstallation> for KitInstallationDto {
             status: value.status,
             requested_by: value.requested_by,
             requested_at: value.requested_at,
+            installed_at: value.installed_at,
+            repository_id: value.repository_id,
+            failure_reason: value.failure_reason,
         }
     }
 }
@@ -161,6 +173,19 @@ async fn remove_installation(
     Ok(StatusCode::NO_CONTENT)
 }
 
+async fn materialize_installation(
+    Extension(ctx): Extension<SecurityContext>,
+    Extension(service): Extension<Arc<KitRegistryService>>,
+    Path((project_id, kit_slug)): Path<(Uuid, String)>,
+    Json(body): Json<MaterializeKitInstallationDto>,
+) -> ApiResult<JsonBody<KitInstallationDto>> {
+    let value = service
+        .materialize_installation(&ctx, project_id, &kit_slug, body.repository_id)
+        .await
+        .map_err(internal)?;
+    Ok(Json(value.into()))
+}
+
 pub fn register_routes(
     mut router: Router,
     openapi: &dyn OpenApiRegistry,
@@ -206,6 +231,25 @@ pub fn register_routes(
         .handler(request_installation)
         .json_response_with_schema::<KitInstallationDto>(openapi, StatusCode::OK, "Requested installation")
         .error_400(openapi).error_401(openapi).error_403(openapi).error_500(openapi).register(router, openapi);
+
+    router = OperationBuilder::post(
+        "/studio-kits/v1/projects/{project_id}/installations/{kit_slug}/materialize",
+    )
+    .operation_id("studio_kits.materialize_installation")
+    .summary("Install a requested kit in the project's running IDE")
+    .description("Calls the S2S-token-gated Theia runner. The kit and Git ref are independently validated by the IDE.")
+    .tag("StudioKits")
+    .authenticated()
+    .require_license_features::<License>([])
+    .path_param("project_id", "Project tenant id")
+    .path_param("kit_slug", "Registered kit slug")
+    .json_request::<MaterializeKitInstallationDto>(openapi, "Optional target repository")
+    .handler(materialize_installation)
+    .json_response_with_schema::<KitInstallationDto>(openapi, StatusCode::OK, "Materialized installation")
+    .error_401(openapi)
+    .error_403(openapi)
+    .error_500(openapi)
+    .register(router, openapi);
 
     OperationBuilder::delete("/studio-kits/v1/projects/{project_id}/installations/{kit_slug}")
         .operation_id("studio_kits.remove_installation")

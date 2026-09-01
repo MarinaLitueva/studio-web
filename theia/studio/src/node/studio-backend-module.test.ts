@@ -592,7 +592,8 @@ function createHarness(options: {
         workspaceMigrationService as any,
         workspaceSourceRegistry as any,
         workspaceDiscoveryService as any,
-        workspaceSyncOrchestrator as any
+        workspaceSyncOrchestrator as any,
+        { install: jest.fn() } as any
     );
 
     return {

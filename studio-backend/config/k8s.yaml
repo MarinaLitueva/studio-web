@@ -497,6 +497,12 @@ gears:
     config:
       traversal_hop: pgq
 
+  # Authenticated backend-to-Theia control plane. The public browser never
+  # receives its per-session token; studio-session injects it into the Pod.
+  studio-theia:
+    config:
+      enabled: true
+
   # ── Studio's own gear: per-workspace Theia IDE sessions in containers ──
   # Requires: Docker daemon on the host and the Theia image built once:
   #   cd theia && docker build -t cf-studio-theia:latest .
@@ -516,6 +522,7 @@ gears:
       # and frontend). No pull secret needed — Harbor handles the upstream.
       image: "${STUDIO_SESSION_IMAGE}"
       gateway_url: "${STUDIO_SESSION_GATEWAY_URL}"
+      theia_control_enabled: true
       # Namespace is auto-detected from the mounted ServiceAccount token;
       # k8s_namespace / k8s_image_pull_secret override only if ever needed.
       git_mode: "disabled"

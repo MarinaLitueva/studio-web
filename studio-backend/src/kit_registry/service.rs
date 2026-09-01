@@ -5,6 +5,7 @@ use anyhow::{Context, Result, bail};
 use gts::GtsTypeId;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
+use toolkit::client_hub::ClientHub;
 use toolkit_security::SecurityContext;
 use uuid::Uuid;
 
@@ -36,6 +37,12 @@ pub struct KitInstallation {
     pub status: String,
     pub requested_by: String,
     pub requested_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub installed_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repository_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_reason: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -46,11 +53,20 @@ struct InstallationDocument {
 
 pub struct KitRegistryService {
     account_management: Arc<dyn AccountManagementClient>,
+    #[cfg(feature = "theia-bridge")]
+    client_hub: Arc<ClientHub>,
 }
 
 impl KitRegistryService {
-    pub fn new(account_management: Arc<dyn AccountManagementClient>) -> Self {
-        Self { account_management }
+    pub fn new(
+        account_management: Arc<dyn AccountManagementClient>,
+        _client_hub: Arc<ClientHub>,
+    ) -> Self {
+        Self {
+            account_management,
+            #[cfg(feature = "theia-bridge")]
+            client_hub: _client_hub,
+        }
     }
 
     pub fn catalogue(&self) -> Vec<KitDescriptor> {
@@ -99,6 +115,9 @@ impl KitRegistryService {
             .into_iter()
             .find(|kit| kit.slug == kit_slug)
             .context("kit is not registered")?;
+        if kit.source == "github" && install_mode != "copy" {
+            bail!("GitHub registry kits use the managed copy install mode");
+        }
 
         let mut installations = self.list_installations(ctx, project_id).await?;
         let requested = KitInstallation {
@@ -111,6 +130,9 @@ impl KitRegistryService {
             requested_by: ctx.subject_id().to_string(),
             requested_at: OffsetDateTime::now_utc()
                 .format(&time::format_description::well_known::Rfc3339)?,
+            installed_at: None,
+            repository_id: None,
+            failure_reason: None,
         };
         installations.retain(|entry| entry.kit_slug != requested.kit_slug);
         installations.push(requested.clone());
@@ -119,6 +141,72 @@ impl KitRegistryService {
         self.write_installations(ctx, project_id, installations)
             .await?;
         Ok(requested)
+    }
+
+    pub async fn materialize_installation(
+        &self,
+        ctx: &SecurityContext,
+        project_id: Uuid,
+        kit_slug: &str,
+        repository_id: Option<String>,
+    ) -> Result<KitInstallation> {
+        let kit_slug = normalize_slug(kit_slug)?;
+        let mut installations = self.list_installations(ctx, project_id).await?;
+        let index = installations
+            .iter()
+            .position(|entry| entry.kit_slug == kit_slug)
+            .context("kit installation has not been requested")?;
+        installations[index].status = "installing".to_owned();
+        installations[index].failure_reason = None;
+        self.write_installations(ctx, project_id, installations.clone())
+            .await?;
+
+        #[cfg(feature = "theia-bridge")]
+        let outcome = async {
+            use crate::studio_theia::sdk::{InstallKit, SessionTarget, TheiaControlClientV1};
+            let client = self
+                .client_hub
+                .try_get::<dyn TheiaControlClientV1>()
+                .context("Theia control bridge is not enabled")?;
+            client
+                .install_kit(
+                    ctx,
+                    &SessionTarget {
+                        workspace_id: project_id,
+                    },
+                    &InstallKit {
+                        kit_slug: installations[index].kit_slug.clone(),
+                        version: installations[index].version.clone(),
+                        repository_id,
+                    },
+                )
+                .await
+                .map_err(|error| anyhow::anyhow!(error.to_string()))
+        }
+        .await;
+        #[cfg(not(feature = "theia-bridge"))]
+        let outcome: Result<MaterializedKit> = Err(anyhow::anyhow!(
+            "Theia control bridge is not compiled into this backend"
+        ));
+
+        match outcome {
+            Ok(result) => {
+                installations[index].status = "installed".to_owned();
+                installations[index].installed_at = Some(now_rfc3339()?);
+                installations[index].repository_id = Some(result.repository_id);
+                installations[index].failure_reason = None;
+                self.write_installations(ctx, project_id, installations.clone())
+                    .await?;
+                Ok(installations.remove(index))
+            }
+            Err(error) => {
+                installations[index].status = "failed".to_owned();
+                installations[index].failure_reason =
+                    Some(error.to_string().chars().take(2_000).collect());
+                self.write_installations(ctx, project_id, installations).await?;
+                Err(error)
+            }
+        }
     }
 
     pub async fn remove_installation(
@@ -167,7 +255,7 @@ fn official_catalogue() -> Vec<KitDescriptor> {
         visibility: "public".to_owned(),
         source: "github".to_owned(),
         repository_url: "https://github.com/constructorfabric/studio-kit-sdlc".to_owned(),
-        default_version: "main".to_owned(),
+        default_version: "5c5b85c870cb4b62ed0506ae1a8ca196156d1c74".to_owned(),
         manifest_path: ".cf-studio-kit.toml".to_owned(),
     }]
 }
@@ -196,6 +284,19 @@ fn normalize_version(value: &str) -> Result<String> {
     if value.is_empty() || value.len() > 120 {
         bail!("kit version must be a non-empty Git ref of at most 120 characters");
     }
+    let mut chars = value.chars();
+    let first = chars.next().unwrap_or_default();
+    if !first.is_ascii_alphanumeric()
+        || !chars.all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '/' | '-')
+        })
+        || value.contains("..")
+        || value.contains("@{")
+        || value.ends_with('/')
+        || value.ends_with(".lock")
+    {
+        bail!("kit version must be a safe Git ref");
+    }
     Ok(value.to_owned())
 }
 
@@ -205,6 +306,16 @@ fn normalize_install_mode(value: &str) -> Result<String> {
         "register" => Ok("register".to_owned()),
         _ => bail!("install mode must be copy or register"),
     }
+}
+
+fn now_rfc3339() -> Result<String> {
+    Ok(OffsetDateTime::now_utc()
+        .format(&time::format_description::well_known::Rfc3339)?)
+}
+
+#[cfg(not(feature = "theia-bridge"))]
+struct MaterializedKit {
+    repository_id: String,
 }
 
 #[cfg(test)]
@@ -227,6 +338,8 @@ mod tests {
         assert_eq!(normalize_slug("SDLC").unwrap(), "sdlc");
         assert!(normalize_slug("sdlc; rm").is_err());
         assert!(normalize_version("\nmain").is_err());
+        assert!(normalize_version("--help").is_err());
+        assert!(normalize_version("feature/../main").is_err());
         assert!(normalize_install_mode("shell").is_err());
     }
 }

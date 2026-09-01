@@ -217,6 +217,21 @@ export interface StudioOpenInEditorResult {
     readonly resolvedRelativePath?: string;
 }
 
+/** Trusted backend request to materialize one registry-approved kit. */
+export interface StudioKitInstallRequest {
+    readonly kitSlug: string;
+    readonly version: string;
+    readonly repositoryId?: string;
+}
+
+export interface StudioKitInstallResult {
+    readonly kitSlug: string;
+    readonly version: string;
+    readonly repositoryId: string;
+    readonly repositoryLabel: string;
+    readonly output: string;
+}
+
 export interface StudioRetryOperationRequest {
     readonly operationId: string;
 }

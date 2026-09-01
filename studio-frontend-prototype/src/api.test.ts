@@ -72,6 +72,22 @@ describe("kit registry client", () => {
       }),
     );
   });
+
+  it("materializes a pending kit through the backend-to-Theia bridge", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ kit_slug: "sdlc", status: "installed" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.materializeKitInstallation("token", "project/one", "sdlc");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/cf/studio-kits/v1/projects/project%2Fone/installations/sdlc/materialize",
+      expect.objectContaining({ method: "POST", body: "{}" }),
+    );
+  });
 });
 
 describe("apiUrl", () => {

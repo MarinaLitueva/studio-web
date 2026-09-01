@@ -62,6 +62,7 @@ import { RepositoryOperationQueue } from './repository-operation-queue';
 import { RepositoryDiscoveryService } from './repository-discovery-service';
 import { RepositoryRegistry } from './repository-registry';
 import { CfsMapRunner, CfsMapRunnerImpl } from './cfs-map-runner';
+import { KitInstaller, KitInstallerImpl } from './kit-installer';
 import { WorkspaceGraphServiceImpl } from './workspace-graph-service';
 import {
     CANONICAL_WORKSPACE_CONFIG_FILENAME,
@@ -102,7 +103,8 @@ export class StudioRuntimeEndpoint implements StudioRuntimeService, BackendAppli
         protected readonly workspaceMigrationService: WorkspaceMigrationService,
         protected readonly workspaceSourceRegistry: WorkspaceSourceRegistry,
         protected readonly workspaceDiscoveryService: WorkspaceDiscoveryService,
-        protected readonly workspaceSyncOrchestrator: WorkspaceSyncOrchestrator
+        protected readonly workspaceSyncOrchestrator: WorkspaceSyncOrchestrator,
+        protected readonly kitInstaller: KitInstallerImpl
     ) { }
 
     async onStart(): Promise<void> {
@@ -167,7 +169,8 @@ export class StudioRuntimeEndpoint implements StudioRuntimeService, BackendAppli
             enqueueOperation: request => this.enqueueOperation(request),
             getOperationDeltas: request => this.getOperationDeltas(request),
             retryOperation: request => this.retryOperation(request),
-            openInEditor: request => this.openInEditor(request)
+            openInEditor: request => this.openInEditor(request),
+            installKit: request => this.kitInstaller.install(request, this.repositoryRegistry)
         });
     }
 
@@ -609,6 +612,8 @@ export default new ContainerModule(bind => {
     bind(GitPublishService).toSelf().inSingletonScope();
     bind(CfsMapRunnerImpl).toSelf().inSingletonScope();
     bind(CfsMapRunner).toService(CfsMapRunnerImpl);
+    bind(KitInstallerImpl).toSelf().inSingletonScope();
+    bind(KitInstaller).toService(KitInstallerImpl);
     bind(WorkspaceGraphServiceImpl).toSelf().inSingletonScope();
     bind(WorkspaceGraphService).toService(WorkspaceGraphServiceImpl);
     bind(OperationJournal).toDynamicValue(ctx => {
@@ -638,7 +643,8 @@ export default new ContainerModule(bind => {
             ctx.container.get(WorkspaceMigrationService),
             ctx.container.get(WorkspaceSourceRegistry),
             ctx.container.get(WorkspaceDiscoveryService),
-            ctx.container.get(WorkspaceSyncOrchestrator)
+            ctx.container.get(WorkspaceSyncOrchestrator),
+            ctx.container.get(KitInstaller)
         )
     ).inSingletonScope();
 

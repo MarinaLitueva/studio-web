@@ -33,7 +33,10 @@ impl Gear for StudioKitsGear {
     async fn init(&self, ctx: &GearCtx) -> anyhow::Result<()> {
         let account_management = ctx.client_hub().get::<dyn AccountManagementClient>()?;
         self.service
-            .set(Arc::new(KitRegistryService::new(account_management)))
+            .set(Arc::new(KitRegistryService::new(
+                account_management,
+                ctx.client_hub(),
+            )))
             .map_err(|_| anyhow::anyhow!("studio-kits already initialized"))?;
         Ok(())
     }

@@ -198,7 +198,7 @@ jobs:
         # Keep LLM disabled, but compile graph-storage for the Kubernetes
         # profile. Its database runtime is versioned independently by
         # infra-v* releases and Deploy Infra.
-        run: cargo build --locked --release --no-default-features --features graph
+        run: cargo build --locked --release --no-default-features --features graph,theia-bridge
 
       - uses: actions/upload-artifact@v6
         with:

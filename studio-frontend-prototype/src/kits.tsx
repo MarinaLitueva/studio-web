@@ -6,7 +6,6 @@ export function ProjectKits({ token, projectId }: { token: string; projectId: st
   const [catalog, setCatalog] = useState<StudioKit[] | null>(null);
   const [installed, setInstalled] = useState<KitInstallation[]>([]);
   const [versions, setVersions] = useState<Record<string, string>>({});
-  const [modes, setModes] = useState<Record<string, "copy" | "register">>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,14 +23,6 @@ export function ProjectKits({ token, projectId }: { token: string; projectId: st
         for (const kit of kits.items) {
           const existing = installations.items.find((item) => item.kit_slug === kit.slug);
           if (!next[kit.slug]) next[kit.slug] = existing?.version ?? kit.default_version;
-        }
-        return next;
-      });
-      setModes((current) => {
-        const next = { ...current };
-        for (const kit of kits.items) {
-          const existing = installations.items.find((item) => item.kit_slug === kit.slug);
-          if (!next[kit.slug]) next[kit.slug] = existing?.install_mode ?? "copy";
         }
         return next;
       });
@@ -59,10 +50,12 @@ export function ProjectKits({ token, projectId }: { token: string; projectId: st
       await api.requestKitInstallation(token, projectId, {
         kit_slug: kit.slug,
         version,
-        install_mode: modes[kit.slug] ?? "copy",
+        install_mode: "copy",
       });
+      await api.materializeKitInstallation(token, projectId, kit.slug);
       await reload();
     } catch (cause) {
+      await reload();
       setError(errText(cause));
     } finally {
       setBusy(null);
@@ -97,8 +90,8 @@ export function ProjectKits({ token, projectId }: { token: string; projectId: st
       </div>
 
       <div className="notice">
-        This prototype records desired state only. A trusted <code>cfs</code> runner in the IDE will
-        materialize pending kits; the browser never runs repository scripts.
+        Open this project's IDE first. Install requests are sent through the authenticated backend
+        to its trusted <code>cfs</code> runner; the browser never executes repository scripts.
       </div>
       {error && <div className="error">{error}</div>}
 
@@ -140,19 +133,8 @@ export function ProjectKits({ token, projectId }: { token: string; projectId: st
                     />
                   </label>
                   <label>
-                    Install mode
-                    <select
-                      value={modes[kit.slug] ?? "copy"}
-                      onChange={(event) =>
-                        setModes((current) => ({
-                          ...current,
-                          [kit.slug]: event.target.value as "copy" | "register",
-                        }))
-                      }
-                    >
-                      <option value="copy">Copy into project</option>
-                      <option value="register">Register from source</option>
-                    </select>
+                    Source policy
+                    <input value="Official GitHub kit · managed copy" disabled />
                   </label>
                 </div>
                 {installation && (
@@ -161,9 +143,12 @@ export function ProjectKits({ token, projectId }: { token: string; projectId: st
                     {new Date(installation.requested_at).toLocaleString()}
                   </p>
                 )}
+                {installation?.failure_reason && (
+                  <div className="error">{installation.failure_reason}</div>
+                )}
                 <div className="inline kit-actions">
                   <button className="primary" disabled={isBusy} onClick={() => void install(kit)}>
-                    {isBusy ? "Saving…" : installation ? "Update request" : "Install"}
+                    {isBusy ? "Installing…" : installation ? "Reinstall / update" : "Install in IDE"}
                   </button>
                   {installation && (
                     <button className="ghost" disabled={isBusy} onClick={() => void remove(kit)}>

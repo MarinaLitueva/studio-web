@@ -123,3 +123,23 @@ pub struct OpenInEditorResult {
     #[serde(default)]
     pub resolved_relative_path: Option<String>,
 }
+
+/// Materialize one registry-approved kit inside a repository mounted by Theia.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallKit {
+    pub kit_slug: String,
+    pub version: String,
+    #[serde(default)]
+    pub repository_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallKitResult {
+    pub kit_slug: String,
+    pub version: String,
+    pub repository_id: String,
+    pub repository_label: String,
+    pub output: String,
+}
