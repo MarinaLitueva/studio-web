@@ -40,7 +40,8 @@ backend:
   # Application secrets (keys: llm_api_key [required], fs_signing_seed
   # [required only when fileStorage.enabled=false], credstore_key [strongly recommended: base64 of 32 bytes,
   # `openssl rand -base64 32`; without it user-typed secrets die with every
-  # pod restart], s2s_client_secret [optional], idp_admin_secret [optional]).
+  # pod restart], s2s_client_secret [optional], idp_admin_secret [optional],
+  # spec_quality_api_key [optional; enables the external detector wrapper]).
   appSecrets:
     existingSecret: "studio-web-app"
   # S3-backed file-storage data plane. The sidecar binary is built from the

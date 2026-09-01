@@ -82,6 +82,11 @@ spec:
             # endpoint/model are plain values (see backend.llm).
             - name: STUDIO_LLM_API_KEY
               valueFrom: { secretKeyRef: { name: {{ .Values.backend.appSecrets.existingSecret }}, key: llm_api_key } }
+            # External spec-quality detector bearer secret. Optional keeps the
+            # backend bootable in environments where analysis is intentionally
+            # disabled; the gear returns a clear configuration error instead.
+            - name: STUDIO_SPEC_QUALITY_API_KEY
+              valueFrom: { secretKeyRef: { name: {{ .Values.backend.appSecrets.existingSecret }}, key: spec_quality_api_key, optional: true } }
             - name: STUDIO_LLM_BASE_URL
               value: {{ .Values.backend.llm.baseUrl | quote }}
             - name: STUDIO_LLM_MODEL
