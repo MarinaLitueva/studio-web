@@ -35,6 +35,7 @@ describe('Git operations browser slice', () => {
         onDidRemoveRepository: jest.Mock;
         onDidChangeSelectedRepository: jest.Mock;
     };
+    let repositoryAdded: ((repository: { provider: { rootUri: string } }) => void) | undefined;
     const reactActEnvironment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
     let previousReactActEnvironment: boolean | undefined;
 
@@ -45,6 +46,7 @@ describe('Git operations browser slice', () => {
 
     beforeEach(() => {
         controller = new GitOperationsFrontendController();
+        repositoryAdded = undefined;
         statusBar = {
             setElement: jest.fn().mockResolvedValue(undefined),
             removeElement: jest.fn().mockResolvedValue(undefined)
@@ -55,7 +57,10 @@ describe('Git operations browser slice', () => {
         };
         scmService = {
             repositories: [],
-            onDidAddRepository: jest.fn(() => ({ dispose: jest.fn() })),
+            onDidAddRepository: jest.fn((listener: (repository: { provider: { rootUri: string } }) => void) => {
+                repositoryAdded = listener;
+                return { dispose: jest.fn() };
+            }),
             onDidRemoveRepository: jest.fn(() => ({ dispose: jest.fn() })),
             onDidChangeSelectedRepository: jest.fn(() => ({ dispose: jest.fn() }))
         };
@@ -487,6 +492,28 @@ describe('Git operations browser slice', () => {
 
         expect(scmService.selectedRepository?.provider.rootUri).toBe(root.rootUri);
         expect(commandService.executeCommand.mock.calls[1]).toEqual(['git.openRepository', '/workspace/nested']);
+    });
+
+    it('selects the preferred repository when vscode.git registers it asynchronously', async () => {
+        const descriptor = repositoryDescriptor('studio-web', 'studio-web', 'file:///workspace/studio-web');
+        runtime.getRepositories.mockResolvedValue([descriptor]);
+        commandService.executeCommand.mockResolvedValue(undefined);
+
+        await React.act(async () => {
+            await controller.onStart();
+            await flushMicrotasks();
+        });
+
+        expect(scmService.selectedRepository).toBeUndefined();
+        const nativeRepository = { provider: { rootUri: descriptor.rootUri } };
+        scmService.repositories.push(nativeRepository);
+        await React.act(async () => {
+            repositoryAdded?.(nativeRepository);
+            await flushMicrotasks();
+        });
+
+        expect(scmService.selectedRepository).toBe(nativeRepository);
+        expect(controller.getSelectedRepository()).toBe(descriptor);
     });
 
     it('keeps operation history bounded and reports latest status without sorting the full map', async () => {

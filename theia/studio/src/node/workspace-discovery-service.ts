@@ -30,6 +30,7 @@ const IGNORED_DIRECTORY_NAMES = new Set([
 ]);
 const SERVER_MAX_SCAN_DEPTH = 8;
 const SERVER_MAX_SCAN_ENTRIES = 10_000;
+const MANAGED_ROOT_MARKER = path.join('.git', 'cf-studio-managed-root');
 
 interface WorkspaceDiscoveryOperationalState {
     readonly ignoredCandidateIds: readonly string[];
@@ -85,6 +86,9 @@ export class WorkspaceDiscoveryService {
                 break;
             }
             await this.scanRoot(root, canonicalWorkspaceRoot, maxDepth, limitState, diagnostics, async directory => {
+                if (await isManagedWorkspaceRoot(directory)) {
+                    return;
+                }
                 const candidate = await this.buildCandidate(
                     directory,
                     configuredSources,
@@ -144,6 +148,9 @@ export class WorkspaceDiscoveryService {
 
         while (true) {
             if (await hasGitMarker(current)) {
+                if (await isManagedWorkspaceRoot(current)) {
+                    return undefined;
+                }
                 const candidateId = hashValue(current);
                 const duplicateOfConfiguredSourceId = configuredSources.get(normalizeForComparison(current));
                 const ignoredLocally = isIgnoredLocally(candidateId, current, ignoredState);
@@ -563,4 +570,15 @@ function isMissingFileError(error: unknown): boolean {
 
 function isPermissionError(error: unknown): boolean {
     return !!error && typeof error === 'object' && 'code' in error && (error as NodeJS.ErrnoException).code === 'EACCES';
+}
+
+async function isManagedWorkspaceRoot(candidatePath: string): Promise<boolean> {
+    try {
+        return (await fs.stat(path.join(candidatePath, MANAGED_ROOT_MARKER))).isFile();
+    } catch (error) {
+        if (isMissingFileError(error)) {
+            return false;
+        }
+        throw error;
+    }
 }

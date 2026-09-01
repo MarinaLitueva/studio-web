@@ -439,6 +439,12 @@ impl SessionService {
             // it when forwarding, so in-IDE clients use gateway-rooted paths.
             format!("STUDIO_GATEWAY_URL={}", self.cfg.gateway_url),
         ];
+        if managed && root_repo.is_none() {
+            // Kubernetes gives the IDE Pod a fresh /workspace emptyDir. Tell
+            // the entrypoint to materialize the canonical, token-free source
+            // manifest from STUDIO_SOURCES inside that runtime filesystem.
+            env.push("STUDIO_MANAGED_WORKSPACE=1".to_string());
+        }
         // Hand the container its S2S control token so the Theia node can
         // authenticate studio-backend's control calls (ADR-0010).
         if self.cfg.theia_control_enabled {

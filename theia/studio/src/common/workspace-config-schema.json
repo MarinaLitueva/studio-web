@@ -69,16 +69,17 @@
     "source_entry": {
       "type": "object",
       "additionalProperties": false,
-      "oneOf": [
+      "anyOf": [
         {
-          "required": ["path"],
-          "not": {"anyOf": [{"required": ["url"]}, {"required": ["branch"]}]}
+          "required": ["path"]
         },
         {
-          "required": ["url"],
-          "not": {"required": ["path"]}
+          "required": ["url"]
         }
       ],
+      "dependentRequired": {
+        "branch": ["url"]
+      },
       "properties": {
         "path": {
           "type": "string",

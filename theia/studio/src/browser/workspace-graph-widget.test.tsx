@@ -232,7 +232,7 @@ describe('workspace graph widget helpers', () => {
             getDirtyOverlay: jest.fn()
         } as unknown as import('../common/graph-model').WorkspaceGraphService;
         Object.defineProperty(controller, 'gitOperationsController', {
-            value: { getSelectedRepository: () => undefined }
+            value: { getSelectedRepository: () => undefined, getRepositories: () => [] }
         });
         Object.defineProperty(controller, 'selectionService', { value: { selection: undefined } });
         controller.bindGraphService(graphService);
@@ -245,8 +245,25 @@ describe('workspace graph widget helpers', () => {
         expect(graphService.getDirtyOverlay).not.toHaveBeenCalled();
         expect(controller.getSnapshot()).toBeUndefined();
         expect(controller.getActiveRepository()).toBeUndefined();
-        expect(controller.getErrorMessage()).toContain('Select a repository in Source Control');
-        expect(controller.getErrorMessage()).toContain('all-workspace graph is unavailable because it is too large');
+        expect(controller.getErrorMessage()).toContain('No configured Git repository is available');
+        expect(controller.getErrorMessage()).toContain('Workspace Sources');
+    });
+
+    it('shows repository opening progress while Source Control registers the preferred source', async () => {
+        const controller = new WorkspaceGraphFrontendController();
+        Object.defineProperty(controller, 'gitOperationsController', {
+            value: {
+                getSelectedRepository: () => undefined,
+                getRepositories: () => [{ repositoryId: 'studio-web', label: 'studio-web' }]
+            }
+        });
+        Object.defineProperty(controller, 'selectionService', { value: { selection: undefined } });
+
+        await controller.refreshGraph('test-repository-opening');
+
+        expect(controller.getErrorMessage()).toBe(
+            'Opening studio-web in Source Control. Its graph will load automatically.'
+        );
     });
 
     it('clears repository-local UI state and ignores late responses and status pushes from the previous scope', async () => {

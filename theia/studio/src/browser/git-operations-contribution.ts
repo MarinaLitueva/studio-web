@@ -112,10 +112,21 @@ export class GitOperationsFrontendController implements FrontendApplicationContr
             this.scmListenersInitialized = true;
             this.toDispose.push(this.scmService.onDidAddRepository(repository => {
                 const rootUri = new URI(repository.provider.rootUri).normalizePath().toString();
-                for (const descriptor of this.repositories.values()) {
-                    if (new URI(descriptor.rootUri).normalizePath().toString() === rootUri) {
-                        this.scmUnavailableRepositories.delete(descriptor.repositoryId);
+                let matchingDescriptor: StudioRepositoryDescriptor | undefined;
+                for (const candidate of this.repositories.values()) {
+                    if (new URI(candidate.rootUri).normalizePath().toString() === rootUri) {
+                        this.scmUnavailableRepositories.delete(candidate.repositoryId);
+                        matchingDescriptor = candidate;
                     }
+                }
+                // vscode.git can register a repository after openRepository's
+                // command promise has already settled. Select the preferred
+                // configured source when that asynchronous registration
+                // arrives so Graph and SCM never open in an unscoped state.
+                const preferred = prioritizeRepositories(this.getRepositories())[0];
+                if (!this.scmService.selectedRepository
+                    && matchingDescriptor?.repositoryId === preferred?.repositoryId) {
+                    this.scmService.selectedRepository = repository;
                 }
                 this.scheduleStatusBarRender();
                 this.onDidChangeEmitter.fire();

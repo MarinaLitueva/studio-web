@@ -572,7 +572,10 @@ export class WorkspaceGraphFrontendController implements FrontendApplicationCont
         if (!selectedRepository) {
             this.activeRepository = undefined;
             this.clearRepositoryState();
-            this.errorMessage = 'Select a repository in Source Control to load its graph. The all-workspace graph is unavailable because it is too large.';
+            const preferredRepository = this.gitOperationsController.getRepositories()[0];
+            this.errorMessage = preferredRepository
+                ? `Opening ${preferredRepository.label} in Source Control. Its graph will load automatically.`
+                : 'No configured Git repository is available. Add one in Workspace Sources to load its graph.';
             this.initialized = true;
             this.onDidChangeEmitter.fire();
             return;

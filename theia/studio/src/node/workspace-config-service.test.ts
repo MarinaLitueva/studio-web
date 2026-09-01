@@ -213,7 +213,25 @@ describe('workspace config service', () => {
             path: '../docs',
             branch: 'main'
         });
-        expect(result.diagnostics.map(diagnostic => diagnostic.code)).toContain('workspace.config.schema.oneOf');
+        expect(result.diagnostics.map(diagnostic => diagnostic.code)).toContain('workspace.config.schema.dependentRequired');
+    });
+
+    it('accepts a managed git checkout with both remote identity and local path', async () => {
+        await fs.mkdir(path.join(workspaceRoot, 'studio-web'));
+        await fs.writeFile(
+            path.join(workspaceRoot, '.cf-workspace.toml'),
+            'version = "1.0"\n[sources.studio-web]\nurl = "https://github.com/constructorfabric/studio-web.git"\nbranch = "main"\npath = "studio-web"\n',
+            'utf8'
+        );
+
+        const result = await service.load(workspaceRoot);
+
+        expect(result.state).toBe('valid');
+        expect(result.parsedData?.sources['studio-web']).toMatchObject({
+            url: 'https://github.com/constructorfabric/studio-web.git',
+            branch: 'main',
+            path: 'studio-web'
+        });
     });
 
     it('returns unsupported for an unknown version', async () => {

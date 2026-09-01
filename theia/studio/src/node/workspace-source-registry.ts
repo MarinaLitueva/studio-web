@@ -248,7 +248,9 @@ function resolveSourceReference(
     if (source.path) {
         return {
             localPath: normalizeAbsolutePath(path.resolve(workspaceRoot, source.path)),
-            provider: 'local'
+            remoteUrl: source.url,
+            provider: source.url ? detectProvider(source.url) : 'local',
+            defaultBranch: source.branch
         };
     }
 

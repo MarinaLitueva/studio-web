@@ -137,6 +137,12 @@ if [ -n "${STUDIO_SOURCES:-}" ]; then
     done
 fi
 
+# Kubernetes sessions receive a fresh emptyDir at /workspace, not the
+# studio-backend host directory where the managed manifest was prepared.
+# Recreate the canonical source manifest from the non-secret parts of the
+# launch contract before Theia discovers workspace sources.
+node /usr/local/lib/studio-materialize-workspace.mjs "$WORKSPACE"
+
 # The Theia launcher requires the workspace ROOT to be a git repository
 # (start-browser.js runs `git rev-parse --show-toplevel` up front). The
 # managed root hosts .cf-workspace.toml and the source subdirectories,
@@ -155,6 +161,13 @@ if [ ! -d "$WORKSPACE/.git" ]; then
     # mounts) are separate repositories and stay out of the root repo.
     git -C "$WORKSPACE" add README.md .cf-workspace.toml 2>/dev/null || true
     git -C "$WORKSPACE" commit -m "Initialize workspace" --no-verify || true
+fi
+
+# The root repository above exists only because Theia's launcher requires a
+# git worktree. Mark it so Workspace Sources discovery does not offer the
+# technical container as a user-owned repository.
+if [ "${STUDIO_MANAGED_WORKSPACE:-}" = "1" ] && [ -d "$WORKSPACE/.git" ]; then
+    : > "$WORKSPACE/.git/cf-studio-managed-root"
 fi
 
 # Clones are done — hand the port over to the session gate.

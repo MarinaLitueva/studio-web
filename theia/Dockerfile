@@ -11,6 +11,8 @@
 # Env contract (set by studio-session, all optional):
 #   STUDIO_WORKSPACE_ID   stable logical workspace id (audit)
 #   STUDIO_ACTOR_ID       audit identity of the launching user
+#   STUDIO_MANAGED_WORKSPACE  1 when /workspace is managed by studio-session
+#   STUDIO_SOURCES        JSON source list used for clone + canonical manifest
 #   STUDIO_GIT_MODE       disabled | commit | push       (default: disabled)
 #   STUDIO_GIT_BRANCH     required for commit/push modes
 #   STUDIO_REPO_URL       if set and /workspace is empty — cloned on start
@@ -67,6 +69,7 @@ USER node
 WORKDIR /app
 COPY --from=build --chown=node:node /app /app
 COPY --chown=node:node docker/entrypoint.sh /entrypoint.sh
+COPY --chown=node:node docker/materialize-workspace.mjs /usr/local/lib/studio-materialize-workspace.mjs
 # Wrapper around the codex binary: @theia/ai-codex spawns codex without a
 # working directory, so it lands in /app/browser-app (not a git repo) and
 # refuses to run. The wrapper forces the session workspace as cwd and passes

@@ -126,6 +126,27 @@ describe('workspace discovery service', () => {
 
         expect(outsideSuggestion).toBeUndefined();
     });
+
+    it('does not expose the synthetic managed workspace root as a source', async () => {
+        const sourceRoot = path.join(workspaceRoot, 'studio-web');
+        await fs.mkdir(path.join(workspaceRoot, '.git'), { recursive: true });
+        await fs.writeFile(path.join(workspaceRoot, '.git', 'cf-studio-managed-root'), '');
+        await fs.mkdir(path.join(sourceRoot, '.git'), { recursive: true });
+
+        const service = createService(workspaceRoot, statePath);
+        const suggestion = await service.detectContainingRepository(workspaceRoot, workspaceRoot, snapshot());
+        const scan = await service.scan(scanRequest(['.'], 3, 128), snapshot([
+            configuredSource('studio-web', sourceRoot)
+        ]));
+
+        expect(suggestion).toBeUndefined();
+        expect(scan.preview.candidates.map(candidate => candidate.localPath)).toEqual([
+            await fs.realpath(sourceRoot)
+        ]);
+        expect(scan.preview.candidates[0]).toMatchObject({
+            duplicateOfConfiguredSourceId: 'studio-web'
+        });
+    });
 });
 
 function createService(workspaceRoot: string, statePath: string): WorkspaceDiscoveryService {

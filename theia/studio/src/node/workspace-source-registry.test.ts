@@ -75,6 +75,32 @@ describe('workspace source registry', () => {
         });
     });
 
+    it('keeps remote identity for an already-materialized managed checkout', async () => {
+        const sourceRoot = path.join(workspaceRoot, 'studio-web');
+        await fs.mkdir(path.join(sourceRoot, '.git'), { recursive: true });
+
+        const snapshot = await registry.reconcile(createLoadResult(configPath, {
+            'studio-web': {
+                path: 'studio-web',
+                url: 'https://github.com/constructorfabric/studio-web.git',
+                branch: 'main'
+            }
+        }), '2026-09-01T10:00:00.000Z');
+
+        expect(snapshot.configuredSources[0]).toMatchObject({
+            sourceId: 'studio-web',
+            localPath: await fs.realpath(sourceRoot),
+            remoteUrl: 'https://github.com/constructorfabric/studio-web.git',
+            provider: 'github',
+            ref: 'main',
+            defaultBranch: 'main'
+        });
+        expect(snapshot.observedSources[0]).toMatchObject({
+            status: 'present',
+            syncEligibility: 'safe'
+        });
+    });
+
     it.each([
         ['a parent-escaping value', '../outside'],
         ['an absolute value', path.join(os.tmpdir(), 'outside')]
