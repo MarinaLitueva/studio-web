@@ -432,10 +432,18 @@ jobs:
       # studio-session pulls this by the `image:` in config/*.yaml.
       - name: Build & push Theia session image
         if: needs.require-ci.outputs.theia == 'true'
+        env:
+          # Resolving the Constructor Studio skill engine goes through
+          # api.github.com, whose anonymous limit is 60/hour per IP and is
+          # routinely exhausted on shared runners (403). Passed as a BuildKit
+          # secret, never a build ARG, so it stays out of image history.
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tag="${{ steps.tags.outputs.immutable }}"
-          docker build -f theia/Dockerfile -t "$IMAGE_PREFIX/cf-studio-theia:$tag" theia
+          DOCKER_BUILDKIT=1 docker build -f theia/Dockerfile \
+            --secret id=github_token,env=GITHUB_TOKEN \
+            -t "$IMAGE_PREFIX/cf-studio-theia:$tag" theia
           docker push "$IMAGE_PREFIX/cf-studio-theia:$tag"
 
       # Preserve a complete immutable snapshot without rebuilding unchanged

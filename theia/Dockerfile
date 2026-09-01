@@ -1,3 +1,7 @@
+# syntax=docker/dockerfile:1
+# The syntax directive is required for the `RUN --mount=type=secret` below
+# (the GitHub token used to resolve the skill engine); everything else in
+# this file builds fine on the default frontend.
 # Constructor Studio — Theia IDE session image.
 #
 # Built once, launched per workspace by the studio-session gear:
@@ -58,6 +62,44 @@ RUN python3 -m venv /opt/cfs \
       "git+https://github.com/constructorfabric/studio.git@${STUDIO_CFS_REF}" \
     && /opt/cfs/bin/cfs --version
 
+# The pip install above is only HALF of Constructor Studio. `cfs` is a proxy;
+# the skill engine it forwards to -- templates, validators, generators -- is a
+# separate tarball that `studio_proxy.cache.download_and_cache` fetches from
+# GitHub the first time a command needs it. `cfs --version` does not trigger
+# that, so without this step the image ships a CLI with nothing behind it and
+# the FIRST `cfs kit install` in a session fails with "Constructor Studio skill
+# engine not found".
+#
+# Three reasons to resolve it here rather than at first use:
+#
+#  * A session Pod's home directory is empty on every start, so the download is
+#    not once per image, it is once per session.
+#  * It makes GitHub egress a hard requirement for installing a kit, from
+#    inside the session Pod, on a cluster where egress is deliberately narrow.
+#  * STUDIO_CFS_REF pins the proxy, but the engine resolves to whatever GitHub
+#    calls latest AT SESSION TIME. Two sessions a week apart would run
+#    different validators over the same pinned kit — which quietly breaks the
+#    "pinned to a Git version" promise the Kits page makes.
+#
+# CFS_CACHE_DIR is honoured by studio_proxy.resolve.get_cache_dir, so the cache
+# lands outside $HOME and is shared by every user of the image instead of being
+# tied to /home/node.
+ARG STUDIO_CFS_ENGINE=v1.6.2
+ENV CFS_CACHE_DIR=/opt/cfs-cache
+# The second command is the one that matters: it asserts the extracted layout
+# is the one find_cached_skill() looks for (<cache>/skills/studio/scripts/
+# studio.py). A download that succeeds into an unexpected shape is exactly how
+# this failed in a live session -- better to fail the build than the user.
+# The token is optional and mounted, not an ARG: a build ARG would be baked
+# into image history. Without it the resolve call is anonymous against
+# api.github.com, whose 60-per-hour-per-IP limit shared runners routinely
+# exhaust -- measured: `HTTP Error 403: Forbidden` from a cloud IP. Missing
+# secret degrades to exactly that anonymous behaviour rather than failing.
+RUN --mount=type=secret,id=github_token \
+    GITHUB_TOKEN="$(cat /run/secrets/github_token 2>/dev/null || true)" \
+    /opt/cfs/bin/python -c "import sys; from studio_proxy.cache import download_and_cache; ok, message = download_and_cache(version='${STUDIO_CFS_ENGINE}'); print(message); sys.exit(0 if ok else 1)" \
+    && /opt/cfs/bin/python -c "import sys; from studio_proxy.resolve import find_cached_skill; entry = find_cached_skill(); print('skill engine entry point:', entry); sys.exit(0 if entry else 1)"
+
 # ── Runtime ──
 FROM node:22.23.1-bookworm-slim
 # procps: Theia's process-tree termination shells out to `ps`; without it a
@@ -71,6 +113,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # runtime together with its isolated venv and expose only `cfs` on PATH.
 COPY --from=cfs /usr/local/ /usr/local/
 COPY --from=cfs /opt/cfs/ /opt/cfs/
+# The pre-resolved skill engine (see the cfs stage). Left root-owned: sessions
+# run as `node` and read it, so the engine cannot be mutated by whatever runs
+# in a workspace.
+COPY --from=cfs /opt/cfs-cache/ /opt/cfs-cache/
 
 # Agent runtimes for the native Theia AI providers. Neither @theia/ai-codex
 # nor @theia/ai-claude-code bundles its executable: the former dynamically
@@ -93,12 +139,19 @@ COPY --chown=node:node docker/materialize-workspace.mjs /usr/local/lib/studio-ma
 # --skip-git-repo-check. THEIA_CODEX_PATH points at it instead of the raw bin.
 COPY --chown=node:node docker/codex-studio.sh /usr/local/bin/codex-studio
 USER root
-RUN chmod +x /usr/local/bin/codex-studio
+# studio_proxy writes its update-check marker and telemetry logs under
+# $HOME/.cf-studio (Path.home(), NOT CFS_CACHE_DIR). That directory does not
+# exist in a fresh container, so every command opened with "unable to read
+# cached update check ... No such file or directory".
+RUN chmod +x /usr/local/bin/codex-studio \
+    && mkdir -p /home/node/.cf-studio \
+    && chown -R node:node /home/node/.cf-studio
 USER node
 
 ENV STUDIO_GIT_MODE=disabled \
     STUDIO_DATA_DIR=/home/node/.studio-data \
     PATH=/opt/cfs/bin:$PATH \
+    CFS_CACHE_DIR=/opt/cfs-cache \
     SHELL=/bin/bash \
     THEIA_CODEX_PATH=/usr/local/bin/codex-studio \
     THEIA_CLAUDE_CODE_PATH=/usr/local/lib/node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs
