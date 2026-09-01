@@ -46,23 +46,31 @@ RUN npm ci --ignore-scripts=false
 RUN npm --prefix drawio-editor run build
 RUN npm run build:browser
 
-# ── Runtime ──
-FROM node:22.23.1-bookworm-slim
+# Constructor Studio deliberately requires a newer Python patch release than
+# Debian Bookworm ships (3.11.2). Build its isolated environment with the
+# official Python 3.12 image, then copy that runtime and venv into Theia.
+FROM python:3.12-slim-bookworm AS cfs
 ARG STUDIO_CFS_REF=ca55c6687474a53151a0956de03eb22f8da56ef4
-# procps: Theia's process-tree termination shells out to `ps`; without it a
-# plugin-host teardown (e.g. after a ws ping timeout) throws an uncaught
-# ENOENT that kills the whole backend — the container exits mid-session.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git openssh-client ca-certificates libsecret-1-0 procps python3 python3-venv \
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-
-# Constructor Studio CLI is the sole kit materializer. Keep it in an isolated
-# venv and expose only its `cfs` executable to the non-root runtime user. A
-# release can override STUDIO_CFS_REF with a reviewed commit or tag.
 RUN python3 -m venv /opt/cfs \
     && /opt/cfs/bin/pip install --no-cache-dir \
       "git+https://github.com/constructorfabric/studio.git@${STUDIO_CFS_REF}" \
     && /opt/cfs/bin/cfs --version
+
+# ── Runtime ──
+FROM node:22.23.1-bookworm-slim
+# procps: Theia's process-tree termination shells out to `ps`; without it a
+# plugin-host teardown (e.g. after a ws ping timeout) throws an uncaught
+# ENOENT that kills the whole backend — the container exits mid-session.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git openssh-client ca-certificates libsecret-1-0 procps \
+    && rm -rf /var/lib/apt/lists/*
+
+# Constructor Studio CLI is the sole kit materializer. Copy the Python 3.12
+# runtime together with its isolated venv and expose only `cfs` on PATH.
+COPY --from=cfs /usr/local/ /usr/local/
+COPY --from=cfs /opt/cfs/ /opt/cfs/
 
 # Agent runtimes for the native Theia AI providers. Neither @theia/ai-codex
 # nor @theia/ai-claude-code bundles its executable: the former dynamically
