@@ -70,7 +70,11 @@ impl KitRegistryService {
             .map_err(|error| anyhow::anyhow!("cannot resolve project: {error}"))?;
 
         let type_id = GtsTypeId::new(INSTALLATIONS_METADATA_TYPE);
-        let value = match self.account_management.get_metadata(ctx, project_id, type_id).await {
+        let value = match self
+            .account_management
+            .get_metadata(ctx, project_id, type_id)
+            .await
+        {
             Ok(entry) => entry.value,
             Err(_) => return Ok(Vec::new()),
         };
@@ -112,7 +116,8 @@ impl KitRegistryService {
         installations.push(requested.clone());
         installations.sort_by(|left, right| left.kit_slug.cmp(&right.kit_slug));
 
-        self.write_installations(ctx, project_id, installations).await?;
+        self.write_installations(ctx, project_id, installations)
+            .await?;
         Ok(requested)
     }
 
@@ -129,7 +134,8 @@ impl KitRegistryService {
         if installations.len() == before {
             return Ok(false);
         }
-        self.write_installations(ctx, project_id, installations).await?;
+        self.write_installations(ctx, project_id, installations)
+            .await?;
         Ok(true)
     }
 
@@ -183,7 +189,9 @@ fn normalize_version(value: &str) -> Result<String> {
     let value = value.trim();
     if value.is_empty()
         || value.len() > 120
-        || value.chars().any(|character| matches!(character, '\0' | '\n' | '\r'))
+        || value
+            .chars()
+            .any(|character| matches!(character, '\0' | '\n' | '\r'))
     {
         bail!("kit version must be a non-empty Git ref of at most 120 characters");
     }
