@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
   type KitInstallation,
@@ -17,20 +17,26 @@ export function ProjectKits({ token, projectId }: { token: string; projectId: st
   const [repositories, setRepositories] = useState<ProjectRepository[] | null>(null);
   const [repositoriesNote, setRepositoriesNote] = useState<string | null>(null);
   const [targets, setTargets] = useState<Record<string, string>>({});
+  const [scopes, setScopes] = useState<Record<string, boolean>>({});
+  // Slug@version pairs already reconciled on this mount, so a reload does not
+  // re-run a rollout that has nothing left to do.
+  const reconciled = useRef(new Set<string>());
 
   const reload = useCallback(async () => {
     setError(null);
+    let current: KitInstallation[] = [];
     try {
       const [kits, installations] = await Promise.all([
         api.kits(token),
         api.kitInstallations(token, projectId),
       ]);
+      current = installations.items;
       setCatalog(kits.items);
-      setInstalled(installations.items);
-      setVersions((current) => {
-        const next = { ...current };
+      setInstalled(current);
+      setVersions((previous) => {
+        const next = { ...previous };
         for (const kit of kits.items) {
-          const existing = installations.items.find((item) => item.kit_slug === kit.slug);
+          const existing = current.find((item) => item.kit_slug === kit.slug);
           if (!next[kit.slug]) next[kit.slug] = existing?.version ?? kit.default_version;
         }
         return next;
@@ -44,13 +50,46 @@ export function ProjectKits({ token, projectId }: { token: string; projectId: st
     // The repository list comes from the running IDE, so "no session yet" is
     // the ordinary state of this page -- folding it into the load above would
     // blank the kit grid every time someone opens the tab before the IDE.
+    let mounted: ProjectRepository[] | null = null;
     try {
-      const mounted = await api.projectRepositories(token, projectId);
-      setRepositories(mounted.items);
+      mounted = (await api.projectRepositories(token, projectId)).items;
+      setRepositories(mounted);
       setRepositoriesNote(null);
     } catch (cause) {
       setRepositories(null);
       setRepositoriesNote(errText(cause));
+    }
+
+    /*
+     * The automatic half of "install in every repository".
+     *
+     * A kit scoped that way is meant to reach a repository that joined the
+     * project after it was installed, and a running session is the only moment
+     * the portal can see that such a repository exists. The call is idempotent
+     * -- the backend skips repositories already at this version -- and it is
+     * keyed by slug@version here so a reload does not keep asking.
+     */
+    if (!mounted) return;
+    const pending = current.filter(
+      (installation) =>
+        installation.scope === "all-repositories" &&
+        installation.status !== "installing" &&
+        !reconciled.current.has(`${installation.kit_slug}@${installation.version}`),
+    );
+    if (pending.length === 0) return;
+    for (const installation of pending) {
+      reconciled.current.add(`${installation.kit_slug}@${installation.version}`);
+      try {
+        await api.reconcileKitInstallation(token, projectId, installation.kit_slug);
+      } catch {
+        // Per-repository outcomes are recorded on the rows either way; the
+        // refresh below is what surfaces them.
+      }
+    }
+    try {
+      setInstalled((await api.kitInstallations(token, projectId)).items);
+    } catch {
+      // Keep what is on screen rather than blanking it over a refresh.
     }
   }, [projectId, token]);
 
@@ -83,6 +122,9 @@ export function ProjectKits({ token, projectId }: { token: string; projectId: st
   const targetFor = (slug: string): string | undefined =>
     targets[slug] ?? bySlug.get(slug)?.repository_id ?? defaultRepositoryId;
 
+  const everyRepository = (slug: string): boolean =>
+    scopes[slug] ?? bySlug.get(slug)?.scope === "all-repositories";
+
   /*
    * The label recorded at materialization time wins: it is what the repository
    * was called when the kit landed there, and it stays readable after the IDE
@@ -103,12 +145,21 @@ export function ProjectKits({ token, projectId }: { token: string; projectId: st
     setBusy(kit.slug);
     setError(null);
     try {
+      const scope = everyRepository(kit.slug) ? "all-repositories" : "project";
       await api.requestKitInstallation(token, projectId, {
         kit_slug: kit.slug,
         version,
         install_mode: "copy",
+        scope,
       });
-      await api.materializeKitInstallation(token, projectId, kit.slug, targetFor(kit.slug));
+      if (scope === "all-repositories") {
+        // One call covers every repository, so there is no target to choose
+        // and no point materializing one of them first.
+        reconciled.current.add(`${kit.slug}@${version}`);
+        await api.reconcileKitInstallation(token, projectId, kit.slug);
+      } else {
+        await api.materializeKitInstallation(token, projectId, kit.slug, targetFor(kit.slug));
+      }
       await reload();
     } catch (cause) {
       await reload();
@@ -199,6 +250,21 @@ export function ProjectKits({ token, projectId }: { token: string; projectId: st
                     <input value="Official GitHub kit · managed copy" disabled />
                   </label>
                   {repositories && repositories.length > 1 && (
+                    <label className="kit-scope">
+                      <input
+                        type="checkbox"
+                        checked={everyRepository(kit.slug)}
+                        onChange={(event) =>
+                          setScopes((current) => ({
+                            ...current,
+                            [kit.slug]: event.target.checked,
+                          }))
+                        }
+                      />
+                      Install in every repository
+                    </label>
+                  )}
+                  {repositories && repositories.length > 1 && !everyRepository(kit.slug) && (
                     <label>
                       Repository
                       <select

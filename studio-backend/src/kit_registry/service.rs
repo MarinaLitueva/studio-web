@@ -38,6 +38,17 @@ pub struct KitInstallation {
     pub status: String,
     pub requested_by: String,
     pub requested_at: String,
+    /// What this installation is meant to cover: `project` (the project
+    /// repository alone) or `all-repositories` (every repository the IDE has
+    /// mounted).
+    ///
+    /// This is INTENT, and it is the half `materializations` cannot express:
+    /// the list says where the kit is, this says where it belongs. Without it
+    /// there is nothing to reconcile a newly added repository against. Defaults
+    /// to `project` on read, so documents written before the field existed keep
+    /// the behaviour they had.
+    #[serde(default = "default_scope")]
+    pub scope: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub installed_at: Option<String>,
     /// One entry per repository this kit has been materialized into.
@@ -155,10 +166,12 @@ impl KitRegistryService {
         kit_slug: &str,
         version: &str,
         install_mode: &str,
+        scope: &str,
     ) -> Result<KitInstallation> {
         let kit_slug = normalize_slug(kit_slug)?;
         let version = normalize_version(version)?;
         let install_mode = normalize_install_mode(install_mode)?;
+        let scope = normalize_scope(scope)?;
         let kit = self
             .catalogue()
             .into_iter()
@@ -169,6 +182,23 @@ impl KitRegistryService {
         }
 
         let mut installations = self.list_installations(ctx, project_id).await?;
+        // Re-requesting a kit -- which is what the portal's "Reinstall /
+        // update" does before every materialize -- must not forget where the
+        // kit already is. `materializations` is observed state about
+        // repositories on disk, not part of the request, and dropping it here
+        // would reset the record on every click. Rows carry their own version,
+        // so after a bump they correctly read as behind until each is
+        // materialized again.
+        let previous = installations
+            .iter()
+            .find(|entry| entry.kit_slug == kit_slug)
+            .cloned();
+        let previous_installed_at = previous
+            .as_ref()
+            .and_then(|entry| entry.installed_at.clone());
+        let previous_materializations = previous
+            .map(|entry| entry.materializations)
+            .unwrap_or_default();
         let requested = KitInstallation {
             kit_slug: kit.slug,
             version,
@@ -179,8 +209,9 @@ impl KitRegistryService {
             requested_by: ctx.subject_id().to_string(),
             requested_at: OffsetDateTime::now_utc()
                 .format(&time::format_description::well_known::Rfc3339)?,
-            installed_at: None,
-            materializations: Vec::new(),
+            scope,
+            installed_at: previous_installed_at,
+            materializations: previous_materializations,
             legacy_repository_id: None,
             failure_reason: None,
         };
@@ -345,6 +376,49 @@ impl KitRegistryService {
         }
     }
 
+    /// Bring every repository this installation is meant to cover up to the
+    /// requested version.
+    ///
+    /// Reconciling is simply the difference between `scope` (where the kit
+    /// belongs) and `materializations` (where it is). A repository already
+    /// carrying this exact version is skipped, which is what makes the call
+    /// cheap enough for the portal to make on every load — and what makes a
+    /// repository added later pick the kit up without anyone clicking.
+    ///
+    /// One repository failing does not stop the others: each target is its own
+    /// materialize, and the failure is recorded on that repository's row.
+    /// Needs a running IDE, because the repository list does.
+    pub async fn reconcile_installation(
+        &self,
+        ctx: &SecurityContext,
+        project_id: Uuid,
+        kit_slug: &str,
+    ) -> Result<KitInstallation> {
+        let kit_slug = normalize_slug(kit_slug)?;
+        let installation = self
+            .list_installations(ctx, project_id)
+            .await?
+            .into_iter()
+            .find(|entry| entry.kit_slug == kit_slug)
+            .context("kit installation has not been requested")?;
+
+        let mounted = self.list_repositories(ctx, project_id).await?;
+        for repository_id in reconciliation_targets(&installation, &mounted) {
+            // The error is already recorded on the row by
+            // `materialize_installation`; swallowing it here is what keeps one
+            // bad repository from hiding the rest of the rollout.
+            let _ = self
+                .materialize_installation(ctx, project_id, &kit_slug, Some(repository_id))
+                .await;
+        }
+
+        self.list_installations(ctx, project_id)
+            .await?
+            .into_iter()
+            .find(|entry| entry.kit_slug == kit_slug)
+            .context("kit installation disappeared while reconciling")
+    }
+
     pub async fn remove_installation(
         &self,
         ctx: &SecurityContext,
@@ -436,6 +510,52 @@ fn normalize_version(value: &str) -> Result<String> {
     Ok(value.to_owned())
 }
 
+/// Only the project repository — the configured root, where the manifest lives.
+pub const SCOPE_PROJECT: &str = "project";
+/// Every repository the IDE has mounted, including ones cloned later.
+pub const SCOPE_ALL_REPOSITORIES: &str = "all-repositories";
+
+fn default_scope() -> String {
+    SCOPE_PROJECT.to_owned()
+}
+
+fn normalize_scope(value: &str) -> Result<String> {
+    match value.trim() {
+        // Empty means "not specified", which is the project-only default
+        // rather than an error: `all-repositories` writes files into every
+        // checkout, so it has to be asked for, never inferred.
+        "" | SCOPE_PROJECT => Ok(SCOPE_PROJECT.to_owned()),
+        SCOPE_ALL_REPOSITORIES => Ok(SCOPE_ALL_REPOSITORIES.to_owned()),
+        _ => bail!("kit scope must be project or all-repositories"),
+    }
+}
+
+/// Repositories this installation should cover but does not yet carry at the
+/// requested version.
+///
+/// An unknown scope narrows to the project repository rather than widening:
+/// a document written by a newer backend must not make an older one install
+/// kits into repositories it does not understand the intent for.
+fn reconciliation_targets(
+    installation: &KitInstallation,
+    mounted: &[ProjectRepository],
+) -> Vec<String> {
+    mounted
+        .iter()
+        .filter(|repository| {
+            installation.scope == SCOPE_ALL_REPOSITORIES || repository.kind == "project"
+        })
+        .filter(|repository| {
+            !installation.materializations.iter().any(|entry| {
+                entry.repository_id == repository.repository_id
+                    && entry.status == "installed"
+                    && entry.version == installation.version
+            })
+        })
+        .map(|repository| repository.repository_id.clone())
+        .collect()
+}
+
 fn normalize_install_mode(value: &str) -> Result<String> {
     match value.trim() {
         "copy" => Ok("copy".to_owned()),
@@ -509,8 +629,9 @@ fn upgrade_installation(mut installation: KitInstallation) -> KitInstallation {
 #[cfg(test)]
 mod tests {
     use super::{
-        KitMaterialization, normalize_install_mode, normalize_slug, normalize_version,
-        official_catalogue, upgrade_installation, upsert_materialization,
+        KitInstallation, KitMaterialization, ProjectRepository, SCOPE_ALL_REPOSITORIES,
+        SCOPE_PROJECT, normalize_install_mode, normalize_scope, normalize_slug, normalize_version,
+        official_catalogue, reconciliation_targets, upgrade_installation, upsert_materialization,
     };
 
     #[test]
@@ -613,6 +734,113 @@ mod tests {
         assert_eq!(materializations[0].version, "v2");
         assert_eq!(materializations[0].status, "failed");
         assert_eq!(materializations[1].repository_id, "repo-project");
+    }
+
+    #[test]
+    fn scope_defaults_to_the_project_and_rejects_anything_else() {
+        assert_eq!(normalize_scope("").unwrap(), SCOPE_PROJECT);
+        assert_eq!(normalize_scope(" project ").unwrap(), SCOPE_PROJECT);
+        assert_eq!(
+            normalize_scope("all-repositories").unwrap(),
+            SCOPE_ALL_REPOSITORIES
+        );
+        assert!(normalize_scope("everything").is_err());
+    }
+
+    #[test]
+    fn a_project_scoped_kit_reconciles_only_the_project_repository() {
+        let installation = installation(SCOPE_PROJECT, "v2", vec![]);
+
+        let targets = reconciliation_targets(&installation, &mounted());
+
+        assert_eq!(targets, vec!["repo-project".to_owned()]);
+    }
+
+    #[test]
+    fn an_all_repositories_kit_covers_a_repository_added_later() {
+        let installation = installation(
+            SCOPE_ALL_REPOSITORIES,
+            "v2",
+            vec![row("repo-project", "v2", "installed")],
+        );
+
+        let targets = reconciliation_targets(&installation, &mounted());
+
+        // repo-project is already at v2 and is skipped; repo-app has never been
+        // materialized, which is exactly the "a repository joined the project"
+        // case this exists for.
+        assert_eq!(targets, vec!["repo-app".to_owned()]);
+    }
+
+    #[test]
+    fn a_repository_left_behind_by_a_version_bump_is_a_target_again() {
+        let installation = installation(
+            SCOPE_ALL_REPOSITORIES,
+            "v2",
+            vec![
+                row("repo-project", "v2", "installed"),
+                row("repo-app", "v1", "installed"),
+            ],
+        );
+
+        let targets = reconciliation_targets(&installation, &mounted());
+
+        assert_eq!(targets, vec!["repo-app".to_owned()]);
+    }
+
+    #[test]
+    fn a_failed_repository_is_retried_rather_than_treated_as_done() {
+        let installation = installation(
+            SCOPE_ALL_REPOSITORIES,
+            "v2",
+            vec![row("repo-app", "v2", "failed")],
+        );
+
+        let targets = reconciliation_targets(&installation, &mounted());
+
+        assert_eq!(
+            targets,
+            vec!["repo-project".to_owned(), "repo-app".to_owned()]
+        );
+    }
+
+    fn mounted() -> Vec<ProjectRepository> {
+        vec![
+            ProjectRepository {
+                repository_id: "repo-project".to_owned(),
+                label: "workspace".to_owned(),
+                kind: "project".to_owned(),
+                git_mode: None,
+            },
+            ProjectRepository {
+                repository_id: "repo-app".to_owned(),
+                label: "app".to_owned(),
+                kind: "source".to_owned(),
+                git_mode: None,
+            },
+        ]
+    }
+
+    fn installation(
+        scope: &str,
+        version: &str,
+        materializations: Vec<KitMaterialization>,
+    ) -> KitInstallation {
+        KitInstallation {
+            kit_slug: "sdlc".to_owned(),
+            version: version.to_owned(),
+            source: "github".to_owned(),
+            repository_url: "https://github.com/constructorfabric/studio-kit-sdlc".to_owned(),
+            install_mode: "copy".to_owned(),
+            status: "installed".to_owned(),
+            requested_by: "user-1".to_owned(),
+            requested_at: "2026-09-01T00:00:00Z".to_owned(),
+            scope: scope.to_owned(),
+            installed_at: None,
+            materializations,
+            legacy_repository_id: None,
+            failure_reason: None,
+        }
     }
 
     fn row(repository_id: &str, version: &str, status: &str) -> KitMaterialization {

@@ -68,6 +68,9 @@ pub struct KitInstallationDto {
     pub status: String,
     pub requested_by: String,
     pub requested_at: String,
+    /// Where this kit belongs: "project" or "all-repositories". Intent, as
+    /// opposed to `materializations`, which is where it actually is.
+    pub scope: String,
     pub installed_at: Option<String>,
     /// The most recently materialized target, derived from `materializations`
     /// rather than stored. Kept because "install this again where it already
@@ -110,6 +113,9 @@ pub struct RequestKitInstallationDto {
     pub kit_slug: String,
     pub version: String,
     pub install_mode: String,
+    /// "project" (default) or "all-repositories". Omitted means project-only:
+    /// rolling a kit into every checkout writes files, so it is opted into.
+    pub scope: Option<String>,
 }
 
 #[derive(Debug)]
@@ -176,6 +182,7 @@ impl From<KitInstallation> for KitInstallationDto {
             status: value.status,
             requested_by: value.requested_by,
             requested_at: value.requested_at,
+            scope: value.scope,
             installed_at: value.installed_at,
             repository_id,
             materializations: value.materializations.into_iter().map(Into::into).collect(),
@@ -224,6 +231,7 @@ async fn request_installation(
             &body.kit_slug,
             &body.version,
             &body.install_mode,
+            body.scope.as_deref().unwrap_or_default(),
         )
         .await
         .map_err(|error| {
@@ -279,6 +287,18 @@ async fn materialize_installation(
         .materialize_installation(&ctx, project_id, &kit_slug, body.repository_id)
         .await
         .map_err(internal)?;
+    Ok(Json(value.into()))
+}
+
+async fn reconcile_installation(
+    Extension(ctx): Extension<SecurityContext>,
+    Extension(service): Extension<Arc<KitRegistryService>>,
+    Path((project_id, kit_slug)): Path<(Uuid, String)>,
+) -> ApiResult<JsonBody<KitInstallationDto>> {
+    let value = service
+        .reconcile_installation(&ctx, project_id, &kit_slug)
+        .await
+        .map_err(session_unavailable)?;
     Ok(Json(value.into()))
 }
 
@@ -342,6 +362,24 @@ pub fn register_routes(
     .json_request::<MaterializeKitInstallationDto>(openapi, "Optional target repository")
     .handler(materialize_installation)
     .json_response_with_schema::<KitInstallationDto>(openapi, StatusCode::OK, "Materialized installation")
+    .error_401(openapi)
+    .error_403(openapi)
+    .error_500(openapi)
+    .register(router, openapi);
+
+    router = OperationBuilder::post(
+        "/studio-kits/v1/projects/{project_id}/installations/{kit_slug}/reconcile",
+    )
+    .operation_id("studio_kits.reconcile_installation")
+    .summary("Materialize this kit wherever its scope says it belongs")
+    .description("Idempotent: repositories already carrying the requested version are skipped, so this is the call that picks up a repository added after the kit was installed. Requires a running session.")
+    .tag("StudioKits")
+    .authenticated()
+    .require_license_features::<License>([])
+    .path_param("project_id", "Project tenant id")
+    .path_param("kit_slug", "Registered kit slug")
+    .handler(reconcile_installation)
+    .json_response_with_schema::<KitInstallationDto>(openapi, StatusCode::OK, "Reconciled installation")
     .error_401(openapi)
     .error_403(openapi)
     .error_500(openapi)

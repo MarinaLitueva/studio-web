@@ -108,6 +108,22 @@ describe("kit registry client", () => {
     );
   });
 
+  it("reconciles a kit across the repositories its scope covers", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ kit_slug: "sdlc", scope: "all-repositories" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.reconcileKitInstallation("token", "project/one", "sdlc");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/cf/studio-kits/v1/projects/project%2Fone/installations/sdlc/reconcile",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
   it("lists the repositories the project's IDE has mounted", async () => {
     const items = [
       { repository_id: "repo-project", label: "workspace", kind: "project" },

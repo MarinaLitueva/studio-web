@@ -304,6 +304,11 @@ export interface KitInstallation {
   requested_by: string;
   requested_at: string;
   installed_at?: string;
+  /** Where this kit BELONGS: `project` (the project repository alone) or
+   *  `all-repositories`. Intent, as opposed to `materializations`, which is
+   *  where it actually is — reconciling is the difference between the two.
+   *  Optional for the same rolling-deploy reason as `materializations`. */
+  scope?: "project" | "all-repositories";
   /** The most recently materialized target, derived by the backend from
    *  `materializations`. */
   repository_id?: string;
@@ -735,7 +740,12 @@ export const api = {
   requestKitInstallation: (
     token: string,
     projectId: string,
-    input: { kit_slug: string; version: string; install_mode: "copy" | "register" },
+    input: {
+      kit_slug: string;
+      version: string;
+      install_mode: "copy" | "register";
+      scope?: "project" | "all-repositories";
+    },
   ) =>
     request<KitInstallation>(
       `/studio-kits/v1/projects/${encodeURIComponent(projectId)}/installations`,
@@ -753,6 +763,17 @@ export const api = {
       `/studio-kits/v1/projects/${encodeURIComponent(projectId)}/installations/${encodeURIComponent(kitSlug)}/materialize`,
       token,
       { method: "POST", body: JSON.stringify({ repository_id: repositoryId }) },
+    ),
+
+  /** Materialize the kit wherever its scope says it belongs. Idempotent: the
+   *  backend skips repositories already carrying the requested version, so
+   *  this is safe to call on load and is what picks up a repository that
+   *  joined the project after the kit was installed. */
+  reconcileKitInstallation: (token: string, projectId: string, kitSlug: string) =>
+    request<KitInstallation>(
+      `/studio-kits/v1/projects/${encodeURIComponent(projectId)}/installations/${encodeURIComponent(kitSlug)}/reconcile`,
+      token,
+      { method: "POST" },
     ),
 
   removeKitInstallation: (token: string, projectId: string, kitSlug: string) =>
