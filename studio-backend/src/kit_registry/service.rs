@@ -203,7 +203,8 @@ impl KitRegistryService {
                 installations[index].status = "failed".to_owned();
                 installations[index].failure_reason =
                     Some(error.to_string().chars().take(2_000).collect());
-                self.write_installations(ctx, project_id, installations).await?;
+                self.write_installations(ctx, project_id, installations)
+                    .await?;
                 Err(error)
             }
         }
@@ -309,8 +310,7 @@ fn normalize_install_mode(value: &str) -> Result<String> {
 }
 
 fn now_rfc3339() -> Result<String> {
-    Ok(OffsetDateTime::now_utc()
-        .format(&time::format_description::well_known::Rfc3339)?)
+    Ok(OffsetDateTime::now_utc().format(&time::format_description::well_known::Rfc3339)?)
 }
 
 #[cfg(not(feature = "theia-bridge"))]
