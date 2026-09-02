@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import { api } from "./api";
+import { ApiError, api } from "./api";
 import type { CatalogNode } from "./api";
 import { errText } from "./format";
 
@@ -24,7 +24,13 @@ export function GearsCatalog({ token }: { token: string }) {
     try {
       const [{ nodes }, profileResponse] = await Promise.all([
         api.listGears(token),
-        api.listGearProfiles(token),
+        // During a rolling release frontend can arrive before the backend that
+        // owns profiles. A missing optional endpoint must not hide the whole
+        // pre-existing catalog.
+        api.listGearProfiles(token).catch((error): { nodes: CatalogNode[] } => {
+          if (error instanceof ApiError && error.status === 404) return { nodes: [] };
+          throw error;
+        }),
       ]);
       setGears(nodes ?? []);
       const next: Record<string, Record<string, unknown>> = {};
