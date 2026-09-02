@@ -1224,6 +1224,15 @@ export const api = {
   /** Read back the ingested gear crates. */
   listGears: (token: string) =>
     request<{ nodes: CatalogNode[] }>("/studio-gears-catalog/v1/gears", token),
+  /** Read Studio-managed delivery metadata for catalogued Gears. */
+  listGearProfiles: (token: string) =>
+    request<{ nodes: CatalogNode[] }>("/studio-gears-catalog/v1/profiles", token),
+  /** Replace Studio-managed delivery metadata for one Gear. */
+  saveGearProfile: (token: string, name: string, profile: Record<string, unknown>) =>
+    request<CatalogNode>(`/studio-gears-catalog/v1/gears/${encodeURIComponent(name)}/profile`, token, {
+      method: "POST",
+      body: JSON.stringify({ profile }),
+    }),
   /** Read back crate versions, optionally filtered to one crate. */
   listGearVersions: (token: string, crate?: string) =>
     request<{ nodes: CatalogNode[] }>(

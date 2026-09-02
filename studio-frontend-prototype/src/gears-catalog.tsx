@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "./api";
 import type { CatalogNode } from "./api";
 import { errText } from "./format";
@@ -9,6 +9,7 @@ import { errText } from "./format";
  *  button re-pulls from crates.io in the background. */
 export function GearsCatalog({ token }: { token: string }) {
   const [gears, setGears] = useState<CatalogNode[] | null>(null);
+  const [profiles, setProfiles] = useState<Record<string, Record<string, unknown>>>({});
   const [versions, setVersions] = useState<Record<string, CatalogNode[]>>({});
   const [expanded, setExpanded] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -20,8 +21,17 @@ export function GearsCatalog({ token }: { token: string }) {
   const reload = useCallback(async () => {
     setErr(null);
     try {
-      const { nodes } = await api.listGears(token);
+      const [{ nodes }, profileResponse] = await Promise.all([
+        api.listGears(token),
+        api.listGearProfiles(token),
+      ]);
       setGears(nodes ?? []);
+      const next: Record<string, Record<string, unknown>> = {};
+      for (const node of profileResponse.nodes ?? []) {
+        const name = typeof node.value.gear_name === "string" ? node.value.gear_name : "";
+        if (name) next[name] = node.value as Record<string, unknown>;
+      }
+      setProfiles(next);
     } catch (e) {
       setErr(errText(e));
     }
@@ -142,61 +152,179 @@ export function GearsCatalog({ token }: { token: string }) {
               : "No gears match the current filter."}
           </p>
         ) : (
-          <table className="ptable">
-            <thead>
-              <tr>
-                <th>Gear</th>
-                <th>Kind</th>
-                <th>Latest</th>
-                <th>Versions</th>
-                <th>Downloads</th>
-                <th>Updated</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map((g) => {
-                const name = String(g.value.name ?? g.instance_id);
-                const open = expanded === name;
-                return (
-                  <Fragment key={g.instance_id}>
-                    <tr
-                      style={{ cursor: "pointer" }}
-                      onClick={() => void toggle(name)}
-                      title="Show published versions"
-                    >
-                      <td>
-                        <div className="name">
-                          <span style={{ display: "inline-block", width: 14 }}>
-                            {open ? "▾" : "▸"}
-                          </span>{" "}
-                          {name}
-                        </div>
-                        {g.value.description && <div className="sub">{String(g.value.description)}</div>}
-                      </td>
-                      <td>{String(g.value.kind ?? "gear")}</td>
-                      <td>
-                        <code>{String(g.value.max_stable_version ?? g.value.newest_version ?? "—")}</code>
-                      </td>
-                      <td>{numText(g.value.num_versions)}</td>
-                      <td>{numText(g.value.downloads)}</td>
-                      <td>{dateText(g.value.updated_at)}</td>
-                    </tr>
-                    {open && (
-                      <tr>
-                        <td colSpan={6} style={{ padding: 0 }}>
-                          <GearVersions name={name} rows={versions[name]} gear={g} />
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(330px, 1fr))", gap: 12 }}>
+            {visible.map((gear) => {
+              const name = String(gear.value.name ?? gear.instance_id);
+              return (
+                <GearCard
+                  key={gear.instance_id}
+                  token={token}
+                  gear={gear}
+                  profile={profiles[name]}
+                  open={expanded === name}
+                  versions={versions[name]}
+                  onToggle={() => void toggle(name)}
+                  onSaved={(profile) => setProfiles((current) => ({ ...current, [name]: profile }))}
+                />
+              );
+            })}
+          </div>
         )}
       </div>
     </>
   );
+}
+
+function GearCard({
+  token,
+  gear,
+  profile,
+  open,
+  versions,
+  onToggle,
+  onSaved,
+}: {
+  token: string;
+  gear: CatalogNode;
+  profile: Record<string, unknown> | undefined;
+  open: boolean;
+  versions: CatalogNode[] | undefined;
+  onToggle: () => void;
+  onSaved: (profile: Record<string, unknown>) => void;
+}) {
+  const name = String(gear.value.name ?? gear.instance_id);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const latest = String(gear.value.max_stable_version ?? gear.value.newest_version ?? "—");
+  const fields: Array<[string, unknown]> = [
+    ["Category / domain", profile?.category ?? profile?.domain ?? gear.value.kind],
+    ["Lifecycle", profile?.lifecycle_status],
+    ["Maintainers", profile?.maintainers],
+    ["Repository", profile?.repository ?? gear.value.repository],
+    ["PRD / DESIGN / ADR", profile?.architecture_links ?? profile?.prd_links],
+    ["API specification", profile?.api_spec_link],
+    ["Configuration", profile?.config_file ?? profile?.configuration_guideline_link],
+    ["Dependencies", profile?.dependencies],
+    ["Supported DBs", profile?.supported_databases],
+    ["Plugins", profile?.plugins],
+    ["Feature flags", profile?.feature_flags],
+    ["Events published", profile?.events_published],
+    ["Observability", profile?.observability_metrics],
+    ["Security advisories", profile?.security_advisories],
+    ["Delivery health", profile?.delivery_health],
+    ["Spec LOC", profile?.spec_loc],
+    ["Code LOC", profile?.code_loc],
+    ["Unit / E2E test LOC", profile?.unit_test_loc ?? profile?.e2e_test_loc],
+    ["Coverage", profile?.code_coverage],
+  ];
+  const startEditing = () => {
+    setError(null);
+    setDraft(JSON.stringify(profile ?? defaultGearProfile(), null, 2));
+    setEditing(true);
+  };
+  const save = async () => {
+    try {
+      setSaving(true);
+      setError(null);
+      const parsed: unknown = JSON.parse(draft);
+      if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
+        throw new Error("Profile must be a JSON object");
+      }
+      const saved = await api.saveGearProfile(token, name, parsed as Record<string, unknown>);
+      onSaved(saved.value as Record<string, unknown>);
+      setEditing(false);
+    } catch (e) {
+      setError(errText(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <article className="card" style={{ margin: 0 }}>
+      <div className="card-head">
+        <div>
+          <div className="name">{name}</div>
+          <div className="sub">{String(profile?.category ?? profile?.domain ?? gear.value.kind ?? "gear")} · {latest}</div>
+        </div>
+        <button onClick={onToggle}>{open ? "Hide details" : "Details"}</button>
+      </div>
+      {gear.value.description && <p className="sub">{String(gear.value.description)}</p>}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginTop: 10 }}>
+        <Metric label="Downloads" value={numText(gear.value.downloads)} />
+        <Metric label="Versions" value={numText(gear.value.num_versions)} />
+        <Metric label="Updated" value={dateText(gear.value.updated_at)} />
+      </div>
+      {open && <>
+        <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: "8px 16px" }}>
+          {fields.filter(([, value]) => value !== undefined && value !== null && value !== "").map(([label, value]) => (
+            <div key={label}><div className="sub">{label}</div><div>{displayValue(value)}</div></div>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+          <button onClick={startEditing}>Edit profile</button>
+          {gear.value.repository && <a href={String(gear.value.repository)} target="_blank" rel="noreferrer">Repository</a>}
+          {gear.value.documentation && <a href={String(gear.value.documentation)} target="_blank" rel="noreferrer">Docs</a>}
+        </div>
+        {editing && <div style={{ marginTop: 12 }}>
+          <p className="hint">Profile is stored separately from crates.io data and survives catalogue sync.</p>
+          <textarea value={draft} onChange={(e) => setDraft(e.target.value)} style={{ width: "100%", minHeight: 220, fontFamily: "monospace" }} />
+          {error && <p className="error">{error}</p>}
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <button className="primary" disabled={saving} onClick={() => void save()}>{saving ? "Saving…" : "Save profile"}</button>
+            <button onClick={() => setEditing(false)}>Cancel</button>
+          </div>
+        </div>}
+        <GearVersions name={name} rows={versions} gear={gear} />
+      </>}
+    </article>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return <div><div className="sub">{label}</div><strong>{value}</strong></div>;
+}
+
+function displayValue(value: unknown): string {
+  if (Array.isArray(value)) return value.map(displayValue).join(", ");
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+function defaultGearProfile(): Record<string, unknown> {
+  return {
+    category: "",
+    maintainers: [],
+    lifecycle_status: "in development",
+    repository: "",
+    prd_links: [],
+    architecture_links: [],
+    api_spec_link: "",
+    config_file: "",
+    configuration_guideline_link: "",
+    uml_diagrams: [],
+    spec_loc: null,
+    code_loc: null,
+    unit_test_loc: null,
+    e2e_test_loc: null,
+    changelog_link: "",
+    events_published: [],
+    feature_flags: [],
+    observability_metrics: [],
+    security_advisories: [],
+    github_issues_link: "",
+    extension_points: [],
+    base_data_types: [],
+    delivery_health: {},
+    security_compliance_metrics: {},
+    unit_test_count: null,
+    code_coverage: null,
+    dependencies: [],
+    supported_databases: [],
+    plugins: [],
+  };
 }
 
 /** The expanded version history for one gear. */

@@ -77,6 +77,15 @@ pub struct CatalogNodeListResponse {
     pub nodes: Vec<CatalogNodeDto>,
 }
 
+/// Open, Studio-owned metadata for a gear. The payload is intentionally
+/// extensible: it holds delivery metrics and links that crates.io cannot know.
+#[derive(Debug, serde::Deserialize)]
+#[toolkit_macros::api_dto(request)]
+pub struct SaveGearProfileRequest {
+    #[schema(value_type = Object)]
+    pub profile: Value,
+}
+
 #[derive(Debug, serde::Deserialize)]
 pub struct VersionsQuery {
     /// Optional crate name (query param `crate`) to filter versions to one gear.
@@ -132,12 +141,46 @@ async fn list_gears(
 ) -> ApiResult<JsonBody<CatalogNodeListResponse>> {
     let nodes = catalog
         .0
-        .list_nodes(&ctx, Some("gear"))
+        .list_nodes(&ctx, Some(super::gts::GEAR_TYPE))
         .await
         .map_err(|e| CanonicalError::internal(format!("{e:#}")).create())?;
     Ok(Json(CatalogNodeListResponse {
         nodes: to_dtos(nodes),
     }))
+}
+
+async fn list_profiles(
+    Extension(ctx): Extension<SecurityContext>,
+    Extension(catalog): Extension<Catalog>,
+) -> ApiResult<JsonBody<CatalogNodeListResponse>> {
+    let nodes = catalog
+        .0
+        .list_profiles(&ctx)
+        .await
+        .map_err(|e| CanonicalError::internal(format!("{e:#}")).create())?;
+    Ok(Json(CatalogNodeListResponse { nodes: to_dtos(nodes) }))
+}
+
+async fn save_profile(
+    Extension(ctx): Extension<SecurityContext>,
+    Extension(catalog): Extension<Catalog>,
+    Path(name): Path<String>,
+    Json(body): Json<SaveGearProfileRequest>,
+) -> ApiResult<JsonBody<CatalogNodeDto>> {
+    let node = catalog
+        .0
+        .save_profile(&ctx, &name, body.profile)
+        .await
+        .map_err(|e| {
+            StudioGearsCatalogError::invalid_argument()
+                .with_constraint(format!("invalid gear profile: {e:#}"))
+                .create()
+        })?;
+    let dto = to_dtos(vec![node])
+        .into_iter()
+        .next()
+        .expect("one profile node converts to one DTO");
+    Ok(Json(dto))
 }
 
 async fn list_versions(
@@ -224,6 +267,33 @@ pub fn register_routes(
         .require_license_features::<License>([])
         .handler(list_versions)
         .json_response_with_schema::<CatalogNodeListResponse>(openapi, StatusCode::OK, "Versions")
+        .error_401(openapi)
+        .error_500(openapi)
+        .register(router, openapi);
+
+    let router = OperationBuilder::get("/studio-gears-catalog/v1/profiles")
+        .operation_id("studio_gears_catalog.list_profiles")
+        .summary("List Studio-managed, editable Gear profiles")
+        .tag("StudioGearsCatalog")
+        .authenticated()
+        .require_license_features::<License>([])
+        .handler(list_profiles)
+        .json_response_with_schema::<CatalogNodeListResponse>(openapi, StatusCode::OK, "Gear profiles")
+        .error_401(openapi)
+        .error_500(openapi)
+        .register(router, openapi);
+
+    let router = OperationBuilder::post("/studio-gears-catalog/v1/gears/{name}/profile")
+        .operation_id("studio_gears_catalog.save_profile")
+        .summary("Create or replace Studio-managed metadata for one Gear")
+        .tag("StudioGearsCatalog")
+        .authenticated()
+        .require_license_features::<License>([])
+        .path_param("name", "Crate name")
+        .handler(save_profile)
+        .json_request::<SaveGearProfileRequest>(openapi, "Gear profile")
+        .json_response_with_schema::<CatalogNodeDto>(openapi, StatusCode::OK, "Saved Gear profile")
+        .error_400(openapi)
         .error_401(openapi)
         .error_500(openapi)
         .register(router, openapi);

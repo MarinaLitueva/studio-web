@@ -13,9 +13,7 @@ use std::time::Duration;
 
 use anyhow::anyhow;
 use async_trait::async_trait;
-#[cfg(feature = "graph")]
-use serde_json::Value;
-use serde_json::json;
+use serde_json::{Value, json};
 use toolkit_security::SecurityContext;
 use uuid::Uuid;
 
@@ -357,6 +355,42 @@ impl CatalogService {
         type_filter: Option<&str>,
     ) -> anyhow::Result<Vec<GtsNode>> {
         self.sink.list(ctx, type_filter).await
+    }
+
+    /// Read the editable, Studio-owned metadata for all catalogued gears.
+    pub async fn list_profiles(&self, ctx: &SecurityContext) -> anyhow::Result<Vec<GtsNode>> {
+        self.sink.list(ctx, Some("gear_profile")).await
+    }
+
+    /// Upsert a gear profile without touching the crates.io-owned catalog node.
+    /// The profile is deliberately an open JSON object: platform teams can add
+    /// a field to their delivery model without a backend migration.
+    pub async fn save_profile(
+        &self,
+        ctx: &SecurityContext,
+        gear_name: &str,
+        profile: Value,
+    ) -> anyhow::Result<GtsNode> {
+        let gear_name = gear_name.trim();
+        if gear_name.is_empty()
+            || gear_name.len() > 128
+            || !gear_name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        {
+            anyhow::bail!("gear name must be a crate-style identifier");
+        }
+        let mut value = profile
+            .as_object()
+            .cloned()
+            .ok_or_else(|| anyhow!("gear profile must be a JSON object"))?;
+        value.insert("gear_name".to_owned(), Value::String(gear_name.to_owned()));
+        value.entry("title".to_owned())
+            .or_insert_with(|| Value::String(gear_name.to_owned()));
+        let node = gts::gear_profile_node(gear_name, Value::Object(value));
+        self.sink.register_types(ctx).await?;
+        self.sink.upsert(ctx, std::slice::from_ref(&node), &[]).await?;
+        Ok(node)
     }
 
     fn report(&self, task_id: Option<&str>, message: &str, gears: u32, versions: u32, stored: u32) {

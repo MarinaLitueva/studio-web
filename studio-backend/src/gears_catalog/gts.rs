@@ -16,9 +16,12 @@ const INSTANCE_NS: Uuid = Uuid::from_u128(0xcf57_0000_0000_4000_8000_0000_0000_0
 pub const GEAR_TYPE: &str = "gts.cf.studio.catalog.gear.v1~";
 /// One published version of a gear crate.
 pub const CRATE_VERSION_TYPE: &str = "gts.cf.studio.catalog.crate_version.v1~";
+/// Studio-managed, editable catalog metadata for one gear. It is stored
+/// independently from crates.io data, so a sync cannot erase it.
+pub const GEAR_PROFILE_TYPE: &str = "gts.cf.studio.catalog.gear_profile.v1~";
 
 /// Every catalog node type, for registering and enumerating.
-pub const ALL_NODE_TYPES: [&str; 2] = [GEAR_TYPE, CRATE_VERSION_TYPE];
+pub const ALL_NODE_TYPES: [&str; 3] = [GEAR_TYPE, CRATE_VERSION_TYPE, GEAR_PROFILE_TYPE];
 
 /// gear → crate_version — a version published under this crate.
 pub const REL_HAS_VERSION: &str = "gts.cf.studio.catalog.rel.has_version.v1~";
@@ -74,6 +77,11 @@ pub fn type_schemas() -> Vec<Value> {
             "CrateVersion",
             "One published version of a gear crate.",
         ),
+        (
+            GEAR_PROFILE_TYPE,
+            "GearProfile",
+            "Editable Studio metadata for one gear, kept separately from crates.io sync data.",
+        ),
     ]
     .into_iter()
     .map(|(id, title, description)| {
@@ -103,6 +111,11 @@ pub fn version_instance_id(name: &str, num: &str) -> String {
     anon_id(&["crate_version", name, num])
 }
 
+/// The instance id of a custom profile node (keyed on the gear crate name).
+pub fn gear_profile_instance_id(name: &str) -> String {
+    anon_id(&["gear_profile", name])
+}
+
 /// A gear node. `value` is the curated crate payload built by the service.
 pub fn gear_node(name: &str, value: Value) -> GtsNode {
     GtsNode {
@@ -117,6 +130,16 @@ pub fn crate_version_node(name: &str, num: &str, value: Value) -> GtsNode {
     GtsNode {
         type_id: CRATE_VERSION_TYPE,
         instance_id: version_instance_id(name, num),
+        value,
+    }
+}
+
+/// An editable profile for a gear. The caller owns the profile payload; the
+/// service injects its stable `gear_name` identity before persisting it.
+pub fn gear_profile_node(name: &str, value: Value) -> GtsNode {
+    GtsNode {
+        type_id: GEAR_PROFILE_TYPE,
+        instance_id: gear_profile_instance_id(name),
         value,
     }
 }
