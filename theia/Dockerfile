@@ -81,11 +81,11 @@ RUN python3 -m venv /opt/cfs \
 #    different validators over the same pinned kit — which quietly breaks the
 #    "pinned to a Git version" promise the Kits page makes.
 #
-# CFS_CACHE_DIR is honoured by studio_proxy.resolve.get_cache_dir, so the cache
-# lands outside $HOME and is shared by every user of the image instead of being
-# tied to /home/node.
+# The proxy and the bundled skill engine must resolve the same cache. The
+# current engine resolves it from `$HOME/.cf-studio/cache`, so do not relocate
+# it under `/opt`: `cfs init` would otherwise see an empty cache.
 ARG STUDIO_CFS_ENGINE=v1.6.2
-ENV CFS_CACHE_DIR=/opt/cfs-cache
+ENV CFS_CACHE_DIR=/home/node/.cf-studio/cache
 # The second command is the one that matters: it asserts the extracted layout
 # is the one find_cached_skill() looks for (<cache>/skills/studio/scripts/
 # studio.py). A download that succeeds into an unexpected shape is exactly how
@@ -113,10 +113,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # runtime together with its isolated venv and expose only `cfs` on PATH.
 COPY --from=cfs /usr/local/ /usr/local/
 COPY --from=cfs /opt/cfs/ /opt/cfs/
-# The pre-resolved skill engine (see the cfs stage). Left root-owned: sessions
-# run as `node` and read it, so the engine cannot be mutated by whatever runs
-# in a workspace.
-COPY --from=cfs /opt/cfs-cache/ /opt/cfs-cache/
+# The proxy updates cache provenance before it runs a command. The cache must
+# therefore be writable by the non-root `node` session user; otherwise even
+# `cfs init` fails before it reaches the project checkout.
+COPY --from=cfs --chown=node:node /opt/cfs-cache/ /home/node/.cf-studio/cache/
 
 # Agent runtimes for the native Theia AI providers. Neither @theia/ai-codex
 # nor @theia/ai-claude-code bundles its executable: the former dynamically
@@ -151,7 +151,7 @@ USER node
 ENV STUDIO_GIT_MODE=disabled \
     STUDIO_DATA_DIR=/home/node/.studio-data \
     PATH=/opt/cfs/bin:$PATH \
-    CFS_CACHE_DIR=/opt/cfs-cache \
+    CFS_CACHE_DIR=/home/node/.cf-studio/cache \
     SHELL=/bin/bash \
     THEIA_CODEX_PATH=/usr/local/bin/codex-studio \
     THEIA_CLAUDE_CODE_PATH=/usr/local/lib/node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs
