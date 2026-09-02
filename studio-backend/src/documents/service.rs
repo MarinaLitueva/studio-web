@@ -6,18 +6,18 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use account_management_sdk::AccountManagementClient;
-use anyhow::{bail, Context, Result};
-use time::format_description::well_known::Rfc3339;
+use anyhow::{Context, Result, bail};
 use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
 use toolkit_security::SecurityContext;
 use uuid::Uuid;
 
 use super::entity::{doc_type, document};
 use super::model::{
-    builtin_types, type_gts_id, DocStatus, Document, DocumentType, Owner, TemplateSpec,
+    DocStatus, Document, DocumentType, Owner, TemplateSpec, builtin_types, type_gts_id,
 };
-use super::repo::{type_row_id, DocScope, DocumentsRepo};
-use super::validate::{validate, ValidationReport};
+use super::repo::{DocScope, DocumentsRepo, type_row_id};
+use super::validate::{ValidationReport, validate};
 
 pub struct DocumentsService {
     repo: Arc<DocumentsRepo>,

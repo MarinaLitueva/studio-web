@@ -158,7 +158,9 @@ async fn list_profiles(
         .list_profiles(&ctx)
         .await
         .map_err(|e| CanonicalError::internal(format!("{e:#}")).create())?;
-    Ok(Json(CatalogNodeListResponse { nodes: to_dtos(nodes) }))
+    Ok(Json(CatalogNodeListResponse {
+        nodes: to_dtos(nodes),
+    }))
 }
 
 async fn save_profile(
@@ -278,7 +280,11 @@ pub fn register_routes(
         .authenticated()
         .require_license_features::<License>([])
         .handler(list_profiles)
-        .json_response_with_schema::<CatalogNodeListResponse>(openapi, StatusCode::OK, "Gear profiles")
+        .json_response_with_schema::<CatalogNodeListResponse>(
+            openapi,
+            StatusCode::OK,
+            "Gear profiles",
+        )
         .error_401(openapi)
         .error_500(openapi)
         .register(router, openapi);

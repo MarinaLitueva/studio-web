@@ -7,9 +7,9 @@
 
 use std::sync::Arc;
 
-use axum::{extract::Path, Extension, Router};
+use axum::{Extension, Router, extract::Path};
 use toolkit::api::canonical_prelude::*;
-use toolkit::api::operation_builder::{LicenseFeature, CORE_GLOBAL_BASE_LICENSE_FEATURE};
+use toolkit::api::operation_builder::{CORE_GLOBAL_BASE_LICENSE_FEATURE, LicenseFeature};
 use toolkit::api::{OpenApiRegistry, OperationBuilder};
 use toolkit_canonical_errors::resource_error;
 use toolkit_security::SecurityContext;
@@ -218,7 +218,9 @@ fn section_from_dto(s: SectionDto) -> Section {
         key: s.key,
         title: s.title,
         required: s.required,
-        min_words: s.min_words.and_then(|w| if w > 0 { Some(w as usize) } else { None }),
+        min_words: s
+            .min_words
+            .and_then(|w| if w > 0 { Some(w as usize) } else { None }),
         description: s.description,
     }
 }
@@ -289,7 +291,10 @@ async fn list_types(
     Extension(service): Extension<Arc<DocumentsService>>,
     Path(workspace_id): Path<Uuid>,
 ) -> ApiResult<JsonBody<DocumentTypeListDto>> {
-    service.authorize(&ctx, workspace_id).await.map_err(no_tenant)?;
+    service
+        .authorize(&ctx, workspace_id)
+        .await
+        .map_err(no_tenant)?;
     let items = service.list_types(workspace_id).await.map_err(internal)?;
     Ok(Json(DocumentTypeListDto {
         items: items.into_iter().map(Into::into).collect(),
@@ -302,7 +307,10 @@ async fn upsert_type(
     Path(workspace_id): Path<Uuid>,
     Json(body): Json<UpsertTypeDto>,
 ) -> ApiResult<JsonBody<DocumentTypeDto>> {
-    service.authorize(&ctx, workspace_id).await.map_err(no_tenant)?;
+    service
+        .authorize(&ctx, workspace_id)
+        .await
+        .map_err(no_tenant)?;
     let ty = DocumentType {
         key: body.key,
         name: body.name,
@@ -317,7 +325,10 @@ async fn upsert_type(
             rules: body.rules.map(rules_from_dto).unwrap_or_default(),
         },
     };
-    let saved = service.upsert_type(workspace_id, ty).await.map_err(invalid)?;
+    let saved = service
+        .upsert_type(workspace_id, ty)
+        .await
+        .map_err(invalid)?;
     Ok(Json(saved.into()))
 }
 
@@ -326,7 +337,10 @@ async fn list_workspace_documents(
     Extension(service): Extension<Arc<DocumentsService>>,
     Path(workspace_id): Path<Uuid>,
 ) -> ApiResult<JsonBody<DocumentListDto>> {
-    service.authorize(&ctx, workspace_id).await.map_err(no_tenant)?;
+    service
+        .authorize(&ctx, workspace_id)
+        .await
+        .map_err(no_tenant)?;
     let items = service
         .list_documents(workspace_id, None)
         .await
@@ -341,8 +355,14 @@ async fn list_project_documents(
     Extension(service): Extension<Arc<DocumentsService>>,
     Path((workspace_id, project_id)): Path<(Uuid, Uuid)>,
 ) -> ApiResult<JsonBody<DocumentListDto>> {
-    service.authorize(&ctx, workspace_id).await.map_err(no_tenant)?;
-    service.authorize(&ctx, project_id).await.map_err(no_tenant)?;
+    service
+        .authorize(&ctx, workspace_id)
+        .await
+        .map_err(no_tenant)?;
+    service
+        .authorize(&ctx, project_id)
+        .await
+        .map_err(no_tenant)?;
     let items = service
         .list_documents(workspace_id, Some(project_id))
         .await
@@ -364,7 +384,10 @@ async fn create_workspace_document(
     Path(workspace_id): Path<Uuid>,
     Json(body): Json<CreateDocumentDto>,
 ) -> ApiResult<JsonBody<DocumentDto>> {
-    service.authorize(&ctx, workspace_id).await.map_err(no_tenant)?;
+    service
+        .authorize(&ctx, workspace_id)
+        .await
+        .map_err(no_tenant)?;
     let doc = service
         .create_document(
             workspace_id,
@@ -385,8 +408,14 @@ async fn create_project_document(
     Path((workspace_id, project_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<CreateDocumentDto>,
 ) -> ApiResult<JsonBody<DocumentDto>> {
-    service.authorize(&ctx, workspace_id).await.map_err(no_tenant)?;
-    service.authorize(&ctx, project_id).await.map_err(no_tenant)?;
+    service
+        .authorize(&ctx, workspace_id)
+        .await
+        .map_err(no_tenant)?;
+    service
+        .authorize(&ctx, project_id)
+        .await
+        .map_err(no_tenant)?;
     let doc = service
         .create_document(
             workspace_id,
@@ -406,7 +435,10 @@ async fn get_document(
     Extension(service): Extension<Arc<DocumentsService>>,
     Path((workspace_id, id)): Path<(Uuid, Uuid)>,
 ) -> ApiResult<JsonBody<DocumentDto>> {
-    service.authorize(&ctx, workspace_id).await.map_err(no_tenant)?;
+    service
+        .authorize(&ctx, workspace_id)
+        .await
+        .map_err(no_tenant)?;
     let doc = service
         .get_document(workspace_id, id)
         .await
@@ -421,7 +453,10 @@ async fn update_document(
     Path((workspace_id, id)): Path<(Uuid, Uuid)>,
     Json(body): Json<UpdateDocumentDto>,
 ) -> ApiResult<JsonBody<DocumentDto>> {
-    service.authorize(&ctx, workspace_id).await.map_err(no_tenant)?;
+    service
+        .authorize(&ctx, workspace_id)
+        .await
+        .map_err(no_tenant)?;
     let status = match body.status {
         Some(s) => Some(parse_status(&s).ok_or_else(|| {
             DocumentsError::invalid_argument()
@@ -442,7 +477,10 @@ async fn validate_document(
     Extension(service): Extension<Arc<DocumentsService>>,
     Path((workspace_id, id)): Path<(Uuid, Uuid)>,
 ) -> ApiResult<JsonBody<ValidationReportDto>> {
-    service.authorize(&ctx, workspace_id).await.map_err(no_tenant)?;
+    service
+        .authorize(&ctx, workspace_id)
+        .await
+        .map_err(no_tenant)?;
     let report = service
         .validate_document(workspace_id, id)
         .await
@@ -455,7 +493,10 @@ async fn delete_document(
     Extension(service): Extension<Arc<DocumentsService>>,
     Path((workspace_id, id)): Path<(Uuid, Uuid)>,
 ) -> ApiResult<StatusCode> {
-    service.authorize(&ctx, workspace_id).await.map_err(no_tenant)?;
+    service
+        .authorize(&ctx, workspace_id)
+        .await
+        .map_err(no_tenant)?;
     service
         .delete_document(workspace_id, id)
         .await
@@ -566,42 +607,38 @@ pub fn register_routes(
     .error_500(openapi)
     .register(router, openapi);
 
-    router = OperationBuilder::get(
-        "/studio-documents/v1/workspaces/{workspace_id}/documents/{id}",
-    )
-    .operation_id("studio_documents.get_document")
-    .summary("Get one document")
-    .tag("StudioDocuments")
-    .authenticated()
-    .require_license_features::<License>([])
-    .path_param("workspace_id", "Workspace tenant id")
-    .path_param("id", "Document id")
-    .handler(get_document)
-    .json_response_with_schema::<DocumentDto>(openapi, StatusCode::OK, "Document")
-    .error_401(openapi)
-    .error_403(openapi)
-    .error_404(openapi)
-    .error_500(openapi)
-    .register(router, openapi);
+    router = OperationBuilder::get("/studio-documents/v1/workspaces/{workspace_id}/documents/{id}")
+        .operation_id("studio_documents.get_document")
+        .summary("Get one document")
+        .tag("StudioDocuments")
+        .authenticated()
+        .require_license_features::<License>([])
+        .path_param("workspace_id", "Workspace tenant id")
+        .path_param("id", "Document id")
+        .handler(get_document)
+        .json_response_with_schema::<DocumentDto>(openapi, StatusCode::OK, "Document")
+        .error_401(openapi)
+        .error_403(openapi)
+        .error_404(openapi)
+        .error_500(openapi)
+        .register(router, openapi);
 
-    router = OperationBuilder::put(
-        "/studio-documents/v1/workspaces/{workspace_id}/documents/{id}",
-    )
-    .operation_id("studio_documents.update_document")
-    .summary("Update a document's content, title or status")
-    .tag("StudioDocuments")
-    .authenticated()
-    .require_license_features::<License>([])
-    .path_param("workspace_id", "Workspace tenant id")
-    .path_param("id", "Document id")
-    .json_request::<UpdateDocumentDto>(openapi, "Document changes")
-    .handler(update_document)
-    .json_response_with_schema::<DocumentDto>(openapi, StatusCode::OK, "Updated document")
-    .error_400(openapi)
-    .error_401(openapi)
-    .error_403(openapi)
-    .error_500(openapi)
-    .register(router, openapi);
+    router = OperationBuilder::put("/studio-documents/v1/workspaces/{workspace_id}/documents/{id}")
+        .operation_id("studio_documents.update_document")
+        .summary("Update a document's content, title or status")
+        .tag("StudioDocuments")
+        .authenticated()
+        .require_license_features::<License>([])
+        .path_param("workspace_id", "Workspace tenant id")
+        .path_param("id", "Document id")
+        .json_request::<UpdateDocumentDto>(openapi, "Document changes")
+        .handler(update_document)
+        .json_response_with_schema::<DocumentDto>(openapi, StatusCode::OK, "Updated document")
+        .error_400(openapi)
+        .error_401(openapi)
+        .error_403(openapi)
+        .error_500(openapi)
+        .register(router, openapi);
 
     router = OperationBuilder::post(
         "/studio-documents/v1/workspaces/{workspace_id}/documents/{id}/validate",

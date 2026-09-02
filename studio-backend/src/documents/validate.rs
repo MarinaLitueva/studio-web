@@ -51,7 +51,9 @@ fn normalize(s: &str) -> String {
 /// returning the simple `key: value` pairs and the remaining markdown.
 fn split_front_matter(content: &str) -> (HashMap<String, String>, &str) {
     let mut fm = HashMap::new();
-    let rest = content.strip_prefix("---\n").or_else(|| content.strip_prefix("---\r\n"));
+    let rest = content
+        .strip_prefix("---\n")
+        .or_else(|| content.strip_prefix("---\r\n"));
     let Some(after) = rest else {
         return (fm, content);
     };
@@ -102,9 +104,7 @@ fn headings(body: &str) -> Vec<Heading> {
     for line in lines {
         let trimmed = line.trim_start();
         let hashes = trimmed.chars().take_while(|c| *c == '#').count();
-        let is_heading = hashes >= 1
-            && hashes <= 6
-            && trimmed.chars().nth(hashes) == Some(' ');
+        let is_heading = hashes >= 1 && hashes <= 6 && trimmed.chars().nth(hashes) == Some(' ');
         if is_heading {
             if have_head {
                 flush(&mut heads, cur_level, &cur_title, pending_body);
@@ -125,7 +125,10 @@ fn headings(body: &str) -> Vec<Heading> {
 
 /// First `# ` (level-1) heading title, if any.
 fn first_title(heads: &[Heading]) -> Option<String> {
-    heads.iter().find(|h| h.level == 1).map(|h| h.title_norm.clone())
+    heads
+        .iter()
+        .find(|h| h.level == 1)
+        .map(|h| h.title_norm.clone())
 }
 
 /// Run the structural check.
@@ -192,7 +195,10 @@ pub fn validate(content: &str, spec: &TemplateSpec) -> ValidationReport {
         .cloned()
         .filter(|t| !t.is_empty())
         .or_else(|| first_title(&heads));
-    let title_words = title.as_deref().map(|t| t.split_whitespace().count()).unwrap_or(0);
+    let title_words = title
+        .as_deref()
+        .map(|t| t.split_whitespace().count())
+        .unwrap_or(0);
     if title_words < spec.rules.min_title_words {
         conforms = false;
         issues.push(format!(

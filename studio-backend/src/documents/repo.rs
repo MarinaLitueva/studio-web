@@ -7,8 +7,8 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use sea_orm::{ColumnTrait, Condition, EntityTrait, IntoActiveModel, QueryFilter};
-use toolkit_db::secure::{SecureEntityExt, SecureInsertExt, SecureOnConflict};
 use toolkit_db::DBProvider;
+use toolkit_db::secure::{SecureEntityExt, SecureInsertExt, SecureOnConflict};
 use toolkit_security::AccessScope;
 use uuid::Uuid;
 
@@ -77,11 +77,7 @@ impl DocumentsRepo {
 
     // ── documents ───────────────────────────────────────────────────────────
 
-    pub async fn get_doc(
-        &self,
-        workspace_id: Uuid,
-        id: Uuid,
-    ) -> Result<Option<document::Model>> {
+    pub async fn get_doc(&self, workspace_id: Uuid, id: Uuid) -> Result<Option<document::Model>> {
         let conn = self.db.conn()?;
         let row = document::Entity::find()
             .secure()
@@ -99,9 +95,7 @@ impl DocumentsRepo {
     ) -> Result<Vec<document::Model>> {
         let conn = self.db.conn()?;
         let filter = match scope {
-            DocScope::WorkspaceLevel => {
-                Condition::all().add(document::Column::ProjectId.is_null())
-            }
+            DocScope::WorkspaceLevel => Condition::all().add(document::Column::ProjectId.is_null()),
             DocScope::Effective(project_id) => Condition::any()
                 .add(document::Column::ProjectId.is_null())
                 .add(document::Column::ProjectId.eq(project_id)),

@@ -385,11 +385,14 @@ impl CatalogService {
             .cloned()
             .ok_or_else(|| anyhow!("gear profile must be a JSON object"))?;
         value.insert("gear_name".to_owned(), Value::String(gear_name.to_owned()));
-        value.entry("title".to_owned())
+        value
+            .entry("title".to_owned())
             .or_insert_with(|| Value::String(gear_name.to_owned()));
         let node = gts::gear_profile_node(gear_name, Value::Object(value));
         self.sink.register_types(ctx).await?;
-        self.sink.upsert(ctx, std::slice::from_ref(&node), &[]).await?;
+        self.sink
+            .upsert(ctx, std::slice::from_ref(&node), &[])
+            .await?;
         Ok(node)
     }
 

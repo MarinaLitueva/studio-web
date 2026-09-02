@@ -6,7 +6,7 @@
 //! the studio artifact types use, so registration never trips the
 //! closed-envelope narrowing check.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::model::{builtin_types, type_gts_id};
 
