@@ -116,7 +116,7 @@ COPY --from=cfs /opt/cfs/ /opt/cfs/
 # The proxy updates cache provenance before it runs a command. The cache must
 # therefore be writable by the non-root `node` session user; otherwise even
 # `cfs init` fails before it reaches the project checkout.
-COPY --from=cfs --chown=node:node /opt/cfs-cache/ /home/node/.cf-studio/cache/
+COPY --from=cfs --chown=node:node /home/node/.cf-studio/cache/ /home/node/.cf-studio/cache/
 
 # Agent runtimes for the native Theia AI providers. Neither @theia/ai-codex
 # nor @theia/ai-claude-code bundles its executable: the former dynamically
