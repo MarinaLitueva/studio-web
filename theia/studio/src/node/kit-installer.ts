@@ -47,7 +47,10 @@ export class KitInstallerImpl {
         try {
             const initialized = await this.initializeRepository(repository.canonicalRoot);
             const installed = await this.run(
-                ['kit', 'install', source, '--version', version],
+                // `cfs init` installs the default SDLC kit. The registry request
+                // is authoritative for its version, so materialization must
+                // replace that default (and supports an explicit reinstall).
+                ['kit', 'install', source, '--version', version, '--force'],
                 repository.canonicalRoot
             );
             const generated = await this.run(['generate-agents'], repository.canonicalRoot);

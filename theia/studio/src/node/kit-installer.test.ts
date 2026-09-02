@@ -40,7 +40,7 @@ describe('kit installer', () => {
             },
             {
                 executable: 'cfs',
-                args: ['kit', 'install', 'constructorfabric/studio-kit-sdlc', '--version', 'v1.2.3'],
+                args: ['kit', 'install', 'constructorfabric/studio-kit-sdlc', '--version', 'v1.2.3', '--force'],
                 cwd: '/workspace/app'
             },
             {
@@ -66,7 +66,7 @@ describe('kit installer', () => {
         );
 
         expect(calls).toEqual([
-            ['cfs', 'kit', 'install', 'constructorfabric/studio-kit-sdlc', '--version', 'main'],
+            ['cfs', 'kit', 'install', 'constructorfabric/studio-kit-sdlc', '--version', 'main', '--force'],
             ['cfs', 'generate-agents']
         ]);
     });
