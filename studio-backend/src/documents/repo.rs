@@ -8,7 +8,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use sea_orm::{ColumnTrait, Condition, EntityTrait, IntoActiveModel, QueryFilter};
 use toolkit_db::DBProvider;
-use toolkit_db::secure::{SecureEntityExt, SecureInsertExt, SecureOnConflict};
+use toolkit_db::secure::{SecureDeleteExt, SecureEntityExt, SecureInsertExt, SecureOnConflict};
 use toolkit_security::AccessScope;
 use uuid::Uuid;
 
@@ -133,14 +133,15 @@ impl DocumentsRepo {
         Ok(())
     }
 
-    /// Delete a document. Authorized by a scoped fetch first; the delete itself
-    /// targets the globally-unique primary key.
+    /// Delete a document within its workspace tenant scope.
     pub async fn delete_doc(&self, workspace_id: Uuid, id: Uuid) -> Result<bool> {
-        if self.get_doc(workspace_id, id).await?.is_none() {
-            return Ok(false);
-        }
         let conn = self.db.conn()?;
-        document::Entity::delete_by_id(id).exec(&conn).await?;
-        Ok(true)
+        let result = document::Entity::delete_many()
+            .filter(document::Column::Id.eq(id))
+            .secure()
+            .scope_with(&AccessScope::for_tenant(workspace_id))
+            .exec(&conn)
+            .await?;
+        Ok(result.rows_affected > 0)
     }
 }

@@ -19,7 +19,7 @@ use super::model::{DocStatus, Document, DocumentType, Owner, Rules, Section, Tem
 use super::service::DocumentsService;
 use super::validate::{SectionStatus, ValidationReport};
 
-#[resource_error(gts_id!("cf.studio.documents.v1~"))]
+#[resource_error(gts_id!("cf.studio._.documents.v1~"))]
 pub struct DocumentsError;
 
 struct License;

@@ -79,7 +79,7 @@ pub struct CatalogNodeListResponse {
 
 /// Open, Studio-owned metadata for a gear. The payload is intentionally
 /// extensible: it holds delivery metrics and links that crates.io cannot know.
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug)]
 #[toolkit_macros::api_dto(request)]
 pub struct SaveGearProfileRequest {
     #[schema(value_type = Object)]
