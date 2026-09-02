@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import * as childProcess from 'child_process';
+import { promises as fs } from 'fs';
 import { KitInstallerImpl } from './kit-installer';
 import type { RepositoryRegistry } from './repository-registry';
 
@@ -34,6 +35,11 @@ describe('kit installer', () => {
         expect(calls).toEqual([
             {
                 executable: 'cfs',
+                args: ['init', '--yes', '--migrate-from-cypilot=no', '--update-legacy-studio=no'],
+                cwd: '/workspace/app'
+            },
+            {
+                executable: 'cfs',
                 args: ['kit', 'install', 'constructorfabric/studio-kit-sdlc', '--version', 'v1.2.3'],
                 cwd: '/workspace/app'
             },
@@ -42,6 +48,26 @@ describe('kit installer', () => {
                 args: ['generate-agents'],
                 cwd: '/workspace/app'
             }
+        ]);
+    });
+
+    it('does not reinitialize a repository that already has Studio configured', async () => {
+        const calls: string[][] = [];
+        jest.spyOn(fs, 'access').mockResolvedValue(undefined);
+        jest.spyOn(childProcess, 'execFile').mockImplementation(((executable, args, options, callback) => {
+            calls.push([String(executable), ...(args ?? []).map(String)]);
+            (callback as ExecFileCallback)(null, 'ok', '');
+            return {} as childProcess.ChildProcess;
+        }) as typeof childProcess.execFile);
+
+        await new KitInstallerImpl().install(
+            { kitSlug: 'sdlc', version: 'main' },
+            registry([{ id: 'repo-1', label: 'app', root: '/workspace/app' }])
+        );
+
+        expect(calls).toEqual([
+            ['cfs', 'kit', 'install', 'constructorfabric/studio-kit-sdlc', '--version', 'main'],
+            ['cfs', 'generate-agents']
         ]);
     });
 
@@ -78,7 +104,7 @@ describe('kit installer', () => {
         // deepest-first, so a positional default would have installed the kit
         // into a source clone instead of the project root.
         expect(result).toMatchObject({ repositoryId: 'repo-project', repositoryLabel: 'project' });
-        expect(directories).toEqual(['/workspace', '/workspace']);
+        expect(directories).toEqual(['/workspace', '/workspace', '/workspace']);
     });
 
     it('reports both streams when cfs fails, with stdout first', async () => {

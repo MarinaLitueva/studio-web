@@ -1,4 +1,6 @@
 import { execFile } from 'child_process';
+import { promises as fs } from 'fs';
+import * as path from 'path';
 import { injectable } from '@theia/core/shared/inversify';
 
 import { RepositoryRegistry } from './repository-registry';
@@ -43,6 +45,7 @@ export class KitInstallerImpl {
 
         this.activeRepositories.add(repository.descriptor.repositoryId);
         try {
+            const initialized = await this.initializeRepository(repository.canonicalRoot);
             const installed = await this.run(
                 ['kit', 'install', source, '--version', version],
                 repository.canonicalRoot
@@ -53,11 +56,36 @@ export class KitInstallerImpl {
                 version,
                 repositoryId: repository.descriptor.repositoryId,
                 repositoryLabel: repository.descriptor.label,
-                output: joinOutput(installed, generated)
+                output: joinOutput(...(initialized ? [initialized] : []), installed, generated)
             };
         } finally {
             this.activeRepositories.delete(repository.descriptor.repositoryId);
         }
+    }
+
+    /**
+     * `cfs kit install` deliberately assumes a repository has already been
+     * prepared by `cfs init`. A Studio Web project can be connected to an
+     * existing Git repository, though, so its first kit request is also the
+     * first time anyone has prepared that checkout. Bootstrap exactly once;
+     * subsequent kit updates must not rewrite an existing Studio setup.
+     */
+    protected async initializeRepository(cwd: string): Promise<CommandResult | undefined> {
+        try {
+            await fs.access(path.join(cwd, '.cf-studio'));
+            return undefined;
+        } catch (error) {
+            if (!isMissingPath(error)) {
+                throw error;
+            }
+        }
+
+        return this.run([
+            'init',
+            '--yes',
+            '--migrate-from-cypilot=no',
+            '--update-legacy-studio=no'
+        ], cwd);
     }
 
     protected run(arguments_: readonly string[], cwd: string): Promise<CommandResult> {
@@ -155,6 +183,13 @@ function isSafeGitRef(value: string): boolean {
         && !value.includes('@{')
         && !value.endsWith('/')
         && !value.endsWith('.lock');
+}
+
+function isMissingPath(error: unknown): boolean {
+    return typeof error === 'object'
+        && error !== null
+        && 'code' in error
+        && error.code === 'ENOENT';
 }
 
 function joinOutput(...results: readonly CommandResult[]): string {
