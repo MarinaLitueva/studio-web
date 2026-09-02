@@ -23,16 +23,6 @@ pub enum Owner {
     Workspace { tenant_id: Uuid },
 }
 
-impl Owner {
-    /// The owning tenant, if any (`None` for built-ins).
-    pub fn tenant(&self) -> Option<Uuid> {
-        match self {
-            Owner::Builtin => None,
-            Owner::Workspace { tenant_id } => Some(*tenant_id),
-        }
-    }
-}
-
 /// One expected section of a document, as a checklist item.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Section {

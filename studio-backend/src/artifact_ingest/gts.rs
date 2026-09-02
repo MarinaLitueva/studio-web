@@ -218,6 +218,7 @@ pub fn file_node(
 /// A File node built from a real checkout on disk: same identity as the
 /// tree-API node (keyed on path, so the two channels upsert the same instance),
 /// but carrying the snapshot `commit` and, for text files, their `text`.
+#[allow(clippy::too_many_arguments)]
 pub fn file_node_cloned(
     scope_key: &str,
     repo_id: &str,

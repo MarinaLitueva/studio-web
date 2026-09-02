@@ -104,7 +104,7 @@ fn headings(body: &str) -> Vec<Heading> {
     for line in lines {
         let trimmed = line.trim_start();
         let hashes = trimmed.chars().take_while(|c| *c == '#').count();
-        let is_heading = hashes >= 1 && hashes <= 6 && trimmed.chars().nth(hashes) == Some(' ');
+        let is_heading = (1..=6).contains(&hashes) && trimmed.chars().nth(hashes) == Some(' ');
         if is_heading {
             if have_head {
                 flush(&mut heads, cur_level, &cur_title, pending_body);
@@ -234,21 +234,21 @@ fn has_angle_placeholder(content: &str) -> bool {
     let bytes = content.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i] == b'<' {
-            if let Some(close) = content[i + 1..].find('>') {
-                let inner = &content[i + 1..i + 1 + close];
-                let ok = !inner.is_empty()
-                    && inner.len() <= 40
-                    && inner
-                        .chars()
-                        .all(|c| c.is_ascii_lowercase() || c == ' ' || c == '-')
-                    && inner.chars().any(|c| c.is_ascii_lowercase());
-                if ok {
-                    return true;
-                }
-                i += close + 1;
-                continue;
+        if bytes[i] == b'<'
+            && let Some(close) = content[i + 1..].find('>')
+        {
+            let inner = &content[i + 1..i + 1 + close];
+            let ok = !inner.is_empty()
+                && inner.len() <= 40
+                && inner
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c == ' ' || c == '-')
+                && inner.chars().any(|c| c.is_ascii_lowercase());
+            if ok {
+                return true;
             }
+            i += close + 1;
+            continue;
         }
         i += 1;
     }
