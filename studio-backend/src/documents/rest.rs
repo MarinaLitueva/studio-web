@@ -33,7 +33,7 @@ impl LicenseFeature for License {}
 // ── DTOs ─────────────────────────────────────────────────────────────────────
 
 #[derive(Debug)]
-#[toolkit_macros::api_dto(response)]
+#[toolkit_macros::api_dto(request, response)]
 pub struct SectionDto {
     pub key: String,
     pub title: String,
@@ -43,7 +43,7 @@ pub struct SectionDto {
 }
 
 #[derive(Debug)]
-#[toolkit_macros::api_dto(response)]
+#[toolkit_macros::api_dto(request, response)]
 pub struct RulesDto {
     pub warn_unknown_sections: bool,
     pub front_matter: Vec<String>,
@@ -281,7 +281,9 @@ fn invalid(error: anyhow::Error) -> CanonicalError {
 /// A tenant the caller cannot resolve reads as not-found rather than leaking
 /// its existence (the endpoint refuses to be an existence oracle).
 fn no_tenant(_error: anyhow::Error) -> CanonicalError {
-    DocumentsError::not_found("workspace or project not found or not accessible").create()
+    DocumentsError::not_found("workspace or project not found or not accessible")
+        .with_resource("tenant")
+        .create()
 }
 
 // ── handlers ─────────────────────────────────────────────────────────────────
@@ -443,7 +445,11 @@ async fn get_document(
         .get_document(workspace_id, id)
         .await
         .map_err(internal)?
-        .ok_or_else(|| DocumentsError::not_found("no such document").create())?;
+        .ok_or_else(|| {
+            DocumentsError::not_found("no such document")
+                .with_resource("document")
+                .create()
+        })?;
     Ok(Json(document_dto(doc, false)))
 }
 
