@@ -1,9 +1,3 @@
-/*
- * Sizes and colours come from ui-kit tokens (theme.css) and its text roles —
- * never px off the mockup. The two literals are the table's column widths,
- * which no token can express.
- */
-
 .screen {
   display: flex;
   flex-direction: column;
@@ -39,11 +33,6 @@
   height: var(--text-display-line-height);
 }
 
-/*
- * The kit's Input has no size variant — its height is fixed at
- * --control-height-lg — so the toolbar's 32px row is set here, to match
- * Button/SelectTrigger at size="sm".
- */
 .search {
   width: 13rem;
   height: var(--control-height-sm);
@@ -204,14 +193,6 @@
   display: inline-flex;
   align-items: center;
   color: var(--warning);
-}
-
-.statusBadge {
-  height: auto;
-  min-height: 1.5rem;
-  max-inline-size: 100%;
-  white-space: normal;
-  overflow-wrap: break-word;
 }
 
 .colUpdated {
