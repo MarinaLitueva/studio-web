@@ -361,8 +361,7 @@ impl IngestService {
             for i in batch {
                 let author = i.author.clone();
                 let number = i.number;
-                let node =
-                    gts::issue_node(source_scope, &repo_id, connector_id, repo_full_path, i);
+                let node = gts::issue_node(source_scope, &repo_id, connector_id, repo_full_path, i);
                 edges.push(gts::artifact_of_edge(&node.instance_id, &repo_id));
                 author_edge(&mut edges, &mut users, &node.instance_id, author.as_deref());
                 by_number.insert(number, node.instance_id.clone());
@@ -514,13 +513,12 @@ impl IngestService {
                         for f in list.into_iter().filter(|f| !f.is_dir).take(MAX_FILES) {
                             files += 1;
                             let path = f.path.clone();
-                            let file_id =
-                                gts::file_instance_id(
-                                    source_scope,
-                                    connector_id,
-                                    repo_full_path,
-                                    &path,
-                                );
+                            let file_id = gts::file_instance_id(
+                                source_scope,
+                                connector_id,
+                                repo_full_path,
+                                &path,
+                            );
                             edges.push(gts::contains_edge(&repo_id, &file_id));
                             file_paths.insert(path);
                             nodes.push(gts::file_node(
@@ -573,13 +571,12 @@ impl IngestService {
                     Ok(paths) => {
                         for path in paths {
                             if file_paths.contains(&path) {
-                                let file_id =
-                                    gts::file_instance_id(
-                                        source_scope,
-                                        connector_id,
-                                        repo_full_path,
-                                        &path,
-                                    );
+                                let file_id = gts::file_instance_id(
+                                    source_scope,
+                                    connector_id,
+                                    repo_full_path,
+                                    &path,
+                                );
                                 edges.push(gts::modifies_edge(pr_id, &file_id));
                             }
                         }

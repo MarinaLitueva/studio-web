@@ -431,23 +431,23 @@ async fn list_nodes(
         .map_err(|e| CanonicalError::internal(format!("{e:#}")).create())?;
     let limit = q.limit.unwrap_or(50).clamp(1, 200);
     let mut nodes: Vec<_> = nodes
-            .into_iter()
-            .filter(|n| node_in_scope(&n.value, scope))
-            .map(|n| {
-                // File nodes carry full text content; drop it from the listing
-                // so the payload stays small (`has_text` still flags it). A
-                // dedicated content endpoint can serve the body when needed.
-                let mut value = n.value;
-                if let Some(obj) = value.as_object_mut() {
-                    obj.remove("text");
-                }
-                ArtifactNodeDto {
-                    type_id: n.type_id.to_string(),
-                    instance_id: n.instance_id,
-                    value,
-                }
-            })
-            .collect();
+        .into_iter()
+        .filter(|n| node_in_scope(&n.value, scope))
+        .map(|n| {
+            // File nodes carry full text content; drop it from the listing
+            // so the payload stays small (`has_text` still flags it). A
+            // dedicated content endpoint can serve the body when needed.
+            let mut value = n.value;
+            if let Some(obj) = value.as_object_mut() {
+                obj.remove("text");
+            }
+            ArtifactNodeDto {
+                type_id: n.type_id.to_string(),
+                instance_id: n.instance_id,
+                value,
+            }
+        })
+        .collect();
     // The graph adapters may return storage pages in different orders. Sort by
     // stable instance id here, then use the last returned id as the opaque
     // continuation token; the API stays deterministic across adapters.

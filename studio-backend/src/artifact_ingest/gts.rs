@@ -252,7 +252,13 @@ pub fn pull_request_node(
 ) -> GtsNode {
     GtsNode {
         type_id: PULL_REQUEST_TYPE,
-        instance_id: anon_id(&[scope_key, connector_id, repo_full_path, "pull_request", &p.id]),
+        instance_id: anon_id(&[
+            scope_key,
+            connector_id,
+            repo_full_path,
+            "pull_request",
+            &p.id,
+        ]),
         value: json!({
             "repo": repo_id,
             "external_id": p.id,
