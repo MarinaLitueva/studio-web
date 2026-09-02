@@ -73,17 +73,28 @@ impl toolkit::Gear for StudioDocumentsGear {
         let account_management = ctx.client_hub().get::<dyn AccountManagementClient>()?;
 
         // Register the document GTS types (the two base types plus the built-in
-        // catalogue). types-registry is a declared dependency, so it has
-        // initialized before this runs; idempotent across boots.
-        let registry = ctx.client_hub().get::<dyn TypesRegistryClient>()?;
-        let results = registry.register(gts::type_schemas()).await?;
-        RegisterResult::ensure_all_ok(&results)?;
+        // catalogue) for discovery. Best-effort: registration is not required for
+        // the gear to function (it has its own storage), so a registry that is
+        // unavailable or rejects a schema must not take the whole backend down.
+        match ctx.client_hub().get::<dyn TypesRegistryClient>() {
+            Ok(registry) => match registry.register(gts::type_schemas()).await {
+                Ok(results) => {
+                    if let Err(e) = RegisterResult::ensure_all_ok(&results) {
+                        warn!("studio-documents: some document types were not registered: {e}");
+                    }
+                }
+                Err(e) => warn!("studio-documents: type registration failed: {e}"),
+            },
+            Err(e) => {
+                warn!("studio-documents: types-registry unavailable, skipping registration: {e}")
+            }
+        }
 
         let service = Arc::new(DocumentsService::new(repo, account_management));
         self.service
             .set(service)
             .map_err(|_| anyhow::anyhow!("studio-documents already initialized"))?;
-        info!("studio-documents: initialized (types registered)");
+        info!("studio-documents: initialized");
         Ok(())
     }
 }

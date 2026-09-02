@@ -52,6 +52,7 @@ spec:
         - CREATE DATABASE studio_credstore OWNER studio
         - CREATE DATABASE studio_credstore_values OWNER studio
         - CREATE DATABASE graph_storage OWNER studio
+        - CREATE DATABASE studio_documents OWNER studio
   storage:
     storageClass: cinder-postgres
     size: 20Gi

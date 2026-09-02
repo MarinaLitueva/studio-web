@@ -10,8 +10,8 @@ use serde_json::{Value, json};
 
 use super::model::{builtin_types, type_gts_id};
 
-pub const DOCUMENT_TYPE: &str = "gts.cf.studio.document_type.v1~";
-pub const DOCUMENT: &str = "gts.cf.studio.document.v1~";
+pub const DOCUMENT_TYPE: &str = "gts.cf.studio.doc.document_type.v1~";
+pub const DOCUMENT: &str = "gts.cf.studio.doc.document.v1~";
 
 /// Schemas registered at gear init.
 pub fn type_schemas() -> Vec<Value> {

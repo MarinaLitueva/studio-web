@@ -23,6 +23,7 @@ data:
     CREATE DATABASE studio_credstore OWNER studio;
     CREATE DATABASE studio_credstore_values OWNER studio;
     CREATE DATABASE studio_projects OWNER studio;
+    CREATE DATABASE studio_documents OWNER studio;
 ---
 apiVersion: apps/v1
 kind: StatefulSet
