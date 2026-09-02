@@ -354,6 +354,11 @@ gears:
   # Key changed    -> old rows no longer decrypt and read as absent; they are
   #                   re-sealed on the next write (bootstrap at boot, or the
   #                   user re-entering a token).
+  studio-documents:
+    database:
+      server: "pg_main"
+      dbname: "studio_documents"
+
   studio-credstore-pg:
     database:
       server: "pg_main"

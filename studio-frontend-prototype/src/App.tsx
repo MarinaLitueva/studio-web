@@ -9,6 +9,7 @@ import { StudioAI } from "./studio-ai";
 import { SpecQuality } from "./spec-quality";
 import { GearsCatalog } from "./gears-catalog";
 import { ProjectKits } from "./kits";
+import { DocumentsTab } from "./documents";
 import {
   ACCESS_MODELS,
   defaultAccessConfig,
@@ -2509,10 +2510,11 @@ function WorkspaceProjects({
  *  the stage list is validated against the catalogue, both client-side now. */
 /** The sections of an open project. Lifted so the shell sidebar can BE the
  *  project's nav (the tab is stored on the shell, not inside ProjectScreen). */
-type ProjTab = "overview" | "artifacts" | "kits" | "analyze" | "automation" | "people";
+type ProjTab = "overview" | "artifacts" | "documents" | "kits" | "analyze" | "automation" | "people";
 const PROJECT_TABS: { id: ProjTab; icon: string; label: string }[] = [
   { id: "overview", icon: "home", label: "Overview" },
   { id: "artifacts", icon: "file", label: "Artifacts" },
+  { id: "documents", icon: "file", label: "Documents" },
   { id: "kits", icon: "package", label: "Kits" },
   { id: "analyze", icon: "scan", label: "Spec Quality" },
   { id: "automation", icon: "shield", label: "Automation" },
@@ -2598,6 +2600,9 @@ function ProjectScreen({
           />
         )}
         {tab === "kits" && <ProjectKits token={token} projectId={proj.id} />}
+        {tab === "documents" && (
+          <DocumentsTab token={token} workspaceId={workspace.id} projectTenantId={proj.id} />
+        )}
         {tab === "analyze" && (
           <SpecQuality token={token} workspaceId={proj.id} parentWorkspaceId={workspace.id} />
         )}

@@ -2,7 +2,7 @@ import * as React from '@theia/core/shared/react';
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { Message } from '@theia/core/lib/browser/widgets/widget';
-import { StudioApi } from './studio-api';
+import { StudioApi } from './portal-bridge-contribution';
 import { OpenInEditorFrontendController } from './open-in-editor-controller';
 
 // Local mirror of the studio-artifact-ingest DTOs. Index signatures let the
@@ -115,6 +115,48 @@ function shortLabel(kind: GraphKind, label: string): string {
     return label.length > 30 ? `${label.slice(0, 29)}…` : label;
 }
 
+// ── Clustering ──
+// A 2000-file repo renders as one hub with a uniform burst of leaves. Grouping
+// assigns each node a cluster; the layout then anchors clusters apart and the
+// draw pass tints each as a labelled region, so the burst reads as structure.
+type GroupMode = 'folder' | 'repo' | 'type';
+const GROUP_LABEL: Record<GroupMode, string> = { folder: 'Folder', repo: 'Repository', type: 'Type' };
+
+/** Stable low-saturation hue from a cluster key, for its hull tint. */
+function clusterHue(key: string): number {
+    let h = 2166136261;
+    for (let i = 0; i < key.length; i++) {
+        h ^= key.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+    }
+    return (h >>> 0) % 360;
+}
+
+/** The cluster a node falls into under the current grouping, plus a short label
+ *  for the hull. `repoNames` maps a repo instance id to its display label. */
+function clusterOf(n: ArtifactNode, mode: GroupMode, repoNames: Map<string, string>): { key: string; label: string } {
+    const kind = nodeKind(n);
+    if (mode === 'type') {
+        return { key: `t:${kind}`, label: KIND_LABEL[kind] };
+    }
+    const repoId = kind === 'repo'
+        ? n.instance_id
+        : (typeof n.value.repo === 'string' ? n.value.repo : '');
+    const repoLabel = (repoId && repoNames.get(repoId)) || (repoId ? repoId.slice(0, 8) : 'unscoped');
+    if (mode === 'repo') {
+        return { key: `r:${repoId || 'none'}`, label: repoLabel };
+    }
+    // folder: files cluster by their top path segment (within their repo);
+    // everything else clusters by kind so issues/PRs/users stay coherent.
+    if (kind === 'file') {
+        const p = typeof n.value.path === 'string' ? n.value.path : '';
+        const segs = p.replace(/^\/+/, '').split('/');
+        const dir = segs.length > 1 ? segs[0] : '(root)';
+        return { key: `f:${repoId}:${dir}`, label: dir };
+    }
+    return { key: `t:${kind}`, label: KIND_LABEL[kind] };
+}
+
 /** Human relation name from an edge type_id (`…rel.modifies…` → `modifies`). */
 function relLabel(typeId: string): string {
     const m = /rel\.([a-z_]+)/.exec(typeId);
@@ -159,6 +201,8 @@ interface SimNode {
     label: string;
     short: string;
     node: ArtifactNode;
+    cluster: string;
+    clusterLabel: string;
     fx: number | undefined;
     fy: number | undefined;
 }
@@ -190,12 +234,21 @@ function themeColors(el: HTMLElement): ThemeColors {
     };
 }
 
+interface GraphModel {
+    sim: SimNode[];
+    edges: SimEdge[];
+    adj: number[][];
+    idIndex: Map<string, number>;
+    anchors: Map<string, { x: number; y: number }>;
+}
+
 function buildModel(
     nodes: readonly ArtifactNode[],
     edges: readonly ArtifactEdge[],
     visibleKinds: ReadonlySet<GraphKind>,
     hideLeafFiles: boolean,
-): { sim: SimNode[]; edges: SimEdge[]; adj: number[][]; idIndex: Map<string, number> } {
+    groupMode: GroupMode,
+): GraphModel {
     const visible = nodes.filter(n => visibleKinds.has(nodeKind(n)));
     const indexById = new Map<string, number>();
     visible.forEach((n, i) => indexById.set(n.instance_id, i));
@@ -242,6 +295,13 @@ function buildModel(
     keep.forEach((old, neu) => remap.set(old, neu));
 
     const GOLDEN = 2.399963229728653;
+    // Repo id → label, so folder/repo clusters get a human name.
+    const repoNames = new Map<string, string>();
+    for (const n of visible) {
+        if (nodeKind(n) === 'repo') {
+            repoNames.set(n.instance_id, nodeLabel(n));
+        }
+    }
     const idIndex = new Map<string, number>();
     const sim: SimNode[] = keep.map((old, i) => {
         const n = visible[old];
@@ -249,6 +309,7 @@ function buildModel(
         const label = nodeLabel(n);
         const deg = degree[old];
         const rad = 6 * Math.sqrt(i + 1);
+        const cl = clusterOf(n, groupMode, repoNames);
         idIndex.set(n.instance_id, i);
         return {
             x: Math.cos(i * GOLDEN) * rad,
@@ -261,10 +322,28 @@ function buildModel(
             label,
             short: shortLabel(kind, label),
             node: n,
+            cluster: cl.key,
+            clusterLabel: cl.label,
             fx: undefined,
             fy: undefined,
         };
     });
+
+    // Cluster anchors: the largest cluster sits at the centre, the rest spiral
+    // out on a golden angle so groups occupy distinct regions of the canvas
+    // instead of collapsing into one burst around the hub.
+    const clusterSizes = new Map<string, number>();
+    for (const s of sim) {
+        clusterSizes.set(s.cluster, (clusterSizes.get(s.cluster) ?? 0) + 1);
+    }
+    const anchors = new Map<string, { x: number; y: number }>();
+    [...clusterSizes.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .forEach(([key], i) => {
+            const ar = 150 * Math.sqrt(i);
+            const aa = i * GOLDEN;
+            anchors.set(key, { x: Math.cos(aa) * ar, y: Math.sin(aa) * ar });
+        });
 
     const simEdges: SimEdge[] = [];
     for (const p of pairs) {
@@ -279,7 +358,7 @@ function buildModel(
         adj[e.a].push(e.b);
         adj[e.b].push(e.a);
     }
-    return { sim, edges: simEdges, adj, idIndex };
+    return { sim, edges: simEdges, adj, idIndex, anchors };
 }
 
 // Distance from point p to segment ab (world units).
@@ -301,6 +380,8 @@ interface ForceGraphProps {
     readonly edges: readonly ArtifactEdge[];
     readonly kindsKey: string;
     readonly hideLeafFiles: boolean;
+    readonly groupMode: GroupMode;
+    readonly showClusters: boolean;
     readonly query: string;
     readonly selectedToken: string;                       // 'node:<id>' | 'edge:<from>|<to>' | ''
     readonly onSelectNode: (n: ArtifactNode | undefined) => void;
@@ -314,8 +395,8 @@ function ForceGraph(props: ForceGraphProps): React.ReactElement {
     const containerRef = React.useRef<HTMLDivElement | null>(null);
     const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
 
-    const model = React.useRef<{ sim: SimNode[]; edges: SimEdge[]; adj: number[][]; idIndex: Map<string, number> }>(
-        { sim: [], edges: [], adj: [], idIndex: new Map() });
+    const model = React.useRef<GraphModel>(
+        { sim: [], edges: [], adj: [], idIndex: new Map(), anchors: new Map() });
     const view = React.useRef({ k: 1, tx: 0, ty: 0 });
     const alpha = React.useRef(1);
     const running = React.useRef(false);
@@ -330,7 +411,7 @@ function ForceGraph(props: ForceGraphProps): React.ReactElement {
     const size = React.useRef({ w: 1, h: 1, dpr: 1 });
 
     const {
-        nodes, edges, kindsKey, hideLeafFiles, query, selectedToken,
+        nodes, edges, kindsKey, hideLeafFiles, groupMode, showClusters, query, selectedToken,
         onSelectNode, onSelectEdge, fitSignal, focusId, focusSignal,
     } = props;
 
@@ -366,7 +447,7 @@ function ForceGraph(props: ForceGraphProps): React.ReactElement {
 
     React.useEffect(() => {
         const visibleKinds = new Set(kindsKey.split(',').filter(Boolean) as GraphKind[]);
-        model.current = buildModel(nodes, edges, visibleKinds, hideLeafFiles);
+        model.current = buildModel(nodes, edges, visibleKinds, hideLeafFiles, groupMode);
         recomputeMatches(query);
         applySelection(selectedToken);
         alpha.current = 1;
@@ -374,7 +455,12 @@ function ForceGraph(props: ForceGraphProps): React.ReactElement {
         const t = window.setTimeout(() => fit(), 900);
         return () => window.clearTimeout(t);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [nodes, edges, kindsKey, hideLeafFiles]);
+    }, [nodes, edges, kindsKey, hideLeafFiles, groupMode]);
+
+    React.useEffect(() => {
+        draw();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [showClusters]);
 
     React.useEffect(() => {
         recomputeMatches(query);
@@ -457,6 +543,13 @@ function ForceGraph(props: ForceGraphProps): React.ReactElement {
         const GRAVITY = 0.025;
         const VDECAY = 0.82;
         const MAXV = 40;
+        // Pull toward the node's cluster anchor instead of the origin, so groups
+        // settle into separate regions. Springs to a super-hub (a repo with
+        // hundreds of contained files) are damped, or every leaf snaps back to
+        // the centre and the clustering is undone.
+        const CLUSTER_PULL = 0.05;
+        const HUB_DEGREE = 120;
+        const anchors = model.current.anchors;
 
         const grid = new Map<number, number[]>();
         const key = (cx: number, cy: number): number => (cx + 16384) * 40000 + (cy + 16384);
@@ -520,7 +613,8 @@ function ForceGraph(props: ForceGraphProps): React.ReactElement {
             const dx = nb.x - na.x;
             const dy = nb.y - na.y;
             const d = Math.sqrt(dx * dx + dy * dy) || 0.01;
-            const f = ((d - LINK) / d) * SPRING * a;
+            const spring = (na.degree > HUB_DEGREE || nb.degree > HUB_DEGREE) ? SPRING * 0.12 : SPRING;
+            const f = ((d - LINK) / d) * spring * a;
             ax[e.a] += dx * f;
             ay[e.a] += dy * f;
             ax[e.b] -= dx * f;
@@ -528,8 +622,14 @@ function ForceGraph(props: ForceGraphProps): React.ReactElement {
         }
 
         for (let i = 0; i < n; i++) {
-            ax[i] += -sim[i].x * GRAVITY * a;
-            ay[i] += -sim[i].y * GRAVITY * a;
+            const an = anchors.get(sim[i].cluster);
+            if (an) {
+                ax[i] += (an.x - sim[i].x) * CLUSTER_PULL * a;
+                ay[i] += (an.y - sim[i].y) * CLUSTER_PULL * a;
+            } else {
+                ax[i] += -sim[i].x * GRAVITY * a;
+                ay[i] += -sim[i].y * GRAVITY * a;
+            }
         }
 
         for (let i = 0; i < n; i++) {
@@ -602,6 +702,54 @@ function ForceGraph(props: ForceGraphProps): React.ReactElement {
         ctx.fillRect(0, 0, w, h);
         ctx.translate(tx, ty);
         ctx.scale(k, k);
+
+        // Cluster hulls: a soft tinted disc + label behind each group, at
+        // overview zoom, so a 2000-node burst reads as labelled regions.
+        if (showClusters && k < 2.2 && sim.length > 0) {
+            const acc = new Map<string, { x: number; y: number; n: number; label: string }>();
+            for (const s of sim) {
+                const g = acc.get(s.cluster);
+                if (g) {
+                    g.x += s.x;
+                    g.y += s.y;
+                    g.n++;
+                } else {
+                    acc.set(s.cluster, { x: s.x, y: s.y, n: 1, label: s.clusterLabel });
+                }
+            }
+            const rad = new Map<string, number>();
+            for (const [key, g] of acc) {
+                g.x /= g.n;
+                g.y /= g.n;
+                rad.set(key, 0);
+            }
+            for (const s of sim) {
+                const g = acc.get(s.cluster)!;
+                const d = Math.hypot(s.x - g.x, s.y - g.y);
+                if (d > (rad.get(s.cluster) ?? 0)) {
+                    rad.set(s.cluster, d);
+                }
+            }
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.font = `${Math.max(11, 15 / Math.sqrt(k))}px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
+            for (const [key, g] of acc) {
+                if (g.n < 3) {
+                    continue;
+                }
+                const rr = (rad.get(key) ?? 0) + 14;
+                const hue = clusterHue(key);
+                ctx.beginPath();
+                ctx.arc(g.x, g.y, rr, 0, Math.PI * 2);
+                ctx.fillStyle = `hsla(${hue}, 55%, 55%, 0.07)`;
+                ctx.fill();
+                ctx.lineWidth = 1 / k;
+                ctx.strokeStyle = `hsla(${hue}, 55%, 55%, 0.28)`;
+                ctx.stroke();
+                ctx.fillStyle = theme.muted;
+                ctx.fillText(`${g.label} · ${g.n}`, g.x, g.y - rr - 2 / k);
+            }
+        }
 
         // Edges.
         ctx.strokeStyle = theme.text;
@@ -925,6 +1073,8 @@ export class ArtifactGraphWidget extends ReactWidget {
     protected error: string | undefined;
     protected loading = false;
     protected hideLeafFiles = false;
+    protected groupMode: GroupMode = 'folder';
+    protected showClusters = true;
     protected selection: Selection | undefined;
     protected fitSignal = 0;
     protected focusSignal = 0;
@@ -1234,6 +1384,20 @@ export class ArtifactGraphWidget extends ReactWidget {
                     {ALL_KINDS.map(chip)}
                     <span style={{ flex: 1 }} />
                     <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
+                        Group by
+                        <select value={this.groupMode} className='theia-select'
+                            onChange={e => { this.groupMode = e.target.value as GroupMode; this.update(); }}
+                            style={{ fontSize: 11 }}>
+                            {(['folder', 'repo', 'type'] as GroupMode[]).map(m => (
+                                <option key={m} value={m}>{GROUP_LABEL[m]}</option>
+                            ))}
+                        </select>
+                    </label>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
+                        <input type='checkbox' checked={this.showClusters} onChange={e => { this.showClusters = e.target.checked; this.update(); }} />
+                        Clusters
+                    </label>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
                         <input type='checkbox' checked={this.hideLeafFiles} onChange={e => { this.hideLeafFiles = e.target.checked; this.update(); }} />
                         Hide unlinked files
                     </label>
@@ -1258,6 +1422,8 @@ export class ArtifactGraphWidget extends ReactWidget {
                                     edges={edges}
                                     kindsKey={this.kindsKey()}
                                     hideLeafFiles={this.hideLeafFiles}
+                                    groupMode={this.groupMode}
+                                    showClusters={this.showClusters}
                                     query={this.query}
                                     selectedToken={this.selectionToken()}
                                     onSelectNode={this.selectNode}

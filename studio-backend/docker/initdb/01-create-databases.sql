@@ -16,3 +16,5 @@ CREATE DATABASE studio_credstore_values OWNER studio;
 -- index here. This DB used to be POSTGRES_DB on a separate instance; on the
 -- single instance the admin DB is `studio`, so create graph_storage explicitly.
 CREATE DATABASE graph_storage OWNER studio;
+-- studio-documents gear: document types + instances.
+CREATE DATABASE studio_documents OWNER studio;

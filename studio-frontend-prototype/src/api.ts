@@ -717,9 +717,145 @@ export async function uploadProjectArtifact(
   };
 }
 
+/* ── studio-documents gear shapes ── */
+
+export interface DocSection {
+  key: string;
+  title: string;
+  required: boolean;
+  min_words?: number | null;
+  description?: string | null;
+}
+export interface DocRules {
+  warn_unknown_sections: boolean;
+  front_matter: string[];
+  forbid_placeholders: boolean;
+  min_title_words: number;
+}
+export interface DocType {
+  key: string;
+  name: string;
+  description: string;
+  gts_type_id: string;
+  owner: "builtin" | "workspace";
+  owner_tenant_id?: string | null;
+  body: string;
+  sections: DocSection[];
+  rules: DocRules;
+}
+export interface Doc {
+  id: string;
+  tenant_id: string;
+  project_id?: string | null;
+  inherited: boolean;
+  type_key: string;
+  title: string;
+  content: string;
+  status: "draft" | "review" | "approved";
+  conforms: boolean;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+export interface DocSectionStatus {
+  key: string;
+  title: string;
+  present: boolean;
+  word_count: number;
+  required: boolean;
+  ok: boolean;
+}
+export interface DocValidation {
+  conforms: boolean;
+  sections: DocSectionStatus[];
+  issues: string[];
+}
+
 export const api = {
   /** Login = validate the token by asking the backend who we are. */
   me: (token: string) => request<Me>("/account-management/v1/me", token),
+
+  /* ── studio-documents gear (types + templates + validation) ── */
+
+  docTypes: (token: string, workspaceId: string) =>
+    request<{ items: DocType[] }>(
+      `/studio-documents/v1/workspaces/${workspaceId}/types`,
+      token,
+    ),
+
+  upsertDocType: (
+    token: string,
+    workspaceId: string,
+    body: {
+      key: string;
+      name: string;
+      description?: string;
+      body: string;
+      sections: DocSection[];
+      rules?: DocRules;
+    },
+  ) =>
+    request<DocType>(`/studio-documents/v1/workspaces/${workspaceId}/types`, token, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  workspaceDocuments: (token: string, workspaceId: string) =>
+    request<{ items: Doc[] }>(
+      `/studio-documents/v1/workspaces/${workspaceId}/documents`,
+      token,
+    ),
+
+  projectDocuments: (token: string, workspaceId: string, projectId: string) =>
+    request<{ items: Doc[] }>(
+      `/studio-documents/v1/workspaces/${workspaceId}/projects/${projectId}/documents`,
+      token,
+    ),
+
+  createWorkspaceDocument: (
+    token: string,
+    workspaceId: string,
+    body: { type_key: string; title: string; content?: string },
+  ) =>
+    request<Doc>(`/studio-documents/v1/workspaces/${workspaceId}/documents`, token, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  createProjectDocument: (
+    token: string,
+    workspaceId: string,
+    projectId: string,
+    body: { type_key: string; title: string; content?: string },
+  ) =>
+    request<Doc>(
+      `/studio-documents/v1/workspaces/${workspaceId}/projects/${projectId}/documents`,
+      token,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
+  updateDocument: (
+    token: string,
+    workspaceId: string,
+    id: string,
+    body: { title?: string; content?: string; status?: string },
+  ) =>
+    request<Doc>(`/studio-documents/v1/workspaces/${workspaceId}/documents/${id}`, token, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+
+  validateDocument: (token: string, workspaceId: string, id: string) =>
+    request<DocValidation>(
+      `/studio-documents/v1/workspaces/${workspaceId}/documents/${id}/validate`,
+      token,
+      { method: "POST" },
+    ),
+
+  deleteDocument: (token: string, workspaceId: string, id: string) =>
+    request<void>(`/studio-documents/v1/workspaces/${workspaceId}/documents/${id}`, token, {
+      method: "DELETE",
+    }),
 
   /* ── Studio kit registry (prototype only) ── */
 
