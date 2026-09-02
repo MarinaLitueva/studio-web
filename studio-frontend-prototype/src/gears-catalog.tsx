@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "./api";
 import type { CatalogNode } from "./api";
 import { errText } from "./format";
@@ -17,6 +17,7 @@ export function GearsCatalog({ token }: { token: string }) {
   const [sync, setSync] = useState<string>("");
   const [q, setQ] = useState("");
   const [kind, setKind] = useState<string>("all");
+  const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
 
   const reload = useCallback(async () => {
     setErr(null);
@@ -135,6 +136,22 @@ export function GearsCatalog({ token }: { token: string }) {
                 </option>
               ))}
             </select>
+            <div style={{ display: "flex", gap: 2 }} aria-label="Gears view">
+              <button
+                className={viewMode === "cards" ? "primary" : ""}
+                onClick={() => setViewMode("cards")}
+                aria-pressed={viewMode === "cards"}
+              >
+                Cards
+              </button>
+              <button
+                className={viewMode === "table" ? "primary" : ""}
+                onClick={() => setViewMode("table")}
+                aria-pressed={viewMode === "table"}
+              >
+                Table
+              </button>
+            </div>
           </div>
           <button className="primary" disabled={busy} onClick={() => void runSync()}>
             {syncing ? "Syncing…" : "Sync from crates.io"}
@@ -152,7 +169,7 @@ export function GearsCatalog({ token }: { token: string }) {
               : "No gears match the current filter."}
           </p>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(330px, 1fr))", gap: 12 }}>
+          viewMode === "cards" ? <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(330px, 1fr))", gap: 12 }}>
             {visible.map((gear) => {
               const name = String(gear.value.name ?? gear.instance_id);
               return (
@@ -168,11 +185,47 @@ export function GearsCatalog({ token }: { token: string }) {
                 />
               );
             })}
-          </div>
+          </div> : <GearTable gears={visible} profiles={profiles} expanded={expanded} versions={versions} onToggle={toggle} />
         )}
       </div>
     </>
   );
+}
+
+function GearTable({
+  gears,
+  profiles,
+  expanded,
+  versions,
+  onToggle,
+}: {
+  gears: CatalogNode[];
+  profiles: Record<string, Record<string, unknown>>;
+  expanded: string | null;
+  versions: Record<string, CatalogNode[] | undefined>;
+  onToggle: (name: string) => Promise<void>;
+}) {
+  return <table className="ptable">
+    <thead><tr><th>Gear</th><th>Category</th><th>Lifecycle</th><th>Latest</th><th>Versions</th><th>Downloads</th><th>Coverage</th><th>Updated</th></tr></thead>
+    <tbody>{gears.map((gear) => {
+      const name = String(gear.value.name ?? gear.instance_id);
+      const profile = profiles[name];
+      const open = expanded === name;
+      return <Fragment key={gear.instance_id}>
+        <tr onClick={() => void onToggle(name)} style={{ cursor: "pointer" }} title="Show published versions">
+          <td><div className="name">{open ? "▾" : "▸"} {name}</div>{gear.value.description && <div className="sub">{String(gear.value.description)}</div>}</td>
+          <td>{displayValue(profile?.category ?? profile?.domain ?? gear.value.kind ?? "—")}</td>
+          <td>{displayValue(profile?.lifecycle_status ?? "—")}</td>
+          <td><code>{String(gear.value.max_stable_version ?? gear.value.newest_version ?? "—")}</code></td>
+          <td>{numText(gear.value.num_versions)}</td>
+          <td>{numText(gear.value.downloads)}</td>
+          <td>{displayValue(profile?.code_coverage ?? "—")}</td>
+          <td>{dateText(gear.value.updated_at)}</td>
+        </tr>
+        {open && <tr><td colSpan={8} style={{ padding: 0 }}><GearVersions name={name} rows={versions[name]} gear={gear} /></td></tr>}
+      </Fragment>;
+    })}</tbody>
+  </table>;
 }
 
 function GearCard({
