@@ -81,6 +81,45 @@ describe('kit installer', () => {
         expect(directories).toEqual(['/workspace', '/workspace']);
     });
 
+    it('reports both streams when cfs fails, with stdout first', async () => {
+        jest.spyOn(childProcess, 'execFile').mockImplementation(((executable, args, options, callback) => {
+            (callback as ExecFileCallback)(
+                new Error('Command failed: cfs kit install'),
+                'kit manifest is invalid: unknown resource kind "widget"',
+                [
+                    '  Constructor Studio skill engine not found.',
+                    '  Downloading automatically (non-interactive mode)...',
+                    '  Cached: v1.6.2'
+                ].join('\n')
+            );
+            return {} as childProcess.ChildProcess;
+        }) as typeof childProcess.execFile);
+
+        const failure = new KitInstallerImpl().install(
+            { kitSlug: 'sdlc', version: 'main' },
+            registry([{ id: 'repo-1', label: 'app', root: '/workspace/app' }])
+        );
+
+        // The reason lives on stdout while stderr carries only narration. A
+        // `stderr || stdout` fallback reported the narration and lost the
+        // reason entirely -- twice, in a live session.
+        await expect(failure).rejects.toThrow('kit manifest is invalid');
+        // stdout leads: both consumers downstream truncate from the front.
+        await expect(failure).rejects.toThrow(/stdout:[\s\S]*stderr:/);
+    });
+
+    it('falls back to the process error when cfs says nothing', async () => {
+        jest.spyOn(childProcess, 'execFile').mockImplementation(((executable, args, options, callback) => {
+            (callback as ExecFileCallback)(new Error('spawn cfs ENOENT'), '', '');
+            return {} as childProcess.ChildProcess;
+        }) as typeof childProcess.execFile);
+
+        await expect(new KitInstallerImpl().install(
+            { kitSlug: 'sdlc', version: 'main' },
+            registry([{ id: 'repo-1', label: 'app', root: '/workspace/app' }])
+        )).rejects.toThrow('spawn cfs ENOENT');
+    });
+
     it('requires an explicit repository when the project repository is not registered', async () => {
         const run = jest.spyOn(childProcess, 'execFile');
         await expect(new KitInstallerImpl().install(

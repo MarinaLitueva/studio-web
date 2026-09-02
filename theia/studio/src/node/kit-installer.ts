@@ -70,8 +70,9 @@ export class KitInstallerImpl {
                 shell: false
             }, (error, stdout, stderr) => {
                 if (error) {
-                    const detail = String(stderr).trim() || String(stdout).trim() || error.message;
-                    reject(new Error(`cfs ${arguments_[0]} failed: ${detail}`));
+                    reject(new Error(
+                        `cfs ${arguments_[0]} failed: ${failureDetail(error, stdout, stderr)}`
+                    ));
                     return;
                 }
                 resolve({ stdout: String(stdout), stderr: String(stderr) });
@@ -110,6 +111,42 @@ function requireDefaultRepository(repositories: RepositoryRegistry) {
         );
     }
     return available[0];
+}
+
+/*
+ * BOTH streams, not the first non-empty one.
+ *
+ * `cfs` is a proxy that narrates through stderr -- resolving the skill engine
+ * alone writes a dozen lines there -- while the failure that actually stopped
+ * the command can arrive on stdout. The previous `stderr || stdout` fallback
+ * therefore reported the narration and hid the reason: two rounds of
+ * "Constructor Studio skill engine not found" were read as the cause when they
+ * were only the log of a download that had SUCCEEDED, and the real error was
+ * never shown at all.
+ *
+ * stdout leads because that is where the reason usually is, and because both
+ * consumers downstream truncate from the FRONT -- kit_registry keeps the first
+ * 2000 chars of this string, and the Theia bridge's extract_upstream_detail the
+ * first 2048. Putting the narration first would push the reason past both cuts.
+ */
+function failureDetail(error: Error, stdout: string, stderr: string): string {
+    const streams: ReadonlyArray<readonly [string, string]> = [
+        ['stdout', String(stdout).trim()],
+        ['stderr', String(stderr).trim()]
+    ];
+    const present = streams.filter(([, text]) => text.length > 0);
+    if (present.length === 0) {
+        return error.message;
+    }
+    return present.map(([name, text]) => `${name}: ${lastLines(text)}`).join('\n');
+}
+
+/**
+ * Keep the END of a stream: a command names what went wrong on its way out,
+ * after whatever progress logging came before it.
+ */
+function lastLines(text: string, limit = 800): string {
+    return text.length <= limit ? text : `...${text.slice(-limit)}`;
 }
 
 function isSafeGitRef(value: string): boolean {
