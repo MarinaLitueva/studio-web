@@ -32,7 +32,7 @@ impl LicenseFeature for License {}
 
 // ── DTOs ─────────────────────────────────────────────────────────────────────
 
-#[derive(Debug)]
+#[derive(Debug, serde::Deserialize)]
 #[toolkit_macros::api_dto(response)]
 pub struct SectionDto {
     pub key: String,
@@ -42,7 +42,7 @@ pub struct SectionDto {
     pub description: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, serde::Deserialize)]
 #[toolkit_macros::api_dto(response)]
 pub struct RulesDto {
     pub warn_unknown_sections: bool,
