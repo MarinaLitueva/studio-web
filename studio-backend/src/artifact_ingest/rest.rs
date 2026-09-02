@@ -125,6 +125,12 @@ pub struct NodesQuery {
     /// project tenant to see just that project. Omitted = no scoping.
     #[serde(default)]
     pub scope: Option<String>,
+    /// Opaque continuation cursor returned by the preceding response.
+    #[serde(default)]
+    pub cursor: Option<String>,
+    /// Number of nodes to return. Defaults to 50 and is capped at 200.
+    #[serde(default)]
+    pub limit: Option<usize>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -151,7 +157,7 @@ fn node_in_scope(value: &Value, scope: Option<&str>) -> bool {
 }
 
 /// One ingested artifact node.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[toolkit_macros::api_dto(response)]
 pub struct ArtifactNodeDto {
     /// GTS type id, e.g. `gts.cf.studio.artifact.issue.v1~`.
@@ -167,6 +173,9 @@ pub struct ArtifactNodeDto {
 #[toolkit_macros::api_dto(response)]
 pub struct ArtifactNodeListResponse {
     pub nodes: Vec<ArtifactNodeDto>,
+    /// Present when another page is available. Pass it as `cursor` unchanged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
 }
 
 /// One relation between two artifact nodes, endpoints addressed by instance id.
@@ -420,8 +429,8 @@ async fn list_nodes(
         .list_nodes(&ctx, filter)
         .await
         .map_err(|e| CanonicalError::internal(format!("{e:#}")).create())?;
-    Ok(Json(ArtifactNodeListResponse {
-        nodes: nodes
+    let limit = q.limit.unwrap_or(50).clamp(1, 200);
+    let mut nodes: Vec<_> = nodes
             .into_iter()
             .filter(|n| node_in_scope(&n.value, scope))
             .map(|n| {
@@ -438,7 +447,29 @@ async fn list_nodes(
                     value,
                 }
             })
-            .collect(),
+            .collect();
+    // The graph adapters may return storage pages in different orders. Sort by
+    // stable instance id here, then use the last returned id as the opaque
+    // continuation token; the API stays deterministic across adapters.
+    nodes.sort_by(|a, b| a.instance_id.cmp(&b.instance_id));
+    let start = q
+        .cursor
+        .as_deref()
+        .and_then(|cursor| {
+            nodes
+                .iter()
+                .position(|node: &ArtifactNodeDto| node.instance_id == cursor)
+        })
+        .map(|index| index + 1)
+        .unwrap_or(0);
+    let end = (start + limit).min(nodes.len());
+    let page = nodes[start..end].to_vec();
+    let next_cursor = (end < nodes.len())
+        .then(|| page.last().map(|node| node.instance_id.clone()))
+        .flatten();
+    Ok(Json(ArtifactNodeListResponse {
+        nodes: page,
+        next_cursor,
     }))
 }
 
@@ -589,6 +620,7 @@ async fn search(
                 }
             })
             .collect(),
+        next_cursor: None,
     }))
 }
 

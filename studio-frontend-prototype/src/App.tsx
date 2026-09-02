@@ -3751,25 +3751,29 @@ function IngestedArtifacts({
   refreshKey: number;
 }) {
   const [nodes, setNodes] = useState<import("./api").ArtifactNode[] | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | undefined>();
+  const [loadingMore, setLoadingMore] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [tab, setTab] = useState<"issue" | "pull_request" | "file">("issue");
 
   const reload = useCallback(() => {
     setErr(null);
+    setNodes(null);
+    setNextCursor(undefined);
     api
-      .listArtifactNodes(token, undefined, scope)
-      .then((r) => setNodes(r.nodes ?? []))
+      .listArtifactNodes(token, tab, scope, undefined, 50)
+      .then((r) => {
+        setNodes(r.nodes ?? []);
+        setNextCursor(r.next_cursor);
+      })
       .catch((e) => setErr(errText(e)));
-  }, [token, scope]);
+  }, [token, scope, tab]);
 
   useEffect(() => {
     reload();
   }, [reload, refreshKey]);
 
-  const issues = (nodes ?? []).filter((n) => n.type_id.includes("issue"));
-  const prs = (nodes ?? []).filter((n) => n.type_id.includes("pull_request"));
-  const files = (nodes ?? []).filter((n) => n.type_id.includes("file"));
-  const rows = tab === "issue" ? issues : tab === "pull_request" ? prs : files;
+  const rows = nodes ?? [];
 
   const emptyLabel =
     tab === "issue" ? "issues" : tab === "pull_request" ? "pull requests" : "files";
@@ -3789,7 +3793,7 @@ function IngestedArtifacts({
   return (
     <div className="card">
       <div className="card-head">
-        <h2>Ingested{nodes ? ` · ${issues.length + prs.length + files.length}` : ""}</h2>
+        <h2>Ingested{nodes ? ` · ${nodes.length}${nextCursor ? "+" : ""}` : ""}</h2>
         <div style={{ display: "flex", gap: 8 }}>
           <button className="ghost" onClick={openGraphInStudio} title="Open the Workspace Graph in the embedded Studio IDE">
             Open graph in Studio
@@ -3805,16 +3809,16 @@ function IngestedArtifacts({
       </p>
       <div className="row" style={{ display: "flex", gap: 8, marginBottom: 12 }}>
         <button className={tab === "issue" ? "primary" : "ghost"} onClick={() => setTab("issue")}>
-          Issues · {issues.length}
+          Issues
         </button>
         <button
           className={tab === "pull_request" ? "primary" : "ghost"}
           onClick={() => setTab("pull_request")}
         >
-          Pull requests · {prs.length}
+          Pull requests
         </button>
         <button className={tab === "file" ? "primary" : "ghost"} onClick={() => setTab("file")}>
-          Files · {files.length}
+          Files
         </button>
       </div>
       {err && <p className="error">{err}</p>}
@@ -3826,7 +3830,7 @@ function IngestedArtifacts({
         </p>
       ) : tab === "file" ? (
         <ul className="rows">
-          {files
+          {rows
             .slice()
             .sort((a, b) => (a.value.path ?? "").localeCompare(b.value.path ?? ""))
             .map((n) => {
@@ -3892,6 +3896,29 @@ function IngestedArtifacts({
               );
             })}
         </ul>
+      )}
+      {nextCursor && (
+        <div style={{ marginTop: 12 }}>
+          <button
+            className="ghost"
+            disabled={loadingMore}
+            onClick={async () => {
+              setLoadingMore(true);
+              setErr(null);
+              try {
+                const page = await api.listArtifactNodes(token, tab, scope, nextCursor, 50);
+                setNodes((current) => [...(current ?? []), ...(page.nodes ?? [])]);
+                setNextCursor(page.next_cursor);
+              } catch (e) {
+                setErr(errText(e));
+              } finally {
+                setLoadingMore(false);
+              }
+            }}
+          >
+            {loadingMore ? "Loading…" : "Load more"}
+          </button>
+        </div>
       )}
     </div>
   );

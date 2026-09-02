@@ -306,6 +306,10 @@ impl IngestService {
         // issue/PR number → its node instance id, so a comment (which only knows
         // the number it is on) can be linked to the right artifact node.
         let mut by_number: HashMap<i64, String> = HashMap::new();
+        // The same connector/repository may be attached to more than one
+        // Studio project. Include that attachment scope in every deterministic
+        // graph key so a sync in one project cannot overwrite the other.
+        let source_scope = project_id.or(workspace_id).unwrap_or("unscoped");
 
         // Link an issue/PR to its author: intern a user node and add an
         // authored_by edge. No-op when the author is unknown.
@@ -314,13 +318,13 @@ impl IngestService {
                            artifact_id: &str,
                            author: Option<&str>| {
             if let Some(login) = author.map(str::trim).filter(|s| !s.is_empty()) {
-                let u = gts::user_node(connector_id, provider, login);
+                let u = gts::user_node(source_scope, connector_id, provider, login);
                 edges.push(gts::authored_by_edge(artifact_id, &u.instance_id));
                 users.entry(u.instance_id.clone()).or_insert(u);
             }
         };
 
-        let repo = gts::repo_node(connector_id, provider, repo_full_path);
+        let repo = gts::repo_node(source_scope, connector_id, provider, repo_full_path);
         let repo_id = repo.instance_id.clone();
         nodes.push(repo);
 
@@ -357,7 +361,8 @@ impl IngestService {
             for i in batch {
                 let author = i.author.clone();
                 let number = i.number;
-                let node = gts::issue_node(&repo_id, connector_id, repo_full_path, i);
+                let node =
+                    gts::issue_node(source_scope, &repo_id, connector_id, repo_full_path, i);
                 edges.push(gts::artifact_of_edge(&node.instance_id, &repo_id));
                 author_edge(&mut edges, &mut users, &node.instance_id, author.as_deref());
                 by_number.insert(number, node.instance_id.clone());
@@ -395,7 +400,8 @@ impl IngestService {
             for p in batch {
                 let author = p.author.clone();
                 let number = p.number;
-                let node = gts::pull_request_node(&repo_id, connector_id, repo_full_path, p);
+                let node =
+                    gts::pull_request_node(source_scope, &repo_id, connector_id, repo_full_path, p);
                 let pr_id = node.instance_id.clone();
                 edges.push(gts::artifact_of_edge(&pr_id, &repo_id));
                 author_edge(&mut edges, &mut users, &pr_id, author.as_deref());
@@ -477,7 +483,8 @@ impl IngestService {
             Some((dir, list, commit)) => {
                 for wf in list.into_iter().take(MAX_FILES) {
                     files += 1;
-                    let file_id = gts::file_instance_id(connector_id, repo_full_path, &wf.path);
+                    let file_id =
+                        gts::file_instance_id(source_scope, connector_id, repo_full_path, &wf.path);
                     edges.push(gts::contains_edge(&repo_id, &file_id));
                     file_paths.insert(wf.path.clone());
                     // Text files carry their content already; for a binary
@@ -488,6 +495,7 @@ impl IngestService {
                         None => self.parse_binary_text(ctx, &dir, &wf.path, wf.size).await,
                     };
                     nodes.push(gts::file_node_cloned(
+                        source_scope,
                         &repo_id,
                         connector_id,
                         repo_full_path,
@@ -507,10 +515,21 @@ impl IngestService {
                             files += 1;
                             let path = f.path.clone();
                             let file_id =
-                                gts::file_instance_id(connector_id, repo_full_path, &path);
+                                gts::file_instance_id(
+                                    source_scope,
+                                    connector_id,
+                                    repo_full_path,
+                                    &path,
+                                );
                             edges.push(gts::contains_edge(&repo_id, &file_id));
                             file_paths.insert(path);
-                            nodes.push(gts::file_node(&repo_id, connector_id, repo_full_path, f));
+                            nodes.push(gts::file_node(
+                                source_scope,
+                                &repo_id,
+                                connector_id,
+                                repo_full_path,
+                                f,
+                            ));
                         }
                     }
                     Err(e) => {
@@ -555,7 +574,12 @@ impl IngestService {
                         for path in paths {
                             if file_paths.contains(&path) {
                                 let file_id =
-                                    gts::file_instance_id(connector_id, repo_full_path, &path);
+                                    gts::file_instance_id(
+                                        source_scope,
+                                        connector_id,
+                                        repo_full_path,
+                                        &path,
+                                    );
                                 edges.push(gts::modifies_edge(pr_id, &file_id));
                             }
                         }
@@ -598,7 +622,8 @@ impl IngestService {
             for c in batch {
                 let author = c.author.clone();
                 let target = by_number.get(&c.target_number).cloned();
-                let node = gts::comment_node(&repo_id, connector_id, repo_full_path, c);
+                let node =
+                    gts::comment_node(source_scope, &repo_id, connector_id, repo_full_path, c);
                 let comment_id = node.instance_id.clone();
                 if let Some(target_id) = target {
                     edges.push(gts::comment_on_edge(&comment_id, &target_id));
@@ -657,7 +682,8 @@ impl IngestService {
             commits += batch.len();
             for c in batch {
                 let author = c.author.clone();
-                let node = gts::commit_node(&repo_id, connector_id, repo_full_path, c);
+                let node =
+                    gts::commit_node(source_scope, &repo_id, connector_id, repo_full_path, c);
                 let commit_id = node.instance_id.clone();
                 edges.push(gts::artifact_of_edge(&commit_id, &repo_id));
                 author_edge(&mut edges, &mut users, &commit_id, author.as_deref());

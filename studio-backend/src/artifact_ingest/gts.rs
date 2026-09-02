@@ -149,12 +149,18 @@ fn anon_id(parts: &[&str]) -> String {
     Uuid::new_v5(&INSTANCE_NS, parts.join("|").as_bytes()).to_string()
 }
 
-/// The repository node; `connector_id` keys the graph so two connections to
-/// the same host stay distinct.
-pub fn repo_node(connector_id: &str, provider: &str, repo_full_path: &str) -> GtsNode {
+/// The repository node. `scope_key` is the project (or workspace for a
+/// workspace-level source), so attaching the same connection/repository to
+/// two Studio projects creates two independently scoped artifact graphs.
+pub fn repo_node(
+    scope_key: &str,
+    connector_id: &str,
+    provider: &str,
+    repo_full_path: &str,
+) -> GtsNode {
     GtsNode {
         type_id: REPO_TYPE,
-        instance_id: anon_id(&[connector_id, repo_full_path, "repo"]),
+        instance_id: anon_id(&[scope_key, connector_id, repo_full_path, "repo"]),
         value: json!({
             "connector_id": connector_id,
             "provider": provider,
@@ -164,6 +170,7 @@ pub fn repo_node(connector_id: &str, provider: &str, repo_full_path: &str) -> Gt
 }
 
 pub fn issue_node(
+    scope_key: &str,
     repo_id: &str,
     connector_id: &str,
     repo_full_path: &str,
@@ -171,7 +178,7 @@ pub fn issue_node(
 ) -> GtsNode {
     GtsNode {
         type_id: ISSUE_TYPE,
-        instance_id: anon_id(&[connector_id, repo_full_path, "issue", &i.id]),
+        instance_id: anon_id(&[scope_key, connector_id, repo_full_path, "issue", &i.id]),
         value: json!({
             "repo": repo_id,
             "external_id": i.id,
@@ -189,6 +196,7 @@ pub fn issue_node(
 }
 
 pub fn file_node(
+    scope_key: &str,
     repo_id: &str,
     connector_id: &str,
     repo_full_path: &str,
@@ -196,7 +204,7 @@ pub fn file_node(
 ) -> GtsNode {
     GtsNode {
         type_id: FILE_TYPE,
-        instance_id: anon_id(&[connector_id, repo_full_path, "file", &f.path]),
+        instance_id: anon_id(&[scope_key, connector_id, repo_full_path, "file", &f.path]),
         value: json!({
             "repo": repo_id,
             "path": f.path,
@@ -211,6 +219,7 @@ pub fn file_node(
 /// tree-API node (keyed on path, so the two channels upsert the same instance),
 /// but carrying the snapshot `commit` and, for text files, their `text`.
 pub fn file_node_cloned(
+    scope_key: &str,
     repo_id: &str,
     connector_id: &str,
     repo_full_path: &str,
@@ -221,7 +230,7 @@ pub fn file_node_cloned(
 ) -> GtsNode {
     GtsNode {
         type_id: FILE_TYPE,
-        instance_id: anon_id(&[connector_id, repo_full_path, "file", path]),
+        instance_id: anon_id(&[scope_key, connector_id, repo_full_path, "file", path]),
         value: json!({
             "repo": repo_id,
             "path": path,
@@ -235,6 +244,7 @@ pub fn file_node_cloned(
 }
 
 pub fn pull_request_node(
+    scope_key: &str,
     repo_id: &str,
     connector_id: &str,
     repo_full_path: &str,
@@ -242,7 +252,7 @@ pub fn pull_request_node(
 ) -> GtsNode {
     GtsNode {
         type_id: PULL_REQUEST_TYPE,
-        instance_id: anon_id(&[connector_id, repo_full_path, "pull_request", &p.id]),
+        instance_id: anon_id(&[scope_key, connector_id, repo_full_path, "pull_request", &p.id]),
         value: json!({
             "repo": repo_id,
             "external_id": p.id,
@@ -261,13 +271,13 @@ pub fn pull_request_node(
     }
 }
 
-/// A user node (issue/PR author). Keyed per connection so the same login on two
-/// hosts stays distinct. `title` mirrors the login so the graph's node name is
-/// the handle.
-pub fn user_node(connector_id: &str, provider: &str, login: &str) -> GtsNode {
+/// A user node (issue/PR author). Keyed per source attachment and connection,
+/// so the same login in two project graphs stays distinct. `title` mirrors the
+/// login so the graph's node name is the handle.
+pub fn user_node(scope_key: &str, connector_id: &str, provider: &str, login: &str) -> GtsNode {
     GtsNode {
         type_id: USER_TYPE,
-        instance_id: anon_id(&[connector_id, "user", login]),
+        instance_id: anon_id(&[scope_key, connector_id, "user", login]),
         value: json!({
             "provider": provider,
             "login": login,
@@ -279,6 +289,7 @@ pub fn user_node(connector_id: &str, provider: &str, login: &str) -> GtsNode {
 /// A comment on an issue or pull request. `title` is a short snippet so the
 /// graph node name is readable; `body` carries the full text.
 pub fn comment_node(
+    scope_key: &str,
     repo_id: &str,
     connector_id: &str,
     repo_full_path: &str,
@@ -294,7 +305,7 @@ pub fn comment_node(
     });
     GtsNode {
         type_id: COMMENT_TYPE,
-        instance_id: anon_id(&[connector_id, repo_full_path, "comment", &c.id]),
+        instance_id: anon_id(&[scope_key, connector_id, repo_full_path, "comment", &c.id]),
         value: json!({
             "repo": repo_id,
             "external_id": c.id,
@@ -311,6 +322,7 @@ pub fn comment_node(
 
 /// A commit node. `title` is the first line of the message (the subject line).
 pub fn commit_node(
+    scope_key: &str,
     repo_id: &str,
     connector_id: &str,
     repo_full_path: &str,
@@ -323,7 +335,7 @@ pub fn commit_node(
     let short_sha: String = c.sha.chars().take(7).collect();
     GtsNode {
         type_id: COMMIT_TYPE,
-        instance_id: anon_id(&[connector_id, repo_full_path, "commit", &c.sha]),
+        instance_id: anon_id(&[scope_key, connector_id, repo_full_path, "commit", &c.sha]),
         value: json!({
             "repo": repo_id,
             "sha": c.sha,
@@ -349,8 +361,13 @@ pub fn comment_on_edge(comment_id: &str, target_id: &str) -> GtsEdge {
 
 /// The instance id a File node has for `path` — so an edge can reference a file
 /// without rebuilding its node (identity is keyed on path, same as `file_node`).
-pub fn file_instance_id(connector_id: &str, repo_full_path: &str, path: &str) -> String {
-    anon_id(&[connector_id, repo_full_path, "file", path])
+pub fn file_instance_id(
+    scope_key: &str,
+    connector_id: &str,
+    repo_full_path: &str,
+    path: &str,
+) -> String {
+    anon_id(&[scope_key, connector_id, repo_full_path, "file", path])
 }
 
 /// A user-uploaded or Studio-generated file node (no connector/repo). Bytes
@@ -541,5 +558,14 @@ mod tests {
 
         assert_eq!(first.instance_id, second.instance_id);
         assert_ne!(first.value["object_ref"], second.value["object_ref"]);
+    }
+
+    #[test]
+    fn repository_identity_is_independent_per_project_attachment() {
+        let first = repo_node("project-a", "github-connection", "github", "acme/example");
+        let second = repo_node("project-b", "github-connection", "github", "acme/example");
+
+        assert_ne!(first.instance_id, second.instance_id);
+        assert_eq!(first.value["full_path"], second.value["full_path"]);
     }
 }

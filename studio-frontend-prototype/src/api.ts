@@ -205,6 +205,12 @@ export interface ArtifactNode {
   };
 }
 
+export interface ArtifactNodePage {
+  nodes: ArtifactNode[];
+  /** Opaque cursor for the next page, omitted when this is the last page. */
+  next_cursor?: string;
+}
+
 /** One node from the gears catalog — a `gear` crate or a `crate_version`. The
  *  payload shape differs by type; read it loosely. */
 export interface CatalogNode {
@@ -1275,12 +1281,14 @@ export const api = {
   /** Read back the ingested artifact nodes, optionally filtered by type
    * substring (`issue`, `pull_request`, `file`, `repo`) and scoped to a tenant
    * (`scope` matches a node's workspace_id OR project_id). */
-  listArtifactNodes: (token: string, type?: string, scope?: string) => {
+  listArtifactNodes: (token: string, type?: string, scope?: string, cursor?: string, limit?: number) => {
     const qs = new URLSearchParams();
     if (type) qs.set("type", type);
     if (scope) qs.set("scope", scope);
+    if (cursor) qs.set("cursor", cursor);
+    if (limit) qs.set("limit", String(limit));
     const suffix = qs.toString();
-    return request<{ nodes: ArtifactNode[] }>(
+    return request<ArtifactNodePage>(
       `/studio-artifact-ingest/v1/nodes${suffix ? `?${suffix}` : ""}`,
       token,
     );
