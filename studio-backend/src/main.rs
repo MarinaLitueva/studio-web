@@ -7,8 +7,9 @@
 mod artifact_ingest; // pull issues/PRs from a connector source into the graph as GTS nodes
 mod connectors; // source connectors: driver plugins + tenant connection catalogue
 mod credstore_pg; // persistent credstore value store (issue #66)
+mod database_bootstrap; // config-discovered PostgreSQL provisioning + migrations
 mod documents; // document management: types + templates + section-checklist validation
-mod gears_catalog; // connector to crates.io: catalogue our published gears + versions in the graph
+mod components_catalog; // connector to crates.io: catalogue our published gears + versions in the graph
 #[cfg(feature = "graph")]
 mod graph_storage; // knowledge graph: typed nodes/edges, traversal, hybrid search
 mod identity_directory; // platform-admin view of assigned and unassigned Keycloak identities
@@ -74,6 +75,12 @@ enum Commands {
     Run,
     /// Run database migrations and exit
     Migrate,
+    /// Discover configured PostgreSQL gear databases, create only missing ones, then migrate
+    Bootstrap {
+        /// Perform changes. Without this flag, print the database plan only.
+        #[arg(long)]
+        apply: bool,
+    },
 }
 
 #[tokio::main]
@@ -115,6 +122,7 @@ async fn main() -> Result<()> {
     match cli.command.unwrap_or(Commands::Run) {
         Commands::Run => run_server(config).await,
         Commands::Migrate => run_migrate(config).await,
+        Commands::Bootstrap { apply } => database_bootstrap::run(config, apply).await,
     }
 }
 

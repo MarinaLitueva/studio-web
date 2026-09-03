@@ -7,9 +7,9 @@ import { PeopleView } from "./people";
 import { IdentityDirectory } from "./identity-directory";
 import { StudioAI } from "./studio-ai";
 import { SpecQuality } from "./spec-quality";
-import { GearsCatalog } from "./gears-catalog";
+import { ComponentsCatalog } from "./components-catalog";
 import { ProjectKits } from "./kits";
-import { DocumentsTab } from "./documents";
+import { DocumentsTab, DocumentTypesTab } from "./documents";
 import {
   ACCESS_MODELS,
   defaultAccessConfig,
@@ -96,6 +96,10 @@ interface Filters {
   sort: "name-asc" | "name-desc";
   model: string; // chats: filter by model_id
   sections: { gears: boolean; upstreams: boolean; entities: boolean }; // system
+  gearKind: string; // gears: filter by crate kind
+  gearSort: "name-asc" | "name-desc" | "downloads-desc"; // gears
+  gearHideSdk: boolean; // gears: hide *-sdk crates
+  gearCategory: string; // gears: filter by category/domain
 }
 
 const DEFAULT_FILTERS: Filters = {
@@ -105,6 +109,10 @@ const DEFAULT_FILTERS: Filters = {
   sort: "name-asc",
   model: "",
   sections: { gears: true, upstreams: true, entities: true },
+  gearKind: "",
+  gearSort: "name-asc",
+  gearHideSdk: false,
+  gearCategory: "",
 };
 
 type PanelView = View | "dashboard";
@@ -118,6 +126,12 @@ function activeFilterCount(view: PanelView, f: Filters): number {
   }
   if (view === "chats" && f.model) n++;
   if (view === "system") n += Object.values(f.sections).filter((v) => !v).length;
+  if (view === "gears") {
+    if (f.gearKind) n++;
+    if (f.gearSort !== "name-asc") n++;
+    if (f.gearHideSdk) n++;
+    if (f.gearCategory.trim()) n++;
+  }
   return n;
 }
 
@@ -417,7 +431,7 @@ const NAV_SECTIONS: {
     items: [
       // Our published gears (crates.io → graph), and the system observability
       // surface.
-      { id: "gears", icon: "package", label: "Gears" },
+      { id: "gears", icon: "package", label: "Components" },
       { id: "system", icon: "cog", label: "System" },
     ],
   },
@@ -788,6 +802,7 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
     });
   }, [token]);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+  const [componentCategories, setComponentCategories] = useState<string[]>([]);
   const [panelOpen, setPanelOpen] = useState<boolean>(() => {
     try {
       return localStorage.getItem("studio.filterPanel") !== "collapsed";
@@ -1607,7 +1622,18 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
         {/* The tenant hierarchy renders only inside the Admin area, under the flag. */}
         {view === "chats" && <ChatsView token={token} filters={filters} />}
         {view === "files" && <FilesView token={token} filters={filters} />}
-        {view === "gears" && <GearsCatalog token={token} />}
+        {view === "gears" && (
+          <ComponentsCatalog
+            token={token}
+            tenantId={orgAsSpace?.id}
+            query={filters.query}
+            kindFilter={filters.gearKind}
+            sortMode={filters.gearSort}
+            hideSdk={filters.gearHideSdk}
+            categoryFilter={filters.gearCategory}
+            onCategories={setComponentCategories}
+          />
+        )}
         {view === "system" && <SystemView token={token} filters={filters} />}
         {view === "profile" && <ProfileView me={me} home={home} token={token} />}
           </>
@@ -1630,6 +1656,7 @@ function Shell({ token, me, onLogout }: { token: string; me: Me; onLogout: () =>
           onChange={setFilters}
           open={panelOpen}
           onToggle={() => setPanelOpen((v) => !v)}
+          componentCategories={componentCategories}
         />
       )}
     </div>
@@ -1645,6 +1672,7 @@ function FilterPanel({
   onChange,
   open,
   onToggle,
+  componentCategories,
 }: {
   view: PanelView;
   token: string;
@@ -1652,6 +1680,7 @@ function FilterPanel({
   onChange: (f: Filters) => void;
   open: boolean;
   onToggle: () => void;
+  componentCategories: string[];
 }) {
   const [models, setModels] = useState<import("./api").Model[]>([]);
 
@@ -1668,7 +1697,7 @@ function FilterPanel({
 
   const count = activeFilterCount(view, filters);
   const set = (patch: Partial<Filters>) => onChange({ ...filters, ...patch });
-  const noFilters = view === "profile" || view === "dashboard" || view === "gears";
+  const noFilters = view === "profile" || view === "dashboard";
   const hasSearch = !noFilters && view !== "system";
 
   if (!open) {
@@ -1738,6 +1767,62 @@ function FilterPanel({
                   <option value="name-asc">Name A → Z</option>
                   <option value="name-desc">Name Z → A</option>
                 </select>
+              </div>
+            </>
+          )}
+
+          {view === "gears" && (
+            <>
+              <div className="filter-group">
+                <span className="lbl">Kind</span>
+                <select value={filters.gearKind} onChange={(e) => set({ gearKind: e.target.value })}>
+                  <option value="">All kinds</option>
+                  <option value="gear">gear</option>
+                  <option value="sdk">sdk</option>
+                  <option value="plugin">plugin</option>
+                  <option value="toolkit">toolkit</option>
+                  <option value="frontx">frontx</option>
+                </select>
+              </div>
+              <div className="filter-group">
+                <span className="lbl">Category</span>
+                <select
+                  value={filters.gearCategory}
+                  onChange={(e) => set({ gearCategory: e.target.value })}
+                >
+                  <option value="">All categories</option>
+                  {componentCategories.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                  {filters.gearCategory && !componentCategories.includes(filters.gearCategory) && (
+                    <option value={filters.gearCategory}>{filters.gearCategory}</option>
+                  )}
+                </select>
+              </div>
+              <div className="filter-group">
+                <span className="lbl">Sort</span>
+                <select
+                  value={filters.gearSort}
+                  onChange={(e) => set({ gearSort: e.target.value as Filters["gearSort"] })}
+                >
+                  <option value="name-asc">Name A → Z</option>
+                  <option value="name-desc">Name Z → A</option>
+                  <option value="downloads-desc">Downloads</option>
+                </select>
+              </div>
+              <div className="filter-group">
+                <span className="lbl">Show</span>
+                <div className="chipset">
+                  <button
+                    type="button"
+                    className={`chip ${filters.gearHideSdk ? "on" : ""}`}
+                    onClick={() => set({ gearHideSdk: !filters.gearHideSdk })}
+                  >
+                    hide SDK crates
+                  </button>
+                </div>
               </div>
             </>
           )}
@@ -2260,6 +2345,9 @@ function ProjectsView({
         }}
         onChanged={onChanged}
       />
+      <div style={{ marginTop: 20 }}>
+        <DocumentTypesTab token={token} workspaceId={root.id} />
+      </div>
     </>
   );
 }
@@ -3214,8 +3302,13 @@ function SystemView({ token, filters }: { token: string; filters: Filters }) {
 
   const count = (v: unknown): string => {
     if (Array.isArray(v)) return String(v.length);
-    if (v && typeof v === "object" && "items" in v && Array.isArray((v as { items: unknown[] }).items))
-      return String((v as { items: unknown[] }).items.length);
+    if (v && typeof v === "object") {
+      // Different gears wrap their list under different keys; accept the common ones.
+      for (const key of ["items", "gears", "nodes", "data"]) {
+        const arr = (v as Record<string, unknown>)[key];
+        if (Array.isArray(arr)) return String(arr.length);
+      }
+    }
     return "—";
   };
 
@@ -3751,6 +3844,7 @@ function IngestedArtifacts({
   refreshKey: number;
 }) {
   const [nodes, setNodes] = useState<import("./api").ArtifactNode[] | null>(null);
+  const [total, setTotal] = useState<number | null>(null);
   const [nextCursor, setNextCursor] = useState<string | undefined>();
   const [loadingMore, setLoadingMore] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -3759,11 +3853,13 @@ function IngestedArtifacts({
   const reload = useCallback(() => {
     setErr(null);
     setNodes(null);
+    setTotal(null);
     setNextCursor(undefined);
     api
       .listArtifactNodes(token, tab, scope, undefined, 50)
       .then((r) => {
         setNodes(r.nodes ?? []);
+        setTotal(r.total ?? (r.nodes?.length ?? 0));
         setNextCursor(r.next_cursor);
       })
       .catch((e) => setErr(errText(e)));
@@ -3793,7 +3889,12 @@ function IngestedArtifacts({
   return (
     <div className="card">
       <div className="card-head">
-        <h2>Ingested{nodes ? ` · ${nodes.length}${nextCursor ? "+" : ""}` : ""}</h2>
+        <h2>
+          Ingested
+          {nodes
+            ? ` · ${nodes.length}${total != null && total > nodes.length ? ` of ${total}` : ""}`
+            : ""}
+        </h2>
         <div style={{ display: "flex", gap: 8 }}>
           <button className="ghost" onClick={openGraphInStudio} title="Open the Workspace Graph in the embedded Studio IDE">
             Open graph in Studio
@@ -3908,6 +4009,7 @@ function IngestedArtifacts({
               try {
                 const page = await api.listArtifactNodes(token, tab, scope, nextCursor, 50);
                 setNodes((current) => [...(current ?? []), ...(page.nodes ?? [])]);
+                setTotal(page.total ?? total);
                 setNextCursor(page.next_cursor);
               } catch (e) {
                 setErr(errText(e));
@@ -3916,7 +4018,11 @@ function IngestedArtifacts({
               }
             }}
           >
-            {loadingMore ? "Loading…" : "Load more"}
+            {loadingMore
+              ? "Loading…"
+              : total != null && total > rows.length
+                ? `Load more (${total - rows.length} left)`
+                : "Load more"}
           </button>
         </div>
       )}

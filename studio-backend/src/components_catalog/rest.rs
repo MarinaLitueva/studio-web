@@ -1,6 +1,6 @@
 //! REST surface for the gears catalog.
 //!
-//! `POST /studio-gears-catalog/v1/sync` enqueues a background sync of the
+//! `POST /studio-components-catalog/v1/sync` enqueues a background sync of the
 //! crates.io keyword into the graph and returns a task id; `GET /tasks/{id}`
 //! polls it. `GET /gears` and `GET /versions` read the catalog back.
 
@@ -15,11 +15,12 @@ use toolkit::api::{OpenApiRegistry, OperationBuilder};
 use toolkit_canonical_errors::resource_error;
 use toolkit_security::SecurityContext;
 
-use super::service::CatalogService;
+use super::service::{CatalogService, RepoSource, SyncSources};
+use uuid::Uuid;
 
-/// Errors attributable to a gears-catalog resource (e.g. an unknown task).
-#[resource_error(gts_id!("cf.studio._.gears_catalog.v1~"))]
-pub struct StudioGearsCatalogError;
+/// Errors attributable to a components-catalog resource (e.g. an unknown task).
+#[resource_error(gts_id!("cf.studio._.components_catalog.v1~"))]
+pub struct StudioComponentsCatalogError;
 
 /// Service handle, injected into the handlers.
 #[derive(Clone)]
@@ -37,7 +38,7 @@ impl LicenseFeature for License {}
 #[derive(Debug)]
 #[toolkit_macros::api_dto(response)]
 pub struct CatalogSyncEnqueued {
-    /// Poll `GET /studio-gears-catalog/v1/tasks/{task_id}` for the outcome.
+    /// Poll `GET /studio-components-catalog/v1/tasks/{task_id}` for the outcome.
     pub task_id: String,
     pub status: String,
 }
@@ -86,6 +87,63 @@ pub struct SaveGearProfileRequest {
     pub profile: Value,
 }
 
+/// A repository source picked on the Gears page.
+#[derive(Debug)]
+#[toolkit_macros::api_dto(request)]
+pub struct RepoSourceDto {
+    /// Tenant that owns the connection (usually the workspace/organization).
+    pub tenant: Uuid,
+    /// Connection to use; when omitted the first GitHub connection is taken.
+    pub connection_id: Option<Uuid>,
+    /// `owner/name` of the repository.
+    pub repo: String,
+    /// Git ref to read (default `HEAD`).
+    pub git_ref: Option<String>,
+    /// Discovery mode: `"gears"` (default) or `"frontx"`.
+    pub mode: Option<String>,
+}
+
+/// Which sources one sync should read. Omit the body to sync crates.io with the
+/// default keyword (back-compatible).
+#[derive(Debug)]
+#[toolkit_macros::api_dto(request)]
+pub struct SyncRequestDto {
+    /// crates.io keyword; `null`/absent disables the crates.io source.
+    pub crates_io: Option<String>,
+    /// Repository sources (gears repo, FrontX repo, …).
+    pub repositories: Option<Vec<RepoSourceDto>>,
+}
+
+impl SyncRequestDto {
+    fn into_sources(self, default_keyword: &str) -> SyncSources {
+        let repos: Vec<RepoSource> = self
+            .repositories
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|r| !r.repo.trim().is_empty())
+            .map(|r| RepoSource {
+                tenant: r.tenant,
+                connection_id: r.connection_id,
+                repo: r.repo,
+                git_ref: r.git_ref.unwrap_or_default(),
+                mode: r.mode.unwrap_or_else(|| "gears".to_string()),
+            })
+            .collect();
+        let crates_io = match self.crates_io {
+            Some(k) if !k.trim().is_empty() => Some(k.trim().to_string()),
+            Some(_) => None,
+            None => {
+                if repos.is_empty() {
+                    Some(default_keyword.to_string())
+                } else {
+                    None
+                }
+            }
+        };
+        SyncSources { crates_io, repos }
+    }
+}
+
 #[derive(Debug, serde::Deserialize)]
 pub struct VersionsQuery {
     /// Optional crate name (query param `crate`) to filter versions to one gear.
@@ -96,8 +154,16 @@ pub struct VersionsQuery {
 async fn sync(
     Extension(ctx): Extension<SecurityContext>,
     Extension(catalog): Extension<Catalog>,
+    body: Option<Json<SyncRequestDto>>,
 ) -> ApiResult<JsonBody<CatalogSyncEnqueued>> {
-    let task_id = catalog.0.enqueue_sync(ctx);
+    let sources = match body {
+        Some(Json(req)) => req.into_sources(catalog.0.default_keyword()),
+        None => SyncSources {
+            crates_io: Some(catalog.0.default_keyword().to_string()),
+            repos: Vec::new(),
+        },
+    };
+    let task_id = catalog.0.enqueue_sync(ctx, sources);
     Ok(Json(CatalogSyncEnqueued {
         task_id,
         status: "queued".to_string(),
@@ -110,7 +176,7 @@ async fn task_status(
     Path(id): Path<String>,
 ) -> ApiResult<JsonBody<CatalogTaskStatusResponse>> {
     let rec = catalog.0.task(&id).ok_or_else(|| {
-        StudioGearsCatalogError::not_found("no such sync task")
+        StudioComponentsCatalogError::not_found("no such sync task")
             .with_resource(id.clone())
             .create()
     })?;
@@ -174,7 +240,7 @@ async fn save_profile(
         .save_profile(&ctx, &name, body.profile)
         .await
         .map_err(|e| {
-            StudioGearsCatalogError::invalid_argument()
+            StudioComponentsCatalogError::invalid_argument()
                 .with_constraint(format!("invalid gear profile: {e:#}"))
                 .create()
         })?;
@@ -213,8 +279,8 @@ pub fn register_routes(
     openapi: &dyn OpenApiRegistry,
     service: Arc<CatalogService>,
 ) -> Router {
-    let router = OperationBuilder::post("/studio-gears-catalog/v1/sync")
-        .operation_id("studio_gears_catalog.sync")
+    let router = OperationBuilder::post("/studio-components-catalog/v1/sync")
+        .operation_id("studio_components_catalog.sync")
         .summary("Enqueue a background sync of the crates.io keyword into the graph")
         .description(
             "Lists every crate under the configured keyword (constructorfabric), \
@@ -222,19 +288,20 @@ pub fn register_routes(
              upserts gear + crate_version nodes (joined by has_version) into the \
              graph. Returns a task id to poll.",
         )
-        .tag("StudioGearsCatalog")
+        .tag("StudioComponentsCatalog")
         .authenticated()
         .require_license_features::<License>([])
+        .json_request::<SyncRequestDto>(openapi, "Sources to sync")
         .handler(sync)
         .json_response_with_schema::<CatalogSyncEnqueued>(openapi, StatusCode::OK, "Sync enqueued")
         .error_401(openapi)
         .error_500(openapi)
         .register(router, openapi);
 
-    let router = OperationBuilder::get("/studio-gears-catalog/v1/tasks/{id}")
-        .operation_id("studio_gears_catalog.task_status")
+    let router = OperationBuilder::get("/studio-components-catalog/v1/tasks/{id}")
+        .operation_id("studio_components_catalog.task_status")
         .summary("Poll a background catalog sync task")
-        .tag("StudioGearsCatalog")
+        .tag("StudioComponentsCatalog")
         .authenticated()
         .require_license_features::<License>([])
         .path_param("id", "Sync task id")
@@ -249,10 +316,10 @@ pub fn register_routes(
         .error_500(openapi)
         .register(router, openapi);
 
-    let router = OperationBuilder::get("/studio-gears-catalog/v1/gears")
-        .operation_id("studio_gears_catalog.list_gears")
+    let router = OperationBuilder::get("/studio-components-catalog/v1/components")
+        .operation_id("studio_components_catalog.list_gears")
         .summary("List the ingested gear crates")
-        .tag("StudioGearsCatalog")
+        .tag("StudioComponentsCatalog")
         .authenticated()
         .require_license_features::<License>([])
         .handler(list_gears)
@@ -261,10 +328,10 @@ pub fn register_routes(
         .error_500(openapi)
         .register(router, openapi);
 
-    let router = OperationBuilder::get("/studio-gears-catalog/v1/versions")
-        .operation_id("studio_gears_catalog.list_versions")
+    let router = OperationBuilder::get("/studio-components-catalog/v1/versions")
+        .operation_id("studio_components_catalog.list_versions")
         .summary("List ingested crate versions, optionally filtered to one crate")
-        .tag("StudioGearsCatalog")
+        .tag("StudioComponentsCatalog")
         .authenticated()
         .require_license_features::<License>([])
         .handler(list_versions)
@@ -273,10 +340,10 @@ pub fn register_routes(
         .error_500(openapi)
         .register(router, openapi);
 
-    let router = OperationBuilder::get("/studio-gears-catalog/v1/profiles")
-        .operation_id("studio_gears_catalog.list_profiles")
+    let router = OperationBuilder::get("/studio-components-catalog/v1/profiles")
+        .operation_id("studio_components_catalog.list_profiles")
         .summary("List Studio-managed, editable Gear profiles")
-        .tag("StudioGearsCatalog")
+        .tag("StudioComponentsCatalog")
         .authenticated()
         .require_license_features::<License>([])
         .handler(list_profiles)
@@ -289,10 +356,10 @@ pub fn register_routes(
         .error_500(openapi)
         .register(router, openapi);
 
-    let router = OperationBuilder::post("/studio-gears-catalog/v1/gears/{name}/profile")
-        .operation_id("studio_gears_catalog.save_profile")
+    let router = OperationBuilder::post("/studio-components-catalog/v1/components/{name}/profile")
+        .operation_id("studio_components_catalog.save_profile")
         .summary("Create or replace Studio-managed metadata for one Gear")
-        .tag("StudioGearsCatalog")
+        .tag("StudioComponentsCatalog")
         .authenticated()
         .require_license_features::<License>([])
         .path_param("name", "Crate name")

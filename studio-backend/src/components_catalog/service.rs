@@ -7,7 +7,7 @@
 //! back to an in-memory store so the pipeline still runs (and the portal still
 //! shows a catalog) when the graph feature is off.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -19,6 +19,8 @@ use uuid::Uuid;
 
 use super::cratesio::{CrateDetail, CratesIoClient};
 use super::gts::{self, GtsEdge, GtsNode};
+use super::repo_enrich::{RepoEnricher, RepoGear, RepoMode};
+use crate::connectors::service::ConnectorService;
 use super::tasks::{TaskRecord, TaskRegistry};
 
 /// Pause between crates.io detail calls — crates.io asks callers to stay near
@@ -248,21 +250,74 @@ impl CatalogSink for GraphSink {
 
 // ── Service ─────────────────────────────────────────────────────────────────
 
+/// A repository source the caller selected on the Gears page.
+#[derive(Clone, Debug)]
+pub struct RepoSource {
+    pub tenant: Uuid,
+    pub connection_id: Option<Uuid>,
+    pub repo: String,
+    pub git_ref: String,
+    /// "gears" (default) or "frontx".
+    pub mode: String,
+}
+
+/// Which sources one sync should read. At least one should be set.
+#[derive(Clone, Debug, Default)]
+pub struct SyncSources {
+    /// `Some(keyword)` enables crates.io with that keyword.
+    pub crates_io: Option<String>,
+    /// Repository sources (gears repo, FrontX repo, …).
+    pub repos: Vec<RepoSource>,
+}
+
 pub struct CatalogService {
     crates: CratesIoClient,
     sink: Arc<dyn CatalogSink>,
     tasks: Arc<TaskRegistry>,
     keyword: String,
+    connectors: Option<Arc<ConnectorService>>,
 }
 
 impl CatalogService {
-    pub fn new(sink: Arc<dyn CatalogSink>, keyword: String) -> Self {
+    pub fn new(
+        sink: Arc<dyn CatalogSink>,
+        keyword: String,
+        connectors: Option<Arc<ConnectorService>>,
+    ) -> Self {
         Self {
             crates: CratesIoClient::new(),
             sink,
             tasks: Arc::new(TaskRegistry::default()),
             keyword,
+            connectors,
         }
+    }
+
+    /// The default crates.io keyword, used when a sync request omits one.
+    pub fn default_keyword(&self) -> &str {
+        &self.keyword
+    }
+
+    /// Discover gears from a repository source (best-effort at the call site).
+    async fn repo_gears(
+        &self,
+        ctx: &SecurityContext,
+        source: &RepoSource,
+    ) -> anyhow::Result<Vec<RepoGear>> {
+        let connectors = self
+            .connectors
+            .clone()
+            .ok_or_else(|| anyhow!("no connector service is available for repository sources"))?;
+        let enricher = RepoEnricher::new(
+            connectors,
+            source.tenant,
+            source.connection_id,
+            source.repo.clone(),
+            source.git_ref.clone(),
+            RepoMode::parse(&source.mode),
+        )
+        .ok_or_else(|| anyhow!("invalid repository source"))?;
+        enricher.enrich(ctx).await
     }
 
     pub fn task(&self, id: &str) -> Option<TaskRecord> {
@@ -270,13 +325,13 @@ impl CatalogService {
     }
 
     /// Enqueue a background catalog sync and return its task id.
-    pub fn enqueue_sync(self: &Arc<Self>, ctx: SecurityContext) -> String {
+    pub fn enqueue_sync(self: &Arc<Self>, ctx: SecurityContext, sources: SyncSources) -> String {
         let id = Uuid::new_v4().to_string();
         self.tasks.create(&id);
         let svc = Arc::clone(self);
         let task_id = id.clone();
         tokio::spawn(async move {
-            match svc.run_sync(&ctx, Some(&task_id)).await {
+            match svc.run_sync(&ctx, sources, Some(&task_id)).await {
                 Ok((gears, versions, stored)) => {
                     svc.tasks
                         .succeed(&task_id, gears as u32, versions as u32, stored as u32)
@@ -287,64 +342,164 @@ impl CatalogService {
         id
     }
 
-    /// List every crate under the keyword, fetch each one's detail, and upsert a
-    /// gear node + its version nodes (joined by `has_version`) into the graph.
-    /// Flushed per gear so objects appear as the sync runs. Returns
+    /// Read the selected sources into gear + version nodes and upsert them.
+    /// Repository gears are discovered from `gear.toml` directories; crates.io
+    /// contributes published versions. The two merge by crate name. Returns
     /// (gears, versions, stored-nodes).
     pub async fn run_sync(
         &self,
         ctx: &SecurityContext,
+        sources: SyncSources,
         task_id: Option<&str>,
     ) -> anyhow::Result<(usize, usize, usize)> {
         self.sink.register_types(ctx).await?;
-        self.report(task_id, "listing gears…", 0, 0, 0);
 
-        let summaries = self.crates.list_by_keyword(&self.keyword).await?;
-        let total = summaries.len();
-        tracing::info!(keyword = %self.keyword, gears = total, "gears-catalog: listed crates");
-
+        // Gear node value per crate name; version nodes/edges accumulate aside.
+        let mut gear_values: BTreeMap<String, Value> = BTreeMap::new();
+        let mut version_nodes: Vec<GtsNode> = Vec::new();
+        let mut version_edges: Vec<GtsEdge> = Vec::new();
+        let mut profile_nodes: Vec<GtsNode> = Vec::new();
         let mut versions_total = 0usize;
-        let mut stored = 0usize;
-        for (i, s) in summaries.iter().enumerate() {
-            self.report(
-                task_id,
-                &format!("fetching {} ({}/{})", s.name, i + 1, total),
-                i as u32,
-                versions_total as u32,
-                stored as u32,
-            );
 
-            let detail = match self.crates.crate_detail(&s.name).await {
-                Ok(d) => d,
-                Err(e) => {
-                    tracing::warn!(crate = %s.name, error = %e, "gears-catalog: detail fetch failed — skipping");
-                    continue;
+        // ── crates.io ────────────────────────────────────────────────────────
+        if let Some(keyword) = sources.crates_io.as_deref() {
+            self.report(task_id, "listing crates…", 0, 0, 0);
+            let summaries = self.crates.list_by_keyword(keyword).await?;
+            let total = summaries.len();
+            tracing::info!(keyword = %keyword, gears = total, "components-catalog: listed crates");
+            for (i, s) in summaries.iter().enumerate() {
+                self.report(
+                    task_id,
+                    &format!("crates.io {} ({}/{})", s.name, i + 1, total),
+                    i as u32,
+                    versions_total as u32,
+                    gear_values.len() as u32,
+                );
+                let detail = match self.crates.crate_detail(&s.name).await {
+                    Ok(d) => d,
+                    Err(e) => {
+                        tracing::warn!(crate = %s.name, error = %e, "components-catalog: detail fetch failed — skipping");
+                        continue;
+                    }
+                };
+                let (mut nodes, edges, vers) = build_gear(&detail);
+                versions_total += vers;
+                if !nodes.is_empty() {
+                    let gear = nodes.remove(0);
+                    gear_values.insert(s.name.clone(), gear.value);
                 }
-            };
-
-            let (nodes, edges, vers) = build_gear(&detail);
-            versions_total += vers;
-            self.sink.upsert(ctx, &nodes, &edges).await?;
-            stored += nodes.len();
-
-            self.report(
-                task_id,
-                &format!("stored {} ({}/{})", s.name, i + 1, total),
-                (i + 1) as u32,
-                versions_total as u32,
-                stored as u32,
-            );
-            // Be gentle with crates.io (≈1 req/s guidance; detail is one call).
-            tokio::time::sleep(THROTTLE).await;
+                version_nodes.extend(nodes);
+                version_edges.extend(edges);
+                tokio::time::sleep(THROTTLE).await;
+            }
         }
 
+        // ── repository sources → component profiles ─────────────────────────
+        // Each repository (gears repo, FrontX repo, …) contributes components.
+        // Their engineering data is written into each component's profile
+        // (persistent, editable): `auto` and `uml` are refreshed every sync
+        // while the hand-edited `values` are preserved.
+        if !sources.repos.is_empty() {
+            let existing: HashMap<String, serde_json::Map<String, Value>> = self
+                .sink
+                .list(ctx, Some("gear_profile"))
+                .await
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|n| {
+                    let obj = n.value.as_object()?.clone();
+                    let name = obj.get("gear_name")?.as_str()?.to_string();
+                    Some((name, obj))
+                })
+                .collect();
+            let mut last_err: Option<anyhow::Error> = None;
+            let mut any_ok = false;
+            for source in &sources.repos {
+                self.report(
+                    task_id,
+                    &format!("reading {} ({})", source.repo, source.mode),
+                    gear_values.len() as u32,
+                    versions_total as u32,
+                    0,
+                );
+                match self.repo_gears(ctx, source).await {
+                    Ok(repo_gears) => {
+                        any_ok = true;
+                        for rg in repo_gears {
+                            let kind = rg
+                                .kind
+                                .clone()
+                                .unwrap_or_else(|| classify_kind(&rg.crate_name).to_string());
+                            let entry = gear_values.entry(rg.crate_name.clone()).or_insert_with(|| {
+                                json!({ "name": rg.crate_name, "title": rg.crate_name })
+                            });
+                            if let Some(obj) = entry.as_object_mut() {
+                                obj.insert("kind".to_string(), Value::String(kind));
+                                if let Some(c) = &rg.category {
+                                    obj.insert("category".to_string(), Value::String(c.clone()));
+                                }
+                                if obj.get("description").map(Value::is_null).unwrap_or(true) {
+                                    if let Some(d) = &rg.description {
+                                        obj.insert("description".to_string(), Value::String(d.clone()));
+                                    }
+                                }
+                            }
+                            let mut prof = existing.get(&rg.crate_name).cloned().unwrap_or_default();
+                            prof.insert("gear_name".to_string(), Value::String(rg.crate_name.clone()));
+                            prof.insert("auto".to_string(), rg.fields);
+                            if !rg.uml.is_empty() {
+                                prof.insert("uml".to_string(), Value::Array(rg.uml));
+                            }
+                            prof.insert("source".to_string(), Value::String(source.mode.clone()));
+                            if let Some(d) = &rg.description {
+                                prof.entry("description".to_string())
+                                    .or_insert_with(|| Value::String(d.clone()));
+                            }
+                            profile_nodes.push(gts::gear_profile_node(
+                                &rg.crate_name,
+                                Value::Object(prof),
+                            ));
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, repo = %source.repo, "components-catalog: repository source failed");
+                        last_err = Some(e);
+                    }
+                }
+            }
+            // Surface the error when the repositories were the only source.
+            if !any_ok && sources.crates_io.is_none() {
+                if let Some(e) = last_err {
+                    return Err(e);
+                }
+            }
+        }
+
+        // ── upsert ───────────────────────────────────────────────────────────
+        let mut all_nodes: Vec<GtsNode> = gear_values
+            .into_iter()
+            .map(|(name, value)| gts::gear_node(&name, value))
+            .collect();
+        let gears_total = all_nodes.len();
+        all_nodes.extend(version_nodes);
+        all_nodes.extend(profile_nodes);
+        let stored = all_nodes.len();
+        self.sink.upsert(ctx, &all_nodes, &version_edges).await?;
+
         tracing::info!(
-            gears = total,
+            gears = gears_total,
             versions = versions_total,
             stored,
-            "gears-catalog: sync stored"
+            "components-catalog: sync stored"
         );
-        Ok((total, versions_total, stored))
+        self.report(
+            task_id,
+            "done",
+            gears_total as u32,
+            versions_total as u32,
+            stored as u32,
+        );
+        Ok((gears_total, versions_total, stored))
     }
 
     /// Read back catalog nodes, optionally filtered by type substring
@@ -409,6 +564,15 @@ fn build_gear(detail: &CrateDetail) -> (Vec<GtsNode>, Vec<GtsEdge>, usize) {
     let name = detail.krate.name.clone();
     let gear_id = gts::gear_instance_id(&name);
 
+    // The newest non-yanked version that declares a licence — surfaced on the
+    // gear node so the catalogue's Licence field fills without a manual entry.
+    let latest_license = detail
+        .versions
+        .iter()
+        .find(|v| v.yanked != Some(true) && v.license.is_some())
+        .or_else(|| detail.versions.first())
+        .and_then(|v| v.license.clone());
+
     let gear_value = json!({
         "title": name,
         "name": name,
@@ -427,6 +591,7 @@ fn build_gear(detail: &CrateDetail) -> (Vec<GtsNode>, Vec<GtsEdge>, usize) {
         "homepage": detail.krate.homepage,
         "keywords": detail.keywords,
         "categories": detail.categories,
+        "license": latest_license,
     });
 
     let mut nodes: Vec<GtsNode> = Vec::with_capacity(detail.versions.len() + 1);

@@ -4,7 +4,7 @@
 //    edit markdown, and see the live section checklist + conformance.
 //  • Types — the workspace's effective document types (built-in ∪
 //    workspace-defined); define or override a type (template, sections, rules).
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 
 import { api, Doc, DocRules, DocSection, DocType, DocValidation } from "./api";
 
@@ -19,6 +19,9 @@ const card = { border: "1px solid var(--border,#e2e4e9)", borderRadius: 10, padd
 const slug = (s: string) =>
   s.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "section";
 
+/** Project-level: work with the project's documents (own + inherited from the
+ *  workspace). Document types are defined at the workspace level — see
+ *  [`DocumentTypesTab`] — so this view only reads them for the create picker. */
 export function DocumentsTab({
   token,
   workspaceId,
@@ -30,7 +33,41 @@ export function DocumentsTab({
   /** The open project tenant. */
   projectTenantId: string;
 }) {
-  const [mode, setMode] = useState<"docs" | "types">("docs");
+  const [types, setTypes] = useState<DocType[]>([]);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    api
+      .docTypes(token, workspaceId)
+      .then((r) => {
+        if (alive) setTypes(r.items);
+      })
+      .catch((e) => {
+        if (alive) setErr(errText(e));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [token, workspaceId]);
+
+  return (
+    <div className="documents">
+      {err && <div className="error">{err}</div>}
+      <DocumentsView
+        token={token}
+        workspaceId={workspaceId}
+        projectTenantId={projectTenantId}
+        types={types}
+      />
+    </div>
+  );
+}
+
+/** Workspace-level: define the document types — templates, section checklists
+ *  and conformance rules. They are inherited by every project in the workspace,
+ *  where documents are actually created and edited. */
+export function DocumentTypesTab({ token, workspaceId }: { token: string; workspaceId: string }) {
   const [types, setTypes] = useState<DocType[]>([]);
   const [err, setErr] = useState<string | null>(null);
 
@@ -47,39 +84,52 @@ export function DocumentsTab({
   }, [loadTypes]);
 
   return (
-    <div className="documents">
-      <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-        {(["docs", "types"] as const).map((m) => (
-          <button
-            key={m}
-            onClick={() => setMode(m)}
-            className={mode === m ? "active" : ""}
-            style={{
-              padding: "4px 12px",
-              borderRadius: 8,
-              border: "1px solid var(--border,#e2e4e9)",
-              background: mode === m ? "var(--accent-soft,#eef2ff)" : "transparent",
-              cursor: "pointer",
-              fontWeight: 600,
-            }}
-          >
-            {m === "docs" ? "Documents" : "Types"}
-          </button>
-        ))}
+    <div className="doctypes">
+      <style>{DOCTYPES_CSS}</style>
+      <div className="dt-head">
+        <h2>Document types</h2>
+        <p>
+          Define a document type once — its template, the sections it must contain, and the rules that
+          make it valid. Every project in the workspace inherits it, so its documents can be checked
+          against the same requirements.
+        </p>
       </div>
-
+      <DocTypesFlow />
       {err && <div className="error">{err}</div>}
+      <TypesView token={token} workspaceId={workspaceId} types={types} onSaved={loadTypes} />
+    </div>
+  );
+}
 
-      {mode === "docs" ? (
-        <DocumentsView
-          token={token}
-          workspaceId={workspaceId}
-          projectTenantId={projectTenantId}
-          types={types}
-        />
-      ) : (
-        <TypesView token={token} workspaceId={workspaceId} types={types} onSaved={loadTypes} />
-      )}
+/** The concept in one line: what you define here, and what it enables in projects. */
+function DocTypesFlow() {
+  const steps = [
+    { n: "1", t: "Type", d: "name & purpose" },
+    { n: "2", t: "Template", d: "markdown skeleton" },
+    { n: "3", t: "Sections", d: "required headings" },
+    { n: "4", t: "Rules", d: "what makes it valid" },
+  ];
+  return (
+    <div className="dt-flow">
+      {steps.map((s, i) => (
+        <Fragment key={s.n}>
+          <div className="dt-flow-step">
+            <span className="dt-flow-n">{s.n}</span>
+            <span className="dt-flow-body">
+              <span className="dt-flow-t">{s.t}</span>
+              <span className="dt-flow-d">{s.d}</span>
+            </span>
+          </div>
+          {i < steps.length - 1 && <span className="dt-flow-arrow">→</span>}
+        </Fragment>
+      ))}
+      <span className="dt-flow-arrow big">⇒</span>
+      <div className="dt-flow-step outcome">
+        <span className="dt-flow-body">
+          <span className="dt-flow-t">In projects</span>
+          <span className="dt-flow-d">documents are validated · conform ✓ / issues ✗</span>
+        </span>
+      </div>
     </div>
   );
 }
@@ -104,7 +154,6 @@ function DocumentsView({
   const [report, setReport] = useState<DocValidation | null>(null);
   const [newType, setNewType] = useState("");
   const [newTitle, setNewTitle] = useState("");
-  const [wsLevel, setWsLevel] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -146,9 +195,7 @@ function DocumentsView({
     setErr(null);
     try {
       const body = { type_key: newType, title: newTitle.trim() };
-      const doc = wsLevel
-        ? await api.createWorkspaceDocument(token, workspaceId, body)
-        : await api.createProjectDocument(token, workspaceId, projectTenantId, body);
+      const doc = await api.createProjectDocument(token, workspaceId, projectTenantId, body);
       setNewTitle("");
       await reload();
       setSelectedId(doc.id);
@@ -224,10 +271,6 @@ function DocumentsView({
               onChange={(e) => setNewTitle(e.target.value)}
               style={{ width: "100%", marginBottom: 6 }}
             />
-            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 8 }}>
-              <input type="checkbox" checked={wsLevel} onChange={(e) => setWsLevel(e.target.checked)} />
-              Workspace level (inherited by all projects)
-            </label>
             <button className="primary" onClick={create} disabled={busy || !newTitle.trim()} style={{ width: "100%" }}>
               Create from template
             </button>
@@ -459,107 +502,297 @@ function TypesView({
     }
   };
 
+  const definedSections = sections.filter((s) => s.title.trim());
+  const requiredSections = definedSections.filter((s) => s.required);
+  const frontKeys = frontMatter.split(",").map((x) => x.trim()).filter(Boolean);
+  const hasMinWords = definedSections.some((s) => s.minWords > 0);
+  const editing = dirtyKey !== null || sections.length > 0;
+
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", gap: 16, alignItems: "start" }}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        <button className="primary" onClick={blank} style={{ marginBottom: 4 }}>
+    <div className="dt-grid">
+      <aside className="dt-list">
+        <button className="dt-new" onClick={blank}>
           + New type
         </button>
         {types.map((t) => (
           <button
             key={t.key}
+            className={`dt-type${dirtyKey === t.key ? " active" : ""}`}
             onClick={() => load(t)}
-            style={{
-              textAlign: "left",
-              padding: "8px 10px",
-              borderRadius: 8,
-              border: "1px solid var(--border,#e2e4e9)",
-              background: dirtyKey === t.key ? "var(--accent-soft,#eef2ff)" : "transparent",
-              cursor: "pointer",
-            }}
           >
-            <div style={{ fontWeight: 600, fontSize: 13 }}>{t.name}</div>
-            <div style={{ fontSize: 11, opacity: 0.7, display: "flex", gap: 6 }}>
+            <span className="dt-type-name">{t.name}</span>
+            <span className="dt-type-meta">
               <code>{t.key}</code>
-              <span style={{ color: t.owner === "workspace" ? "#2563eb" : "var(--muted,#6b7280)" }}>· {t.owner}</span>
-            </div>
+              <span className={`dt-owner ${t.owner === "workspace" ? "ws" : "bi"}`}>{t.owner}</span>
+            </span>
+            <span className="dt-type-sub">
+              {t.sections.length} section{t.sections.length === 1 ? "" : "s"}
+              {t.rules.front_matter.length > 0 ? ` · ${t.rules.front_matter.length} front-matter` : ""}
+            </span>
           </button>
         ))}
-      </div>
+      </aside>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <section className="dt-editor">
         {err && <div className="error">{err}</div>}
-        {!dirtyKey && sections.length === 0 ? (
-          <p className="empty">Pick a type to view or override, or create a new one. Saving always writes a workspace-owned type (overriding a built-in of the same key).</p>
+        {!editing ? (
+          <div className="dt-empty">
+            <div className="dt-empty-ic">▤</div>
+            <p>Pick a type on the left to view or override it, or create a new one.</p>
+            <p className="dt-hint">
+              Saving always writes a <strong>workspace-owned</strong> type — overriding a built-in of
+              the same key — and every project inherits it.
+            </p>
+          </div>
         ) : (
           <>
-            <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 8 }}>
-              <input placeholder="key (slug)" value={key} onChange={(e) => setKey(e.target.value)} />
-              <input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
-            </div>
-            <input placeholder="Description" value={desc} onChange={(e) => setDesc(e.target.value)} />
-
-            <div style={card}>
-              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Sections (checklist)</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {sections.map((s, i) => (
-                  <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 90px 70px 28px", gap: 6, alignItems: "center" }}>
-                    <input placeholder="Section title" value={s.title} onChange={(e) => setRow(i, { title: e.target.value })} />
-                    <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}>
-                      <input type="checkbox" checked={s.required} onChange={(e) => setRow(i, { required: e.target.checked })} /> req
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      title="min words (0 = none)"
-                      value={s.minWords}
-                      onChange={(e) => setRow(i, { minWords: Number(e.target.value) || 0 })}
-                    />
-                    <button onClick={() => setSections((r) => r.filter((_, k) => k !== i))} title="remove">
-                      ×
-                    </button>
-                  </div>
-                ))}
+            <div className="dt-panel">
+              <h3>
+                <span className="dt-step">1</span> Identity
+              </h3>
+              <div className="dt-idrow">
+                <label className="dt-field">
+                  <span>Key (slug)</span>
+                  <input placeholder="adr" value={key} onChange={(e) => setKey(e.target.value)} />
+                </label>
+                <label className="dt-field">
+                  <span>Name</span>
+                  <input
+                    placeholder="Architecture Decision Record"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                  />
+                </label>
               </div>
-              <button style={{ marginTop: 8 }} onClick={() => setSections((r) => [...r, { title: "", required: false, minWords: 0 }])}>
+              <label className="dt-field">
+                <span>Description</span>
+                <input
+                  placeholder="What this document is for…"
+                  value={desc}
+                  onChange={(e) => setDesc(e.target.value)}
+                />
+              </label>
+            </div>
+
+            <div className="dt-panel">
+              <h3>
+                <span className="dt-step">2</span> Template
+                <span className="dt-h-sub">the markdown skeleton a new document starts from</span>
+              </h3>
+              <textarea
+                className="dt-template"
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                spellCheck={false}
+              />
+            </div>
+
+            <div className="dt-panel">
+              <h3>
+                <span className="dt-step">3</span> Section checklist
+                <span className="dt-h-sub">headings a conforming document must contain</span>
+              </h3>
+              <div className="dt-sec-head">
+                <span>Section title</span>
+                <span>Required</span>
+                <span>Min words</span>
+                <span />
+              </div>
+              {sections.map((s, i) => (
+                <div key={i} className="dt-sec-row">
+                  <input
+                    placeholder="Section title"
+                    value={s.title}
+                    onChange={(e) => setRow(i, { title: e.target.value })}
+                  />
+                  <button
+                    type="button"
+                    className={`dt-toggle${s.required ? " on" : ""}`}
+                    onClick={() => setRow(i, { required: !s.required })}
+                  >
+                    {s.required ? "required" : "optional"}
+                  </button>
+                  <input
+                    type="number"
+                    min={0}
+                    title="minimum words (0 = no minimum)"
+                    value={s.minWords}
+                    onChange={(e) => setRow(i, { minWords: Number(e.target.value) || 0 })}
+                  />
+                  <button
+                    type="button"
+                    className="dt-del"
+                    title="remove section"
+                    onClick={() => setSections((r) => r.filter((_, k) => k !== i))}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                className="dt-add"
+                onClick={() => setSections((r) => [...r, { title: "", required: false, minWords: 0 }])}
+              >
                 + Add section
               </button>
             </div>
 
-            <div style={card}>
-              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Rules</div>
-              <label style={{ display: "block", fontSize: 12, marginBottom: 6 }}>
-                Required front-matter keys (comma-separated)
-                <input value={frontMatter} onChange={(e) => setFrontMatter(e.target.value)} style={{ width: "100%" }} />
+            <div className="dt-panel">
+              <h3>
+                <span className="dt-step">4</span> Conformance rules
+                <span className="dt-h-sub">what makes a document pass or fail</span>
+              </h3>
+              <label className="dt-field">
+                <span>Required front-matter keys (comma-separated)</span>
+                <input
+                  placeholder="status, owner"
+                  value={frontMatter}
+                  onChange={(e) => setFrontMatter(e.target.value)}
+                />
               </label>
-              <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, marginRight: 16 }}>
-                Min title words
-                <input type="number" min={0} value={minTitle} onChange={(e) => setMinTitle(Number(e.target.value) || 0)} style={{ width: 60 }} />
-              </label>
-              <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, marginRight: 16 }}>
-                <input type="checkbox" checked={forbid} onChange={(e) => setForbid(e.target.checked)} /> forbid placeholders
-              </label>
-              <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}>
-                <input type="checkbox" checked={warn} onChange={(e) => setWarn(e.target.checked)} /> warn unknown sections
-              </label>
+              <div className="dt-rules">
+                <label className="dt-field small">
+                  <span>Min title words</span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={minTitle}
+                    onChange={(e) => setMinTitle(Number(e.target.value) || 0)}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className={`dt-toggle${forbid ? " on" : ""}`}
+                  onClick={() => setForbid(!forbid)}
+                >
+                  {forbid ? "✓ " : ""}forbid placeholders
+                </button>
+                <button
+                  type="button"
+                  className={`dt-toggle${warn ? " on" : ""}`}
+                  onClick={() => setWarn(!warn)}
+                >
+                  {warn ? "✓ " : ""}warn on unknown sections
+                </button>
+              </div>
             </div>
 
-            <label style={{ fontSize: 12, fontWeight: 600 }}>Template body (markdown)</label>
-            <textarea
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              spellCheck={false}
-              style={{ width: "100%", minHeight: 220, fontFamily: "ui-monospace, Menlo, monospace", fontSize: 13, lineHeight: 1.5, padding: 10, borderRadius: 8, border: "1px solid var(--border,#e2e4e9)", resize: "vertical" }}
-            />
+            <div className="dt-checks">
+              <div className="dt-checks-h">In a project, a document of this type conforms when:</div>
+              <ul>
+                <li>
+                  {requiredSections.length} required section{requiredSections.length === 1 ? "" : "s"}{" "}
+                  present
+                  {definedSections.length > requiredSections.length
+                    ? ` (of ${definedSections.length} defined)`
+                    : ""}
+                </li>
+                {hasMinWords && <li>each section meets its minimum length</li>}
+                {frontKeys.length > 0 && <li>front-matter carries: {frontKeys.join(", ")}</li>}
+                <li>
+                  the title has at least {minTitle} word{minTitle === 1 ? "" : "s"}
+                </li>
+                {forbid && <li>{"no leftover template placeholders (TODO, TBD, <…>)"}</li>}
+                {warn && <li>sections outside the checklist are flagged</li>}
+              </ul>
+            </div>
 
-            <div>
-              <button className="primary" onClick={save} disabled={busy}>
-                Save workspace type
+            <div className="dt-actions">
+              <button className="dt-save" onClick={save} disabled={busy}>
+                {busy ? "Saving…" : "Save workspace type"}
               </button>
+              <span className="dt-note">Saved as a workspace type — inherited by every project.</span>
             </div>
           </>
         )}
-      </div>
+      </section>
     </div>
   );
 }
+
+// ── styles for the workspace Document Types page ─────────────────────────────
+
+const DOCTYPES_CSS = `
+.doctypes {
+  --dtb: var(--border, #2b2f3a);
+  --dtsf: var(--surface, #1c1f27);
+  --dtsf2: var(--panel, #232733);
+  --dttx: var(--text, #e7e9ee);
+  --dtmu: var(--muted, #8b90a3);
+  --dtac: var(--accent, #3b82f6);
+  --dtacs: var(--accent-soft, rgba(59,130,246,.16));
+  --dtok: #1a7f4b;
+  color: var(--dttx);
+}
+.doctypes .dt-head h2 { font-size: 18px; font-weight: 700; margin: 0 0 4px; letter-spacing: -.01em; }
+.doctypes .dt-head p { margin: 0 0 14px; color: var(--dtmu); font-size: 13px; line-height: 1.5; max-width: 92ch; }
+
+.doctypes .dt-flow { display: flex; align-items: stretch; flex-wrap: wrap; gap: 8px; padding: 12px; margin: 0 0 16px; border: 1px solid var(--dtb); border-radius: 12px; background: var(--dtsf2); }
+.doctypes .dt-flow-step { display: flex; align-items: center; gap: 9px; padding: 8px 12px; background: var(--dtsf); border: 1px solid var(--dtb); border-radius: 9px; min-width: 0; }
+.doctypes .dt-flow-step.outcome { background: var(--dtacs); border-color: color-mix(in srgb, var(--dtac) 45%, transparent); }
+.doctypes .dt-flow-n { width: 20px; height: 20px; flex: none; border-radius: 50%; background: var(--dtac); color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 700; }
+.doctypes .dt-flow-body { display: flex; flex-direction: column; line-height: 1.15; min-width: 0; }
+.doctypes .dt-flow-t { font-weight: 600; font-size: 12.5px; }
+.doctypes .dt-flow-d { font-size: 10.5px; color: var(--dtmu); }
+.doctypes .dt-flow-arrow { align-self: center; color: var(--dtmu); font-size: 15px; }
+.doctypes .dt-flow-arrow.big { font-size: 18px; color: var(--dtac); }
+
+.doctypes .dt-grid { display: grid; grid-template-columns: 250px minmax(0,1fr); gap: 16px; align-items: start; }
+.doctypes .dt-list { display: flex; flex-direction: column; gap: 6px; }
+.doctypes .dt-new { padding: 9px 12px; border-radius: 9px; border: 0; cursor: pointer; background: var(--dtac); color: #fff; font: inherit; font-weight: 600; margin-bottom: 4px; }
+.doctypes .dt-type { text-align: left; cursor: pointer; font: inherit; color: inherit; display: flex; flex-direction: column; gap: 3px; padding: 9px 11px; border: 1px solid var(--dtb); border-radius: 9px; background: var(--dtsf); transition: border-color .12s, background .12s; }
+.doctypes .dt-type:hover { border-color: var(--dtac); }
+.doctypes .dt-type.active { border-color: var(--dtac); background: var(--dtacs); }
+.doctypes .dt-type-name { font-weight: 600; font-size: 13px; }
+.doctypes .dt-type-meta { display: flex; align-items: center; gap: 7px; }
+.doctypes .dt-type-meta code { font-size: 11px; color: var(--dtmu); }
+.doctypes .dt-owner { font-size: 9.5px; text-transform: uppercase; letter-spacing: .04em; padding: 1px 6px; border-radius: 999px; }
+.doctypes .dt-owner.bi { background: var(--dtsf2); color: var(--dtmu); border: 1px solid var(--dtb); }
+.doctypes .dt-owner.ws { background: var(--dtacs); color: var(--dtac); }
+.doctypes .dt-type-sub { font-size: 10.5px; color: var(--dtmu); }
+
+.doctypes .dt-editor { display: flex; flex-direction: column; gap: 12px; }
+.doctypes .dt-empty { text-align: center; padding: 40px 20px; color: var(--dtmu); border: 1px dashed var(--dtb); border-radius: 12px; }
+.doctypes .dt-empty-ic { font-size: 28px; opacity: .5; margin-bottom: 8px; }
+.doctypes .dt-empty p { margin: 4px auto; font-size: 13px; max-width: 60ch; }
+.doctypes .dt-hint, .doctypes .dt-note { font-size: 11.5px; color: var(--dtmu); }
+
+.doctypes .dt-panel { border: 1px solid var(--dtb); border-radius: 12px; background: var(--dtsf); padding: 13px 15px; }
+.doctypes .dt-panel h3 { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; margin: 0 0 11px; }
+.doctypes .dt-step { width: 20px; height: 20px; flex: none; border-radius: 6px; background: var(--dtacs); color: var(--dtac); display: grid; place-items: center; font-size: 11px; font-weight: 700; }
+.doctypes .dt-h-sub { font-weight: 400; font-size: 11px; color: var(--dtmu); margin-left: auto; }
+
+.doctypes .dt-field { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; color: var(--dtmu); margin-bottom: 9px; }
+.doctypes .dt-field:last-child { margin-bottom: 0; }
+.doctypes .dt-field.small { flex-direction: row; align-items: center; gap: 8px; margin-bottom: 0; }
+.doctypes .dt-idrow { display: grid; grid-template-columns: 160px 1fr; gap: 10px; }
+.doctypes input, .doctypes textarea, .doctypes select { font: inherit; color: var(--dttx); background: var(--dtsf2); border: 1px solid var(--dtb); border-radius: 7px; padding: 6px 9px; font-size: 13px; }
+.doctypes .dt-field input { width: 100%; }
+.doctypes .dt-field.small input { width: 64px; }
+.doctypes .dt-template { width: 100%; min-height: 200px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; line-height: 1.55; resize: vertical; }
+
+.doctypes .dt-sec-head, .doctypes .dt-sec-row { display: grid; grid-template-columns: 1fr 110px 90px 30px; gap: 8px; align-items: center; }
+.doctypes .dt-sec-head { font-size: 10.5px; color: var(--dtmu); text-transform: uppercase; letter-spacing: .03em; padding: 0 2px 6px; }
+.doctypes .dt-sec-row { margin-bottom: 6px; }
+.doctypes .dt-sec-row input[type=number] { width: 100%; }
+.doctypes .dt-toggle { font: inherit; font-size: 11.5px; cursor: pointer; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--dtb); background: var(--dtsf2); color: var(--dtmu); }
+.doctypes .dt-toggle.on { background: var(--dtacs); color: var(--dtac); border-color: color-mix(in srgb, var(--dtac) 45%, transparent); font-weight: 600; }
+.doctypes .dt-del { font: inherit; cursor: pointer; border: 1px solid var(--dtb); background: var(--dtsf2); color: var(--dtmu); border-radius: 7px; width: 30px; height: 30px; }
+.doctypes .dt-del:hover { color: var(--dtac); border-color: var(--dtac); }
+.doctypes .dt-add { margin-top: 8px; font: inherit; font-size: 12px; cursor: pointer; background: none; border: 1px dashed var(--dtb); color: var(--dtmu); border-radius: 8px; padding: 6px 12px; }
+.doctypes .dt-add:hover { border-color: var(--dtac); color: var(--dtac); }
+.doctypes .dt-rules { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 10px; }
+
+.doctypes .dt-checks { border: 1px solid color-mix(in srgb, var(--dtok) 40%, var(--dtb)); background: color-mix(in srgb, var(--dtok) 8%, var(--dtsf)); border-radius: 12px; padding: 12px 15px; }
+.doctypes .dt-checks-h { font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+.doctypes .dt-checks ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
+.doctypes .dt-checks li { font-size: 12px; color: var(--dttx); }
+.doctypes .dt-checks li::marker { color: var(--dtok); }
+
+.doctypes .dt-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.doctypes .dt-save { font: inherit; font-weight: 600; cursor: pointer; background: var(--dtac); color: #fff; border: 0; border-radius: 8px; padding: 9px 16px; }
+.doctypes .dt-save:disabled { opacity: .6; cursor: default; }
+
+@media (max-width: 720px) { .doctypes .dt-grid { grid-template-columns: 1fr; } }
+`;

@@ -173,6 +173,9 @@ pub struct ArtifactNodeDto {
 #[toolkit_macros::api_dto(response)]
 pub struct ArtifactNodeListResponse {
     pub nodes: Vec<ArtifactNodeDto>,
+    /// Total number of artifacts matching the type/scope filter across every
+    /// page, so a caller can show "N of M" without walking the whole cursor.
+    pub total: u32,
     /// Present when another page is available. Pass it as `cursor` unchanged.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<String>,
@@ -452,6 +455,8 @@ async fn list_nodes(
     // stable instance id here, then use the last returned id as the opaque
     // continuation token; the API stays deterministic across adapters.
     nodes.sort_by(|a, b| a.instance_id.cmp(&b.instance_id));
+    // The full filtered set is the total; pagination only slices a window of it.
+    let total = nodes.len() as u32;
     let start = q
         .cursor
         .as_deref()
@@ -469,6 +474,7 @@ async fn list_nodes(
         .flatten();
     Ok(Json(ArtifactNodeListResponse {
         nodes: page,
+        total,
         next_cursor,
     }))
 }

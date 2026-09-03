@@ -30,7 +30,7 @@ mod graph_sync;
 mod gts;
 mod plugin;
 mod rest;
-mod service;
+pub(crate) mod service;
 
 use std::sync::Arc;
 
