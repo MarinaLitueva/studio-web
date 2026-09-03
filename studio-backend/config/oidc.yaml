@@ -1,6 +1,6 @@
 # Constructor Studio Backend — OIDC profile (real login via Keycloak).
 # postgres.yaml with static-authn-plugin replaced by oidc-authn-plugin.
-# Start the IdP first:  docker compose up -d postgres keycloak
+# Start the IdP first:  docker compose up -d graph-postgres keycloak
 # Portal login: "Sign in with SSO" (admin/studio or demo/studio).
 # For an EXTERNAL IdP see README "OIDC login" — you need an issuer URL, a
 # public PKCE client, UUID `sub`, and a `tenant_id` claim (home tenant UUID).
@@ -363,7 +363,7 @@ gears:
       # create Postgres databases (see the note next to it). A fresh volume
       # gets it from docker/initdb/01-create-databases.sql; on a volume that
       # already exists, create it once by hand:
-      #   docker compose exec -T postgres psql -U studio -d studio -c 'CREATE DATABASE studio_credstore_values OWNER studio;'
+      #   docker compose exec -T graph-postgres psql -U studio -d studio -c 'CREATE DATABASE studio_credstore_values OWNER studio;'
       dbname: "studio_credstore_values"
     config:
       vendor: "constructorfabric"         # must equal credstore.vendor above

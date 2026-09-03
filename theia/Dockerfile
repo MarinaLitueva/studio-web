@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 # The syntax directive is required for the `RUN --mount=type=secret` below
 # (the GitHub token used to resolve the skill engine); everything else in
 # this file builds fine on the default frontend.
@@ -23,7 +23,7 @@
 #   STUDIO_ALLOWED_ORIGINS, STUDIO_TRUST_PROXY — see poc/theia/README.md
 
 # ── Build: bundle browser-app (downloads Theia plugins — needs network) ──
-FROM node:22.23.1-bookworm AS build
+FROM node:22.23.1-bookworm@sha256:5647be709086c696ff32edaaf1c70cd26d1da6ab2b39c32f3c7b4c4a31957e37 AS build
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 make g++ git libsecret-1-dev libx11-dev libxkbfile-dev \
     && rm -rf /var/lib/apt/lists/*
@@ -53,7 +53,7 @@ RUN npm run build:browser
 # Constructor Studio deliberately requires a newer Python patch release than
 # Debian Bookworm ships (3.11.2). Build its isolated environment with the
 # official Python 3.12 image, then copy that runtime and venv into Theia.
-FROM python:3.12-slim-bookworm AS cfs
+FROM python:3.12-slim-bookworm@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254 AS cfs
 ARG STUDIO_CFS_REF=ca55c6687474a53151a0956de03eb22f8da56ef4
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -101,7 +101,7 @@ RUN --mount=type=secret,id=github_token \
     && /opt/cfs/bin/python -c "import sys; from studio_proxy.resolve import find_cached_skill; entry = find_cached_skill(); print('skill engine entry point:', entry); sys.exit(0 if entry else 1)"
 
 # ── Runtime ──
-FROM node:22.23.1-bookworm-slim
+FROM node:22.23.1-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3
 # procps: Theia's process-tree termination shells out to `ps`; without it a
 # plugin-host teardown (e.g. after a ws ping timeout) throws an uncaught
 # ENOENT that kills the whole backend — the container exits mid-session.

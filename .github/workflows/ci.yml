@@ -64,6 +64,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler cmake
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.97.0
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: studio-backend

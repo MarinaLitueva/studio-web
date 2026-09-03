@@ -19,28 +19,31 @@
 # another workspace's target directory, so an image that pre-builds the gears
 # workspace would speed up nothing on our side. What is cacheable is OUR
 # dependency graph, and it is described by our lockfile.
-FROM rust:1.97-bookworm AS chef
+FROM rust:1.97-bookworm@sha256:0e2bcaef56d041a486784e54104a81aebe0da44bd03019bd70bc0401e42e4a97 AS chef
 # libprotobuf-dev ships the well-known types (google/protobuf/empty.proto …)
 # that gears-rust SDK protos import; protoc alone fails without them.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     protobuf-compiler libprotobuf-dev cmake \
  && rm -rf /var/lib/apt/lists/* \
- && cargo install cargo-chef --locked
+ && cargo install cargo-chef --version 0.1.78 --locked
 WORKDIR /src/studio-backend
 
 # The recipe is a dependency-only projection of the manifest: it changes when
 # dependencies change and not when our sources do.
 FROM chef AS planner
 COPY studio-backend/ .
-# Track latest gears-rust main: refresh the lock before projecting the
-# recipe so the cached dep layer is built against head.
-RUN cargo update && cargo chef prepare --recipe-path recipe.json
+# Cargo.lock is the source of truth for the gears-rust git revision and every
+# registry dependency. Do not run `cargo update` in an image build: it would
+# silently produce a binary different from the checked-in source tree.
+RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS build
 COPY --from=planner /src/studio-backend/recipe.json recipe.json
 # No cache mounts here on purpose: the compiled dependencies must live in the
 # image layer, which is what makes the cache shareable (GHA, another machine)
 # rather than local to one BuildKit daemon.
+# The generated recipe includes the committed lockfile. `cargo chef cook`
+# therefore resolves the same dependency graph without a separate update step.
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY studio-backend/ .
 # CARGO_FEATURES lets the two-step dev bootstrap build a stripped binary
@@ -53,13 +56,10 @@ COPY studio-backend/ .
 # The cargo-chef dep layer above is unchanged, so both variants share it and
 # only the final app compile differs.
 ARG CARGO_FEATURES=""
-# cargo update again here (the COPY above restored the committed lock) so the
-# final compile also resolves the latest gears-rust main; no --locked.
-RUN cargo update \
- && cargo build --release ${CARGO_FEATURES} \
+RUN cargo build --locked --release ${CARGO_FEATURES} \
  && cp target/release/studio-backend /studio-backend
 
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
 # gosu drops privileges in the entrypoint without the signal-forwarding and
 # TTY quirks of su/sudo — the process it execs stays PID 1.
 # git: the artifact-ingest gear shells out to it to clone repositories into the

@@ -12,8 +12,8 @@
 # the IdP dies silently. The portal's "Developer sign-in (static token)" is
 # inert in this profile; it belongs to config/dev.yaml and config/postgres.yaml.
 #
-#   Database only (daily dev: backend in WSL, frontend via npm run dev):
-#     docker compose up -d postgres
+#   Database only (for a host-run backend):
+#     docker compose up -d graph-postgres keycloak
 #
 # NB: the backend image builds the 90-crate gears workspace — the first
 # `--build` takes a while; BuildKit caches make rebuilds fast. No sibling
@@ -40,7 +40,7 @@ services:
   # workflows that don't need it — but included in the default profile for
   # one-click friendliness; comment out if unwanted.
   keycloak:
-    image: quay.io/keycloak/keycloak:26.0
+    image: quay.io/keycloak/keycloak:26.7@sha256:ff4257d0d64efbe99ed1ddfaf07765cc3c36dc7518bf8324d41961327f441c54
     container_name: studio-keycloak
     command: ["start-dev", "--import-realm"]
     environment:
@@ -104,16 +104,9 @@ services:
       retries: 30
       start_period: 30s
 
-  # PostgreSQL 19 + pgvector — the graph-storage gear's database, and ONLY that
-  # gear's. It is separate from `postgres` above because graph-storage needs
-  # three things 16-alpine does not have: the `vector` extension, SQL/PGQ
-  # (`CREATE PROPERTY GRAPH`, PostgreSQL 19+) and HNSW indexes. Isolating it
-  # this way keeps every other gear on the stable server: nothing else in the
-  # assembly is exposed to a beta PostgreSQL.
-  #
-  # The gear reaches it through the per-gear database override in
-  # studio-backend/config/*.yaml (`database.servers.pg_graph`), so no other
-  # gear can be routed here by accident.
+  # PostgreSQL 19 + pgvector — the single PostgreSQL instance for local
+  # Compose. It hosts application gear databases and graph_storage. PostgreSQL
+  # 19 is required for graph-storage's vector, SQL/PGQ and HNSW features.
   graph-postgres:
     build:
       context: studio-backend/docker/graph-postgres

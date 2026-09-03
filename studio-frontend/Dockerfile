@@ -2,7 +2,7 @@
 # dist/ is built in CI (release.yml, frontend-dist job) before `docker build`.
 # nginx-unprivileged: runs as uid 101 and listens on 8080 — compatible with
 # k8s runAsNonRoot pod security (plain nginx needs root for port 80).
-FROM nginxinc/nginx-unprivileged:1.27-alpine
+FROM nginxinc/nginx-unprivileged:1.27-alpine@sha256:65e3e85dbaed8ba248841d9d58a899b6197106c23cb0ff1a132b7bfe0547e4c0
 
 # Template (not a literal conf): the entrypoint's envsubst renders it with
 # BACKEND_HOST at start, so one image serves compose and k8s alike.

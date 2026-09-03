@@ -7,7 +7,7 @@
 # (glibc 2.39) and bookworm's glibc 2.36 cannot load it — the container
 # died at start with "version GLIBC_2.39 not found". trixie ships 2.41;
 # keep this base and release.yml's backend-binary runner in step.
-FROM debian:trixie-slim
+FROM debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl \

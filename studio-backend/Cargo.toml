@@ -81,7 +81,7 @@ credstore-sdk = { package = "cf-gears-credstore-sdk", git = "https://github.com/
 toolkit-utils = { package = "cf-gears-toolkit-utils", git = "https://github.com/constructorfabric/gears-rust", branch = "main" }
 # studio-connector: GtsTypeId on the account-management metadata boundary.
 # Same version gears-rust pins in its workspace manifest.
-gts = "0.11"
+gts = "0.12"
 
 # ── keycloak-idp-plugin (in-crate; real user provisioning, ADR-0004) ──
 # "stream" is for the llm-proxy gear (SSE passthrough to the LLM upstream).

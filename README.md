@@ -1,223 +1,146 @@
-# studio-web
+# Constructor Studio Web
 
-Constructor Studio web server — backend, frontend, installer.
+Constructor Studio Web is the web runtime for Constructor Studio: the Rust
+backend, the primary FrontX portal, the prototype portal, Keycloak-based login,
+and per-workspace Theia IDE sessions.
 
-| Project | What | Stack |
-|---|---|---|
-| [`studio-backend/`](studio-backend/) | Studio API service assembled from [CF/Gears](https://github.com/constructorfabric/gears-rust): multi-tenancy, users, groups. REST + OpenAPI at `/cf/docs`. | Rust (axum/tokio/sea-orm via gears) |
-| [`studio-frontend/`](studio-frontend/) | Portal UI on FrontX (shell + microfrontends, ADR-0006) — what CI/release build, compose serves and k8s deploys. | React 19 + TS via FrontX templates |
-| [`studio-frontend-prototype/`](studio-frontend-prototype/) | The pre-FrontX portal SPA, kept as a playground; ships as its own image (`studio-frontend-prototype`) and runs with the compose stack on port 8081. Tested/built at release time, not in CI. | Vite + React 19 + TS, vitest |
+## Supported deployment modes
 
-## Quick start
+| Mode | Purpose | Entry point | Configuration |
+|---|---|---|---|
+| Docker Compose | Local development and functional checks on one machine | `http://localhost:8080` | [`.env.example`](.env.example), [`docker-compose.yml`](docker-compose.yml) |
+| Kubernetes | Shared dev, test, and future production environments | Environment hostname | [`deploy/helm/studio-web`](deploy/helm/studio-web), [`deploy/README.md`](deploy/README.md) |
 
-**One click (Docker):** everything — Postgres, backend built from source, frontend on nginx:
+The two modes run the same logical stack, but use different runtime drivers:
+Compose launches IDE containers through the local Docker daemon; Kubernetes
+launches session Pods through the namespace-scoped Kubernetes driver.
+
+## Local development with Docker Compose
+
+### Prerequisites
+
+- Docker Desktop or Docker Engine with Compose v2;
+- access to GitHub while building the backend image (it downloads pinned Rust
+  dependencies);
+- optionally, a GitHub PAT with `read:packages` when launching Theia sessions
+  from a private GHCR image.
+
+Create local environment settings. Do not commit `.env`.
+
+```bash
+cp .env.example .env
+```
+
+Start the complete local stack:
 
 ```bash
 docker compose up --build -d
-# portal:   http://localhost:8080    (sign in: studio-admin-token)
-# API/docs: http://localhost:8090/cf/docs
+docker compose ps
 ```
 
-Requires Docker (Desktop with WSL integration is fine). `gears-rust` is a git dependency
-pinned in `Cargo.toml`, so cargo fetches it during the image build — no sibling checkout
-is needed. The first build compiles the whole gears workspace — grab a coffee; rebuilds
-are cached. Stop with `docker compose down` (add `-v` to wipe data).
-
-**Fresh / empty database — handled automatically.** On a brand-new Postgres volume the
-LLM chain's `oagw` gear would otherwise abort boot: it resolves the platform root tenant
-in its `post_init`, but account-management only seeds that root later, in its serve
-phase. A plain `docker compose up` now closes this chicken-and-egg by itself — a one-shot
-`backend-bootstrap` service (built `--no-default-features`, so no `oagw`) starts first,
-reaches serve, seeds and realm-binds the root, then exits. The main backend is gated on
-that seeder finishing (`service_completed_successfully`), so it only starts against an
-already-seeded database. On a warm volume the seeder is a fast no-op and leaves nothing
-running — the same `docker compose up` works cold or warm.
-
-**Prototype playground:** the pre-FrontX SPA comes up with the stack automatically —
-http://localhost:8081 (own image, same backend, same `/cf/` proxy).
-
-**Daily dev (fast iteration):** infra in Docker, backend on the host (WSL), frontend via Vite:
-
-```bash
-docker compose up -d postgres keycloak          # once
-
-# Environment (put these in your shell profile / a sourced env file):
-export STUDIO_PG_PASSWORD=<compose postgres password>
-export STUDIO_LLM_API_KEY=<LLM provider key>          # AI chats + in-IDE Theia AI
-                                                      # free default: Groq — console.groq.com → API Keys
-export STUDIO_REGISTRY_USER=<your github login>       # pulls the IDE image from ghcr
-export STUDIO_REGISTRY_TOKEN=<PAT with read:packages> # (Docker API ignores `docker login`)
-
-cd studio-backend && cargo run -- --config config/oidc.yaml run       # WSL
-cd studio-frontend && npm install && npm run dev      # http://localhost:5173
-```
-
-Sign in with SSO (`admin`/`studio`) — see "OIDC login" below for the one-time
-self-signed-cert step. Static-token profiles remain for scripts:
-`config/postgres.yaml` (Postgres) and `config/dev.yaml` (zero-Docker, SQLite).
-
-Secrets self-heal on every boot (`studio-secrets-bootstrap` gear): the LLM key
-is re-seeded into credstore automatically — no manual curls after restarts.
-Switching the LLM provider is env-only: `STUDIO_LLM_BASE_URL`,
-`STUDIO_LLM_MODEL` (Theia AI proxy) and `STUDIO_LLM_HOST` (mini-chat/OAGW)
-override the Groq defaults; any OpenAI-compatible endpoint works.
-
-## Theia IDE sessions (Open Studio)
-
-"Open Studio" launches a dedicated Theia IDE container per workspace via the
-`studio-session` gear (our first own gear — see
-`studio-backend/docs/adr/0003-theia-sessions.md`).
-
-No local image build is needed: this repository's **Build Images** workflow
-publishes `cf-studio-theia` beside every backend image.
-
-- local Docker image: `ghcr.io/constructorfabric/studio-web/cf-studio-theia:edge`
-- Kubernetes image: the immutable backend SHA through the cluster's GHCR proxy
-- auth: the package is private — set `STUDIO_REGISTRY_USER` /
-  `STUDIO_REGISTRY_TOKEN` (PAT with `read:packages`) before starting the
-  backend. `docker login` alone is NOT enough: the gear talks to the Docker
-  API directly, which ignores the CLI credential store.
-- freshness: `always_pull: true` re-pulls the mutable `edge` tag on every
-  launch; a failed pull falls back to the local copy (offline-friendly).
-- hacking on the image locally: `cd theia && docker build
-  -t cf-studio-theia:latest .`, then in the config set
-  `image: cf-studio-theia:latest` + `always_pull: false`.
-
-In the portal: workspace → Open Studio → Launch. Optional Git URL is
-cloned into the workspace on first launch. Sessions bind to loopback ports
-41000-41099, live 4 h (reaper), survive backend restarts (label adoption),
-and can be stopped from the launcher. Inside the IDE, Theia AI (chat with
-@Universal/@Coder agents, inline completion) is configured automatically by
-the portal bridge through the backend's `studio-llm-proxy` — the provider
-key never enters the container.
-
-Local requirements: Docker daemon reachable from the backend
-(`/var/run/docker.sock`). In the full-docker profile the compose file mounts the socket and
-`/srv/cf-studio-workspaces` into the backend (host and container paths must be
-identical — bind sources are resolved by the host daemon).
-
-## OIDC login (real sign-in)
-
-The static dev tokens stay for scripts and quick starts; real browser login
-uses the `oidc-authn-plugin` gear against a Keycloak shipped in compose.
-
-```bash
-docker compose up -d postgres keycloak
-cd studio-backend && cargo run -- --config config/oidc.yaml run
-```
-
-Then in the portal press "Sign in with SSO" — users `admin` / `demo`
-(password `studio`). Dev Keycloak runs self-signed TLS on
-<https://localhost:8443>: open that URL once and accept the certificate
-before the first login. Admin console: same URL, `admin`/`admin`.
-
-Sessions renew silently: the refresh token is kept in `sessionStorage` and
-used to mint a new access token a minute before expiry, after any 401, and on
-page load — so a reload keeps you signed in and the hourly access-token expiry
-is invisible. Sign out (or closing the tab) drops it.
-
-How it fits together: the portal does Authorization Code + PKCE
-(`src/oidc.ts`, no dependencies), Keycloak issues a JWT whose `sub` is the
-user UUID and whose `tenant_id` claim (from a user attribute, see
-`docker/keycloak/realm-studio.json`) is the home tenant UUID; the
-`oidc-authn-plugin` validates it via discovery/JWKS (the dev CA is trusted
-through `http_client.custom_ca_certificate_paths`) and maps claims into the
-platform SecurityContext. mini-chat's background S2S goes through the same
-realm (`s2s_oauth`, confidential client `mini-chat`).
-
-### User provisioning (official Keycloak IdP plugin)
-
-Inviting a user in the portal creates a real Keycloak user, not a local stub. Account-
-management drives this through the official `cf-gears-keycloak-idp-plugin` (it replaced
-the in-crate plugin): every tenant is bound to a Keycloak realm, and user operations
-(invite, list) run against that realm.
-
-All Studio tenants share one realm, `studio`. The binding is seeded once, at bootstrap —
-`account-management.bootstrap.root_tenant_metadata: { realm_name: "studio" }` binds the
-platform root, and every descendant (organization → workspace → project) inherits
-`studio` through its parent context. There is nothing per-tenant to configure, and no
-`idp_provisioning` flag is needed: account-management provisions every tenant with its
-IdP plugin regardless.
-
-Because the binding is written at bootstrap, it exists only on tenants created after it
-was configured — turning it on requires a fresh database (`docker compose down -v`). The
-`studio-admin` confidential client in `docker/keycloak/realm-studio.json` already carries
-the `realm-management` roles the plugin needs, so `docker compose up` wires everything
-with no manual Keycloak steps. Full swap notes: `studio-backend/docs/keycloak-idp-migration.md`.
-
-### Cloning from a self-hosted GitLab (or GitHub Enterprise)
-
-The GitHub/GitLab chips compose `github.com` / `gitlab.com` URLs. For a
-self-hosted host use the **Git URL** source with the full HTTPS clone URL and
-a PAT:
-
-| Field | Value |
+| Service | URL / port |
 |---|---|
-| name | `csh_hypotheses_back` (becomes the directory) |
-| source | **Git URL** |
-| url | `https://gitlab.constr.dev/hypotheses/csh_hypotheses_back.git` |
-| PAT | a GitLab personal access token with the `read_repository` scope |
-| mount at | optional — e.g. `.workspace-sources/hypotheses/csh_hypotheses_back` to match a CLI-created workspace layout |
+| Main portal | <http://localhost:8080> |
+| Prototype portal | <http://localhost:8081> |
+| Backend API and OpenAPI | <http://localhost:8090/cf/docs> |
+| Keycloak / local admin console | <https://localhost:8443> |
+| PostgreSQL | `127.0.0.1:5433` |
 
-**The workspace root can be a repository too.** A Studio workspace created by
-the CLI *is* a git repo (manifest, docs, `.workspace-sources/`). Put its clone
-URL in the dashboard's **Workspace root** field (plus a PAT and branch if
-needed) and the session clones it on first launch — nothing has to exist on
-the backend host. Sources then clone into it, and because CLI workspaces
-gitignore `.workspace-sources/`, the root repo stays clean. The local-folder
-field remains as the alternative and takes precedence when both are set.
+The Compose profile starts these services: `graph-postgres`, `keycloak`,
+`backend-bootstrap`, `backend`, `frontend`, and `frontend-prototype`.
+`graph-postgres` is the single local PostgreSQL instance; it contains both the
+application databases and `graph_storage`.
 
-HTTPS, not SSH: the session container has no SSH key or agent, while a PAT
-travels as a credstore secret reference and is injected into the clone through
-an inline credential helper (never written to `.git/config`). If the workspace
-manifest lists `git@…` SSH remotes (as CLI-created ones do), the portal's
-HTTPS source is what actually materializes the working copy; the manifest entry
-stays untouched.
+Open <https://localhost:8443> once and accept the local self-signed certificate
+before using browser login. Sign in to the portal with Keycloak user
+`admin` or `demo`, password `studio`. Keycloak administration uses
+`admin` / `admin` and is only intended for local development.
 
-### Using your own IdP (Keycloak, Azure AD, Auth0, …)
+Useful lifecycle commands:
 
-1. Create a **public client** with **PKCE (S256)**, redirect URI
-   `http://localhost:5173/*` (or your portal origin) and matching web origin.
-2. Tokens must carry: UUID `sub`, and a `tenant_id` claim with the user's
-   home-tenant UUID (custom claim/attribute mapper). Adjust
-   `jwt.claim_mapping` in `config/oidc.yaml` if your claim names differ.
-3. Point `jwt.trusted_issuers` (and `s2s_oauth.discovery_url`, if used) at
-   your issuer URL — https required; add your corporate root CA via
-   `http_client.custom_ca_certificate_paths` when it is not in system roots.
-4. Frontend: set `VITE_OIDC_ISSUER` and `VITE_OIDC_CLIENT_ID`.
+```bash
+docker compose logs -f backend
+docker compose down
+docker compose down -v  # removes local database data as well
+```
 
-## CI/CD (GitHub Actions)
+### Optional local capabilities
 
-- **`ci.yml` / Test** — on push/PR, path-filtered: backend (fmt,
-  clippy `-D warnings`, locked build, tests, and `--list-gears` smoke) and
-  frontend (`studio-frontend/`: build and tests).
-- **`release.yml` / Build Images** — service tags `v*` publish backend,
-  frontend, prototype, and Theia images; infrastructure tags `infra-v*`
-  publish graph PostgreSQL and Keycloak images. Every publication requires Test
-  success for the exact commit. Main-branch snapshots rebuild only components
-  whose build contexts changed (`studio-backend/`, `studio-frontend/`,
-  `studio-frontend-prototype/`, or `theia/`). Unchanged images are copied from
-  the last successful `edge` set to the new immutable `sha-*` tag, so every
-  snapshot remains complete and can still be deployed with `component=all`.
-  Version tags and manual Build Images runs always perform a full build.
-- **`deploy.yml` / Deploy Services** — manually deploys backend, frontend, or
-  prototype independently, or all services together. Branch snapshots are
-  dev-only; `v*` releases may target any configured application environment.
-- **`deploy-infra.yml` / Deploy Infra** — manually reconciles graph PostgreSQL
-  and Keycloak from a published `infra-v*` release.
+| Capability | Local behaviour |
+|---|---|
+| LLM / Spec Quality | Add the corresponding keys to `.env`; blank keys leave those integrations unavailable without preventing the stack from starting. |
+| Durable credential values | Set `STUDIO_CREDSTORE_KEY` once (`openssl rand -base64 32`). Changing it makes previously stored values unreadable. |
+| Theia sessions | Build the expected local image before the first session, then set GHCR credentials in `.env` only if the selected image requires them. |
+| S3 file storage | Not provisioned by Compose. Local Compose is not an S3 integration test; use the Kubernetes environment for the Virtuozzo S3 path. |
 
-Service release: `git tag v0.1.0 && git push origin v0.1.0`.
+Build the image used by the current Compose session profile:
 
-Infrastructure release: `git tag infra-v0.1.0 && git push origin infra-v0.1.0`.
+```bash
+docker build -t cf-studio-theia:local ./theia
+```
 
-## Deploying to Kubernetes
+Compose mounts the Docker socket and `/srv/cf-studio-workspaces` into the
+backend. Do not change only one side of that mount: session containers are
+created by the host Docker daemon and require the same host path.
 
-The current compatibility chart is in `deploy/helm/studio-web`. Environment
-values and GitHub Actions deployment workflows live in this repository; there
-is no GitLab or Argo CD deployment dependency. The pipeline contract, Secret
-contract, and prerequisites live in `deploy/PIPELINES.md`,
-`deploy/helm/values-dmz.example.yaml`, and `deploy/README.md`. Cluster v1
-uses the Kubernetes per-session Pod driver when
-`backend.sessions.enabled=true` (enabled for dev). The chart owns the
-namespace-scoped Pod/Service RBAC and keeps the Theia image on the same
-immutable service SHA as the backend (ADR-0003).
+## Kubernetes deployment
+
+Kubernetes is the supported shared deployment mode. The Helm chart and
+environment values remain in this repository; deployment is performed through
+GitHub Actions, not Argo CD or a separate infrastructure repository.
+
+| Environment | Namespace | Public endpoints |
+|---|---|---|
+| Dev | `studio-dev` | `studio-dev.cfabric.org`, `studio-dev-poc.cfabric.org` |
+| Test | `studio-test` | `studio-test.cfabric.org`, `studio-test-poc.cfabric.org` |
+
+The exact Secret contract, Helm values, session RBAC bootstrap, S3 setup and
+break-glass recovery procedure are documented in [`deploy/README.md`](deploy/README.md).
+The CI/CD promotion rules are in [`deploy/PIPELINES.md`](deploy/PIPELINES.md).
+
+Routine deployment flow:
+
+1. Push or merge code to `main`. The Build Images workflow publishes an
+   immutable `sha-<commit>` snapshot, rebuilding only components whose build
+   context changed.
+2. In GitHub Actions, run **Deploy Services** from `main`.
+3. For dev select a `sha-<commit>` image tag and the required service
+   component. For test select a published `v*` release tag.
+4. For PostgreSQL, Keycloak, or other infrastructure changes, publish an
+   `infra-v*` tag and run **Deploy Infra**.
+
+Do not use a cluster-admin kubeconfig in GitHub Actions. Each GitHub
+Environment uses the namespace-scoped `studio-deployer` kubeconfig stored as
+`KUBE_CONFIG_B64`.
+
+## CI/CD
+
+- **Test** runs on pushes and pull requests, filtered by changed component.
+- **Build Images** runs for `main`, version tags (`v*`), infrastructure tags
+  (`infra-v*`), and manual requests. Main snapshots rebuild only changed images
+  and copy unchanged images into the same immutable SHA snapshot.
+- **Deploy Services** is manual and deploys `backend`, `frontend`,
+  `prototype`, or `all`. SHA snapshots are dev-only; release tags may be
+  promoted to configured shared environments.
+- **Deploy Infra** is manual and accepts only published `infra-v*` tags.
+
+```bash
+# service release
+git tag v0.1.0
+git push origin v0.1.0
+
+# infrastructure release
+git tag infra-v0.1.0
+git push origin infra-v0.1.0
+```
+
+## Further documentation
+
+- [`studio-backend/README.md`](studio-backend/README.md) — backend architecture
+  and development.
+- [`studio-backend/docs/adr/0003-theia-sessions.md`](studio-backend/docs/adr/0003-theia-sessions.md)
+  — IDE session model.
+- [`theia/README.md`](theia/README.md) — Theia image and IDE customisation.
+- [`keycloak/README.md`](keycloak/README.md) — Keycloak image and realm setup.
+- [`deploy/README.md`](deploy/README.md) — Kubernetes prerequisites and
+  operations.

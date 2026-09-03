@@ -378,7 +378,7 @@ gears:
       # create Postgres databases (see the note next to it). A fresh volume
       # gets it from docker/initdb/01-create-databases.sql; on a volume that
       # already exists, create it once by hand:
-      #   docker compose exec -T postgres psql -U studio -d studio -c 'CREATE DATABASE studio_credstore_values OWNER studio;'
+      #   docker compose exec -T graph-postgres psql -U studio -d studio -c 'CREATE DATABASE studio_credstore_values OWNER studio;'
       dbname: "studio_credstore_values"
     config:
       vendor: "constructorfabric"         # must equal credstore.vendor above
