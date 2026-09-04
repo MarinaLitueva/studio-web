@@ -353,7 +353,13 @@ async fn scaffold_gear(
         .collect();
     let w = catalog
         .0
-        .scaffold_into_repo(&ctx, &project_id.to_string(), &body.slug, files, body.open_pr.unwrap_or(false))
+        .scaffold_into_repo(
+            &ctx,
+            &project_id.to_string(),
+            &body.slug,
+            files,
+            body.open_pr.unwrap_or(false),
+        )
         .await
         .map_err(|e| {
             StudioComponentsCatalogError::invalid_argument()
@@ -487,58 +493,63 @@ pub fn register_routes(
         .error_500(openapi)
         .register(router, openapi);
 
-    let router = OperationBuilder::get(
-        "/studio-components-catalog/v1/projects/{project_id}/gear-repo",
-    )
-    .operation_id("studio_components_catalog.get_project_repo")
-    .summary("The gear repository connected to a project (0 or 1 node)")
-    .tag("StudioComponentsCatalog")
-    .authenticated()
-    .require_license_features::<License>([])
-    .path_param("project_id", "Project tenant id")
-    .handler(get_project_repo)
-    .json_response_with_schema::<CatalogNodeListResponse>(
-        openapi,
-        StatusCode::OK,
-        "Connected gear repo",
-    )
-    .error_401(openapi)
-    .error_500(openapi)
-    .register(router, openapi);
+    let router =
+        OperationBuilder::get("/studio-components-catalog/v1/projects/{project_id}/gear-repo")
+            .operation_id("studio_components_catalog.get_project_repo")
+            .summary("The gear repository connected to a project (0 or 1 node)")
+            .tag("StudioComponentsCatalog")
+            .authenticated()
+            .require_license_features::<License>([])
+            .path_param("project_id", "Project tenant id")
+            .handler(get_project_repo)
+            .json_response_with_schema::<CatalogNodeListResponse>(
+                openapi,
+                StatusCode::OK,
+                "Connected gear repo",
+            )
+            .error_401(openapi)
+            .error_500(openapi)
+            .register(router, openapi);
 
-    let router = OperationBuilder::post(
-        "/studio-components-catalog/v1/projects/{project_id}/gear-repo",
-    )
-    .operation_id("studio_components_catalog.set_project_repo")
-    .summary("Connect (or update) the gear repository for a project")
-    .tag("StudioComponentsCatalog")
-    .authenticated()
-    .require_license_features::<License>([])
-    .path_param("project_id", "Project tenant id")
-    .handler(set_project_repo)
-    .json_request::<SetProjectRepoRequest>(openapi, "Gear repository")
-    .json_response_with_schema::<CatalogNodeDto>(openapi, StatusCode::OK, "Connected gear repo")
-    .error_400(openapi)
-    .error_401(openapi)
-    .error_500(openapi)
-    .register(router, openapi);
+    let router =
+        OperationBuilder::post("/studio-components-catalog/v1/projects/{project_id}/gear-repo")
+            .operation_id("studio_components_catalog.set_project_repo")
+            .summary("Connect (or update) the gear repository for a project")
+            .tag("StudioComponentsCatalog")
+            .authenticated()
+            .require_license_features::<License>([])
+            .path_param("project_id", "Project tenant id")
+            .handler(set_project_repo)
+            .json_request::<SetProjectRepoRequest>(openapi, "Gear repository")
+            .json_response_with_schema::<CatalogNodeDto>(
+                openapi,
+                StatusCode::OK,
+                "Connected gear repo",
+            )
+            .error_400(openapi)
+            .error_401(openapi)
+            .error_500(openapi)
+            .register(router, openapi);
 
-    let router = OperationBuilder::post(
-        "/studio-components-catalog/v1/projects/{project_id}/scaffold",
-    )
-    .operation_id("studio_components_catalog.scaffold_gear")
-    .summary("Write a scaffolded gear skeleton into the project's connected gear repo")
-    .tag("StudioComponentsCatalog")
-    .authenticated()
-    .require_license_features::<License>([])
-    .path_param("project_id", "Project tenant id")
-    .handler(scaffold_gear)
-    .json_request::<ScaffoldRequest>(openapi, "Gear scaffold")
-    .json_response_with_schema::<ScaffoldResultDto>(openapi, StatusCode::OK, "Scaffold written")
-    .error_400(openapi)
-    .error_401(openapi)
-    .error_500(openapi)
-    .register(router, openapi);
+    let router =
+        OperationBuilder::post("/studio-components-catalog/v1/projects/{project_id}/scaffold")
+            .operation_id("studio_components_catalog.scaffold_gear")
+            .summary("Write a scaffolded gear skeleton into the project's connected gear repo")
+            .tag("StudioComponentsCatalog")
+            .authenticated()
+            .require_license_features::<License>([])
+            .path_param("project_id", "Project tenant id")
+            .handler(scaffold_gear)
+            .json_request::<ScaffoldRequest>(openapi, "Gear scaffold")
+            .json_response_with_schema::<ScaffoldResultDto>(
+                openapi,
+                StatusCode::OK,
+                "Scaffold written",
+            )
+            .error_400(openapi)
+            .error_401(openapi)
+            .error_500(openapi)
+            .register(router, openapi);
 
     router.layer(Extension(Catalog(service)))
 }

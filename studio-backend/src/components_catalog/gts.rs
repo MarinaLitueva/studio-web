@@ -24,8 +24,12 @@ pub const GEAR_PROFILE_TYPE: &str = "gts.cf.studio.catalog.gear_profile.v1~";
 pub const PROJECT_GEAR_REPO_TYPE: &str = "gts.cf.studio.catalog.project_gear_repo.v1~";
 
 /// Every catalog node type, for registering and enumerating.
-pub const ALL_NODE_TYPES: [&str; 4] =
-    [GEAR_TYPE, CRATE_VERSION_TYPE, GEAR_PROFILE_TYPE, PROJECT_GEAR_REPO_TYPE];
+pub const ALL_NODE_TYPES: [&str; 4] = [
+    GEAR_TYPE,
+    CRATE_VERSION_TYPE,
+    GEAR_PROFILE_TYPE,
+    PROJECT_GEAR_REPO_TYPE,
+];
 
 /// gear → crate_version — a version published under this crate.
 pub const REL_HAS_VERSION: &str = "gts.cf.studio.catalog.rel.has_version.v1~";

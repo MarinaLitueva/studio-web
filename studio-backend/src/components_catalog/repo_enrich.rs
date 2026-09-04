@@ -98,7 +98,11 @@ impl RepoEnricher {
         }
         let git_ref = {
             let r = git_ref.trim();
-            if r.is_empty() { "HEAD".to_string() } else { r.to_string() }
+            if r.is_empty() {
+                "HEAD".to_string()
+            } else {
+                r.to_string()
+            }
         };
         let http = Client::builder().user_agent(UA).build().ok()?;
         Some(Self {
@@ -118,7 +122,14 @@ impl RepoEnricher {
         let repo = env_str("STUDIO_GEARS_CATALOG_REPO").unwrap_or_else(|| DEFAULT_REPO.to_string());
         let connection_id = env_uuid("STUDIO_GEARS_CATALOG_CONNECTION");
         let git_ref = env_str("STUDIO_GEARS_CATALOG_REF").unwrap_or_else(|| "HEAD".to_string());
-        Self::new(connectors, tenant, connection_id, repo, git_ref, RepoMode::Gears)
+        Self::new(
+            connectors,
+            tenant,
+            connection_id,
+            repo,
+            git_ref,
+            RepoMode::Gears,
+        )
     }
 
     /// Read the repository and return one [`RepoGear`] per component. What counts
@@ -177,7 +188,11 @@ impl RepoEnricher {
     }
 
     /// FrontX: one component per `packages/*/package.json`.
-    async fn discover_frontx(&self, auth: &ConnectionAuth, paths: &[&str]) -> Result<Vec<RepoGear>> {
+    async fn discover_frontx(
+        &self,
+        auth: &ConnectionAuth,
+        paths: &[&str],
+    ) -> Result<Vec<RepoGear>> {
         let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
         let mut out: Vec<RepoGear> = Vec::new();
         for &p in paths {
@@ -197,7 +212,10 @@ impl RepoEnricher {
                 .filter_map(|q| q.strip_prefix(&prefix))
                 .filter(|q| !q.is_empty() && !q.contains("node_modules/"))
                 .collect();
-            let repo_url = format!("https://github.com/{}/tree/{}/{dir}", self.repo, self.git_ref);
+            let repo_url = format!(
+                "https://github.com/{}/tree/{}/{dir}",
+                self.repo, self.git_ref
+            );
             let mut f = serde_json::Map::new();
             f.insert("path".into(), text(&dir, Some(&repo_url), None));
 
@@ -219,7 +237,10 @@ impl RepoEnricher {
             if let Some(c) = &category {
                 f.insert("category".into(), text(c, None, None));
             }
-            let dep_keys = pkg.as_deref().map(package_json_dep_keys).unwrap_or_default();
+            let dep_keys = pkg
+                .as_deref()
+                .map(package_json_dep_keys)
+                .unwrap_or_default();
             if !dep_keys.is_empty() {
                 f.insert("deps".into(), metric(dep_keys.len(), None));
                 f.insert(
@@ -239,10 +260,9 @@ impl RepoEnricher {
             f.insert("unitmods".into(), metric(tests, None));
             f.insert(
                 "e2e".into(),
-                boolean(
-                    rel.iter()
-                        .any(|q| q.contains("e2e") || q.contains("cypress") || q.contains("playwright")),
-                ),
+                boolean(rel.iter().any(|q| {
+                    q.contains("e2e") || q.contains("cypress") || q.contains("playwright")
+                })),
             );
             f.insert(
                 "openapi".into(),
@@ -288,7 +308,10 @@ impl RepoEnricher {
                     .id
             }
         };
-        let (_driver, auth, _conn) = self.connectors.driver_and_auth(ctx, self.tenant, id).await?;
+        let (_driver, auth, _conn) = self
+            .connectors
+            .driver_and_auth(ctx, self.tenant, id)
+            .await?;
         Ok(auth)
     }
 
@@ -323,7 +346,10 @@ impl RepoEnricher {
     async fn read_file(&self, auth: &ConnectionAuth, path: &str) -> Option<String> {
         let url = self.api(
             auth,
-            &format!("/repos/{}/contents/{}?ref={}", self.repo, path, self.git_ref),
+            &format!(
+                "/repos/{}/contents/{}?ref={}",
+                self.repo, path, self.git_ref
+            ),
         );
         let resp = self
             .http
@@ -394,23 +420,37 @@ impl RepoEnricher {
             .filter(|p| !p.is_empty())
             .collect();
 
-        let repo_url = format!("https://github.com/{}/tree/{}/{dir}", self.repo, self.git_ref);
+        let repo_url = format!(
+            "https://github.com/{}/tree/{}/{dir}",
+            self.repo, self.git_ref
+        );
         let mut f = serde_json::Map::new();
 
         f.insert("path".into(), text(dir, Some(&repo_url), None));
 
         // runtime form: a service has migrations or an integration tests dir
         let has_migrations = rel.iter().any(|p| p.contains("migrations/"));
-        let has_tests_dir = rel.iter().any(|p| p.starts_with("tests/") || p.contains("/tests/"));
-        let runtime = if has_migrations || has_tests_dir { "service" } else { "library" };
+        let has_tests_dir = rel
+            .iter()
+            .any(|p| p.starts_with("tests/") || p.contains("/tests/"));
+        let runtime = if has_migrations || has_tests_dir {
+            "service"
+        } else {
+            "library"
+        };
         f.insert("runtime".into(), text(runtime, None, None));
 
         // counts from the tree
         let adr = rel
             .iter()
-            .filter(|p| p.starts_with("docs/ADR/") && p.ends_with(".md") && !p.ends_with("README.md"))
+            .filter(|p| {
+                p.starts_with("docs/ADR/") && p.ends_with(".md") && !p.ends_with("README.md")
+            })
             .count();
-        f.insert("adr".into(), metric(adr, Some(&format!("{repo_url}/docs/ADR"))));
+        f.insert(
+            "adr".into(),
+            metric(adr, Some(&format!("{repo_url}/docs/ADR"))),
+        );
 
         let features = rel
             .iter()
@@ -442,15 +482,29 @@ impl RepoEnricher {
             .any(|p| p.starts_with(&format!("{slug}-sdk/")) || p.contains("-sdk/"));
         f.insert(
             "sdk".into(),
-            text(if has_sdk { "SDK crate present" } else { "no SDK crate" }, None, None),
+            text(
+                if has_sdk {
+                    "SDK crate present"
+                } else {
+                    "no SDK crate"
+                },
+                None,
+                None,
+            ),
         );
         f.insert(
             "events".into(),
-            boolean(rel.iter().any(|p| p.contains("events/") || p.ends_with("events.rs"))),
+            boolean(
+                rel.iter()
+                    .any(|p| p.contains("events/") || p.ends_with("events.rs")),
+            ),
         );
         f.insert(
             "fuzz".into(),
-            boolean(rel.iter().any(|p| p.starts_with("fuzz/") || p.contains("/fuzz/"))),
+            boolean(
+                rel.iter()
+                    .any(|p| p.starts_with("fuzz/") || p.contains("/fuzz/")),
+            ),
         );
         f.insert(
             "guideline".into(),
@@ -458,7 +512,10 @@ impl RepoEnricher {
         );
         f.insert(
             "metrics".into(),
-            boolean(rel.iter().any(|p| p.ends_with("metrics.rs") || p.contains("telemetry"))),
+            boolean(
+                rel.iter()
+                    .any(|p| p.ends_with("metrics.rs") || p.contains("telemetry")),
+            ),
         );
         f.insert(
             "openapi".into(),
@@ -493,7 +550,9 @@ impl RepoEnricher {
 
         // extension points (GTS): a toolkit-gts reference in any manifest heuristic
         // is content-heavy; presence of a gts.rs module is a cheap proxy.
-        let gts = rel.iter().any(|p| p.ends_with("/gts.rs") || p == &"src/gts.rs");
+        let gts = rel
+            .iter()
+            .any(|p| p.ends_with("/gts.rs") || p == &"src/gts.rs");
         f.insert("gts".into(), boolean(gts));
 
         // config / migrations / health as presence proxies
@@ -515,7 +574,10 @@ impl RepoEnricher {
                 docstate("N/A", None)
             } else {
                 let full = format!("{dir}/{file}");
-                let link = format!("https://github.com/{}/blob/{}/{full}", self.repo, self.git_ref);
+                let link = format!(
+                    "https://github.com/{}/blob/{}/{full}",
+                    self.repo, self.git_ref
+                );
                 let content = self.read_file(auth, &full).await.unwrap_or_default();
                 let state = if content.contains("TBD") || content.contains("TODO") {
                     "in progress"
@@ -530,7 +592,10 @@ impl RepoEnricher {
         // diagrams + UML: read DESIGN.md once, count mermaid fences and lift them.
         if rel.iter().any(|p| *p == "docs/DESIGN.md") {
             let full = format!("{dir}/docs/DESIGN.md");
-            let link = format!("https://github.com/{}/blob/{}/{full}", self.repo, self.git_ref);
+            let link = format!(
+                "https://github.com/{}/blob/{}/{full}",
+                self.repo, self.git_ref
+            );
             if let Some(content) = self.read_file(auth, &full).await {
                 let n = content.matches("```mermaid").count();
                 if n > 0 {
@@ -803,7 +868,12 @@ fn package_json_dep_keys(body: &str) -> Vec<String> {
 /// Pull name / description / version / category out of a package.json body.
 fn parse_package_json(
     body: &str,
-) -> (Option<String>, Option<String>, Option<String>, Option<String>) {
+) -> (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+) {
     let v: Value = match serde_json::from_str(body) {
         Ok(v) => v,
         Err(_) => return (None, None, None, None),

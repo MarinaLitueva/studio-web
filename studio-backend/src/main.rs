@@ -5,11 +5,11 @@
 //! only loads layered config and hands control to `toolkit::bootstrap`.
 
 mod artifact_ingest; // pull issues/PRs from a connector source into the graph as GTS nodes
+mod components_catalog; // connector to crates.io: catalogue our published gears + versions in the graph
 mod connectors; // source connectors: driver plugins + tenant connection catalogue
 mod credstore_pg; // persistent credstore value store (issue #66)
 mod database_bootstrap; // config-discovered PostgreSQL provisioning + migrations
 mod documents; // document management: types + templates + section-checklist validation
-mod components_catalog; // connector to crates.io: catalogue our published gears + versions in the graph
 #[cfg(feature = "graph")]
 mod graph_storage; // knowledge graph: typed nodes/edges, traversal, hybrid search
 mod identity_directory; // platform-admin view of assigned and unassigned Keycloak identities

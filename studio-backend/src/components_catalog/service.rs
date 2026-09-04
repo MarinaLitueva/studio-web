@@ -20,8 +20,8 @@ use uuid::Uuid;
 use super::cratesio::{CrateDetail, CratesIoClient};
 use super::gts::{self, GtsEdge, GtsNode};
 use super::repo_enrich::{RepoEnricher, RepoGear, RepoMode};
-use crate::connectors::service::ConnectorService;
 use super::tasks::{TaskRecord, TaskRegistry};
+use crate::connectors::service::ConnectorService;
 
 /// Pause between crates.io detail calls — crates.io asks callers to stay near
 /// ~1 request/second. One gear = one detail call, so this paces the whole sync.
@@ -430,9 +430,9 @@ impl CatalogService {
                                 .kind
                                 .clone()
                                 .unwrap_or_else(|| classify_kind(&rg.crate_name).to_string());
-                            let entry = gear_values.entry(rg.crate_name.clone()).or_insert_with(|| {
-                                json!({ "name": rg.crate_name, "title": rg.crate_name })
-                            });
+                            let entry = gear_values.entry(rg.crate_name.clone()).or_insert_with(
+                                || json!({ "name": rg.crate_name, "title": rg.crate_name }),
+                            );
                             if let Some(obj) = entry.as_object_mut() {
                                 obj.insert("kind".to_string(), Value::String(kind));
                                 if let Some(c) = &rg.category {
@@ -440,12 +440,19 @@ impl CatalogService {
                                 }
                                 if obj.get("description").map(Value::is_null).unwrap_or(true) {
                                     if let Some(d) = &rg.description {
-                                        obj.insert("description".to_string(), Value::String(d.clone()));
+                                        obj.insert(
+                                            "description".to_string(),
+                                            Value::String(d.clone()),
+                                        );
                                     }
                                 }
                             }
-                            let mut prof = existing.get(&rg.crate_name).cloned().unwrap_or_default();
-                            prof.insert("gear_name".to_string(), Value::String(rg.crate_name.clone()));
+                            let mut prof =
+                                existing.get(&rg.crate_name).cloned().unwrap_or_default();
+                            prof.insert(
+                                "gear_name".to_string(),
+                                Value::String(rg.crate_name.clone()),
+                            );
                             prof.insert("auto".to_string(), rg.fields);
                             if !rg.uml.is_empty() {
                                 prof.insert("uml".to_string(), Value::Array(rg.uml));
@@ -455,10 +462,8 @@ impl CatalogService {
                                 prof.entry("description".to_string())
                                     .or_insert_with(|| Value::String(d.clone()));
                             }
-                            profile_nodes.push(gts::gear_profile_node(
-                                &rg.crate_name,
-                                Value::Object(prof),
-                            ));
+                            profile_nodes
+                                .push(gts::gear_profile_node(&rg.crate_name, Value::Object(prof)));
                         }
                     }
                     Err(e) => {
@@ -633,13 +638,15 @@ impl CatalogService {
             .ok_or_else(|| anyhow!("connectors service unavailable"))?;
         let id = match connection_id {
             Some(id) => id,
-            None => connectors
-                .list(ctx, tenant)
-                .await?
-                .into_iter()
-                .find(|c| c.provider == "github")
-                .ok_or_else(|| anyhow!("no GitHub connection for this tenant"))?
-                .id,
+            None => {
+                connectors
+                    .list(ctx, tenant)
+                    .await?
+                    .into_iter()
+                    .find(|c| c.provider == "github")
+                    .ok_or_else(|| anyhow!("no GitHub connection for this tenant"))?
+                    .id
+            }
         };
         let (_driver, auth, _conn) = connectors.driver_and_auth(ctx, tenant, id).await?;
 

@@ -8,8 +8,8 @@
 //! in-memory store so the catalog still works when the `graph` feature is off.
 
 mod cratesio;
-mod repo_enrich;
 mod gts;
+mod repo_enrich;
 mod rest;
 mod scaffold;
 mod service;
@@ -67,7 +67,9 @@ fn build_sink(ctx: &GearCtx) -> Arc<dyn service::CatalogSink> {
             .get::<dyn crate::graph_storage::sdk::GraphStorageClientV1>()
         {
             Ok(client) => {
-                info!("studio-components-catalog: using the graph-storage gear as the catalog store");
+                info!(
+                    "studio-components-catalog: using the graph-storage gear as the catalog store"
+                );
                 return Arc::new(service::GraphSink::new(client));
             }
             Err(e) => warn!(

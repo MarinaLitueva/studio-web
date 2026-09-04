@@ -451,12 +451,11 @@ async fn list_nodes(
         .map_err(|e| CanonicalError::internal(format!("{e:#}")).create())?;
     let limit = q.limit.unwrap_or(50).clamp(1, 200);
     let repo = q.repo.as_deref().map(str::trim).filter(|s| !s.is_empty());
-    let needle = q
-        .q
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_lowercase);
+    let needle =
+        q.q.as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_lowercase);
     let mut nodes: Vec<_> = nodes
         .into_iter()
         .filter(|n| node_in_scope(&n.value, scope))
@@ -508,8 +507,16 @@ async fn list_nodes(
     // ISO-8601 timestamps sort lexically, so a string compare is chronological.
     if q.sort.as_deref() == Some("updated") {
         nodes.sort_by(|a, b| {
-            let ua = a.value.get("updated_at").and_then(Value::as_str).unwrap_or("");
-            let ub = b.value.get("updated_at").and_then(Value::as_str).unwrap_or("");
+            let ua = a
+                .value
+                .get("updated_at")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let ub = b
+                .value
+                .get("updated_at")
+                .and_then(Value::as_str)
+                .unwrap_or("");
             ub.cmp(ua).then_with(|| a.instance_id.cmp(&b.instance_id))
         });
     } else {
@@ -524,7 +531,11 @@ async fn list_nodes(
         None => q
             .cursor
             .as_deref()
-            .and_then(|cursor| nodes.iter().position(|node: &ArtifactNodeDto| node.instance_id == cursor))
+            .and_then(|cursor| {
+                nodes
+                    .iter()
+                    .position(|node: &ArtifactNodeDto| node.instance_id == cursor)
+            })
             .map(|index| index + 1)
             .unwrap_or(0),
     };

@@ -6,7 +6,7 @@
 //! one commit, files inlined), and optionally opens a pull request. The token
 //! is borrowed from the connectors service and never stored here.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::json;
@@ -66,9 +66,13 @@ pub async fn write_scaffold(
     pr_title: Option<&str>,
 ) -> Result<ScaffoldWrite> {
     // 1. tip of the base branch.
-    let base_ref: RefObj = get_json(http, auth, &format!("/repos/{repo}/git/ref/heads/{base_branch}"))
-        .await
-        .map_err(|e| anyhow!("read base branch '{base_branch}': {e}"))?;
+    let base_ref: RefObj = get_json(
+        http,
+        auth,
+        &format!("/repos/{repo}/git/ref/heads/{base_branch}"),
+    )
+    .await
+    .map_err(|e| anyhow!("read base branch '{base_branch}': {e}"))?;
     let base_sha = base_ref.object.sha;
 
     // 2. its tree.

@@ -254,7 +254,12 @@ impl From<DocumentType> for DocumentTypeDto {
             body: t.template.body,
             sections: t.template.sections.into_iter().map(Into::into).collect(),
             rules: t.template.rules.into(),
-            questionnaire: t.template.questionnaire.into_iter().map(Into::into).collect(),
+            questionnaire: t
+                .template
+                .questionnaire
+                .into_iter()
+                .map(Into::into)
+                .collect(),
         }
     }
 }

@@ -101,16 +101,12 @@ pub async fn run(config: AppConfig, apply: bool) -> Result<()> {
         }
     }
 
-    let (client, connection) = bootstrap
-        .config()
-        .connect(NoTls)
-        .await
-        .with_context(|| {
-            format!(
-                "connect bootstrap user '{}' to {}:{} / {}",
-                bootstrap.user, bootstrap.host, bootstrap.port, bootstrap.database
-            )
-        })?;
+    let (client, connection) = bootstrap.config().connect(NoTls).await.with_context(|| {
+        format!(
+            "connect bootstrap user '{}' to {}:{} / {}",
+            bootstrap.user, bootstrap.host, bootstrap.port, bootstrap.database
+        )
+    })?;
     let connection_task = tokio::spawn(async move {
         if let Err(error) = connection.await {
             eprintln!("database bootstrap PostgreSQL connection failed: {error}");
