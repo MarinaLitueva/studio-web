@@ -1452,6 +1452,18 @@ export const api = {
       token,
       { method: "POST", body: JSON.stringify(body) },
     ),
+  /** Write a scaffolded gear skeleton into the project's connected gear repo
+   *  (branch off the connected base branch, one commit, optional PR). */
+  scaffoldGearToRepo: (
+    token: string,
+    projectId: string,
+    body: { slug: string; files: { path: string; content: string }[]; open_pr?: boolean },
+  ) =>
+    request<{ branch: string; commit_sha: string; pr_url?: string | null }>(
+      `/studio-components-catalog/v1/projects/${encodeURIComponent(projectId)}/scaffold`,
+      token,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
 
   /* ── studio-session gear: per-workspace Theia IDE containers ── */
   createStudioSession: (

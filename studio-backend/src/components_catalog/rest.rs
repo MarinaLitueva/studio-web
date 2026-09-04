@@ -87,6 +87,34 @@ pub struct SaveGearProfileRequest {
     pub profile: Value,
 }
 
+/// One file of a scaffolded gear to write into the repo.
+#[derive(Debug)]
+#[toolkit_macros::api_dto(request)]
+pub struct ScaffoldFileDto {
+    pub path: String,
+    pub content: String,
+}
+
+/// Write a scaffolded gear skeleton into the project's connected gear repo.
+#[derive(Debug)]
+#[toolkit_macros::api_dto(request)]
+pub struct ScaffoldRequest {
+    /// Gear slug, used for the branch name `scaffold/<slug>`.
+    pub slug: String,
+    pub files: Vec<ScaffoldFileDto>,
+    /// Open a pull request back into the base branch (default false).
+    pub open_pr: Option<bool>,
+}
+
+/// Where the scaffold landed.
+#[derive(Debug)]
+#[toolkit_macros::api_dto(response)]
+pub struct ScaffoldResultDto {
+    pub branch: String,
+    pub commit_sha: String,
+    pub pr_url: Option<String>,
+}
+
 /// The gear repository connected to a project — where its gears live and where
 /// scaffolded gears are written.
 #[derive(Debug)]
@@ -309,6 +337,36 @@ async fn set_project_repo(
     Ok(Json(dto))
 }
 
+async fn scaffold_gear(
+    Extension(ctx): Extension<SecurityContext>,
+    Extension(catalog): Extension<Catalog>,
+    Path(project_id): Path<Uuid>,
+    Json(body): Json<ScaffoldRequest>,
+) -> ApiResult<JsonBody<ScaffoldResultDto>> {
+    let files = body
+        .files
+        .into_iter()
+        .map(|f| super::scaffold::ScaffoldFile {
+            path: f.path,
+            content: f.content,
+        })
+        .collect();
+    let w = catalog
+        .0
+        .scaffold_into_repo(&ctx, &project_id.to_string(), &body.slug, files, body.open_pr.unwrap_or(false))
+        .await
+        .map_err(|e| {
+            StudioComponentsCatalogError::invalid_argument()
+                .with_constraint(format!("scaffold failed: {e:#}"))
+                .create()
+        })?;
+    Ok(Json(ScaffoldResultDto {
+        branch: w.branch,
+        commit_sha: w.commit_sha,
+        pr_url: w.pr_url,
+    }))
+}
+
 async fn list_versions(
     Extension(ctx): Extension<SecurityContext>,
     Extension(catalog): Extension<Catalog>,
@@ -460,6 +518,23 @@ pub fn register_routes(
     .handler(set_project_repo)
     .json_request::<SetProjectRepoRequest>(openapi, "Gear repository")
     .json_response_with_schema::<CatalogNodeDto>(openapi, StatusCode::OK, "Connected gear repo")
+    .error_400(openapi)
+    .error_401(openapi)
+    .error_500(openapi)
+    .register(router, openapi);
+
+    let router = OperationBuilder::post(
+        "/studio-components-catalog/v1/projects/{project_id}/scaffold",
+    )
+    .operation_id("studio_components_catalog.scaffold_gear")
+    .summary("Write a scaffolded gear skeleton into the project's connected gear repo")
+    .tag("StudioComponentsCatalog")
+    .authenticated()
+    .require_license_features::<License>([])
+    .path_param("project_id", "Project tenant id")
+    .handler(scaffold_gear)
+    .json_request::<ScaffoldRequest>(openapi, "Gear scaffold")
+    .json_response_with_schema::<ScaffoldResultDto>(openapi, StatusCode::OK, "Scaffold written")
     .error_400(openapi)
     .error_401(openapi)
     .error_500(openapi)

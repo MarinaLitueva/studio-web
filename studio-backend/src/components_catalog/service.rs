@@ -588,6 +588,78 @@ impl CatalogService {
         Ok(node)
     }
 
+    /// Write a scaffolded gear into the project's connected gear repository: a
+    /// branch off the connected base branch carrying the skeleton files, and an
+    /// optional pull request. The connection token is resolved via the
+    /// connectors service (it stays in credstore).
+    pub async fn scaffold_into_repo(
+        &self,
+        ctx: &SecurityContext,
+        project_id: &str,
+        slug: &str,
+        files: Vec<super::scaffold::ScaffoldFile>,
+        open_pr: bool,
+    ) -> anyhow::Result<super::scaffold::ScaffoldWrite> {
+        let node = self
+            .get_project_repo(ctx, project_id)
+            .await?
+            .ok_or_else(|| anyhow!("no gear repository is connected to this project"))?;
+        let v = node.value;
+        let repo = v
+            .get("repo")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| anyhow!("connected gear repo has no 'repo'"))?
+            .to_string();
+        let base_branch = v
+            .get("branch")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("main")
+            .to_string();
+        let tenant: Uuid = v
+            .get("tenant")
+            .and_then(Value::as_str)
+            .and_then(|s| s.parse().ok())
+            .ok_or_else(|| anyhow!("connected gear repo has no 'tenant'"))?;
+        let connection_id: Option<Uuid> = v
+            .get("connection_id")
+            .and_then(Value::as_str)
+            .and_then(|s| s.parse().ok());
+
+        let connectors = self
+            .connectors
+            .as_ref()
+            .ok_or_else(|| anyhow!("connectors service unavailable"))?;
+        let id = match connection_id {
+            Some(id) => id,
+            None => connectors
+                .list(ctx, tenant)
+                .await?
+                .into_iter()
+                .find(|c| c.provider == "github")
+                .ok_or_else(|| anyhow!("no GitHub connection for this tenant"))?
+                .id,
+        };
+        let (_driver, auth, _conn) = connectors.driver_and_auth(ctx, tenant, id).await?;
+
+        let branch = format!("scaffold/{slug}");
+        let message = format!("scaffold: {slug} gear skeleton");
+        let pr_title = open_pr.then(|| format!("Scaffold {slug} gear"));
+        let http = reqwest::Client::new();
+        super::scaffold::write_scaffold(
+            &http,
+            &auth,
+            &repo,
+            &base_branch,
+            &branch,
+            &files,
+            &message,
+            pr_title.as_deref(),
+        )
+        .await
+    }
+
     fn report(&self, task_id: Option<&str>, message: &str, gears: u32, versions: u32, stored: u32) {
         if let Some(id) = task_id {
             self.tasks.report(id, message, gears, versions, stored);

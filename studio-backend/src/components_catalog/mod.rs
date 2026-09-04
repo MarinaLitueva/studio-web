@@ -11,6 +11,7 @@ mod cratesio;
 mod repo_enrich;
 mod gts;
 mod rest;
+mod scaffold;
 mod service;
 mod tasks;
 

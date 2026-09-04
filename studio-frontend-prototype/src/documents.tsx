@@ -438,6 +438,8 @@ function DocumentsView({
       {scaffold && (
         <ScaffoldModal
           scaffold={scaffold}
+          token={token}
+          projectTenantId={projectTenantId}
           onBack={() => setScaffold(null)}
           onClose={() => setScaffold(null)}
         />
@@ -926,10 +928,44 @@ function scaffoldGear(capability: string, appTitle: string): Scaffold {
   };
 }
 
-function ScaffoldModal({ scaffold, onBack, onClose }: { scaffold: Scaffold; onBack: () => void; onClose: () => void }) {
+function ScaffoldModal({
+  scaffold,
+  token,
+  projectTenantId,
+  onBack,
+  onClose,
+}: {
+  scaffold: Scaffold;
+  token: string;
+  projectTenantId: string;
+  onBack: () => void;
+  onClose: () => void;
+}) {
   const [active, setActive] = useState(0);
+  const [openPr, setOpenPr] = useState(true);
+  const [pushing, setPushing] = useState(false);
+  const [pushErr, setPushErr] = useState<string | null>(null);
+  const [result, setResult] = useState<{ branch: string; pr_url?: string | null } | null>(null);
   const file = scaffold.files[active];
   const copy = () => navigator.clipboard?.writeText(file.content).catch(() => {});
+
+  const push = async () => {
+    setPushing(true);
+    setPushErr(null);
+    try {
+      const r = await api.scaffoldGearToRepo(token, projectTenantId, {
+        slug: scaffold.slug,
+        files: scaffold.files,
+        open_pr: openPr,
+      });
+      setResult({ branch: r.branch, pr_url: r.pr_url });
+    } catch (e) {
+      setPushErr(errText(e));
+    } finally {
+      setPushing(false);
+    }
+  };
+
   return (
     <div style={modalBackdrop} onClick={onClose}>
       <div style={{ ...modalCard, width: "min(860px, 100%)" }} onClick={(e) => e.stopPropagation()}>
@@ -940,9 +976,55 @@ function ScaffoldModal({ scaffold, onBack, onClose }: { scaffold: Scaffold; onBa
           <button onClick={onClose} style={{ marginLeft: "auto" }} aria-label="Close">✕</button>
         </div>
         <p style={{ fontSize: 12, opacity: 0.7, margin: "0 0 12px" }}>
-          Starter skeleton for the <code>{scaffold.capability}</code> gap. Review, then (next) push it
-          to your gear repo and register it in the catalog so future composes can use it.
+          Starter skeleton for the <code>{scaffold.capability}</code> gap. Review, then push it to the
+          project's connected gear repo on a <code>scaffold/{scaffold.slug}</code> branch — the session
+          agent fills it in, and a re-sync registers it in the catalog.
         </p>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            flexWrap: "wrap",
+            marginBottom: 12,
+            padding: "8px 10px",
+            borderRadius: 8,
+            background: "var(--surface-raised,#f6f7f9)",
+            border: "1px solid var(--border,#e2e4e9)",
+          }}
+        >
+          {result ? (
+            <span style={{ fontSize: 12 }}>
+              ✓ Pushed to <code>{result.branch}</code>
+              {result.pr_url && (
+                <>
+                  {" · "}
+                  <a href={result.pr_url} target="_blank" rel="noreferrer">
+                    open pull request →
+                  </a>
+                </>
+              )}
+            </span>
+          ) : (
+            <>
+              <button className="primary" onClick={push} disabled={pushing}>
+                {pushing ? "Pushing…" : "Push to gear repo →"}
+              </button>
+              <label style={{ fontSize: 12, display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <input type="checkbox" checked={openPr} onChange={(e) => setOpenPr(e.target.checked)} />
+                open a pull request
+              </label>
+              <span style={{ fontSize: 11, opacity: 0.6 }}>
+                needs a connected gear repository (card at the top of Documents)
+              </span>
+            </>
+          )}
+          {pushErr && (
+            <span className="error" style={{ fontSize: 12 }}>
+              {pushErr}
+            </span>
+          )}
+        </div>
         <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 12, minHeight: 300 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             {scaffold.files.map((f, i) => (
