@@ -6,18 +6,7 @@
 //    workspace-defined); define or override a type (template, sections, rules).
 import { Fragment, useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 
-import {
-  api,
-  CatalogNode,
-  Connection,
-  Doc,
-  DocQuestion,
-  DocRules,
-  DocSection,
-  DocType,
-  DocValidation,
-  ProjectGearRepo,
-} from "./api";
+import { api, CatalogNode, Doc, DocQuestion, DocRules, DocSection, DocType, DocValidation } from "./api";
 
 /** Human-readable message from an ApiError (title/detail) or any Error. */
 function errText(e: unknown): string {
@@ -300,7 +289,6 @@ function DocumentsView({
   return (
     <>
       {err && <div className="error">{err}</div>}
-      <GearRepoCard token={token} workspaceId={workspaceId} projectTenantId={projectTenantId} />
       <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 16, alignItems: "start" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={card}>
@@ -652,121 +640,6 @@ const modalCard: CSSProperties = {
 const qLabel: CSSProperties = { display: "block", fontSize: 12, fontWeight: 600, marginBottom: 4 };
 const qTag: CSSProperties = { marginLeft: 8, fontSize: 10, opacity: 0.6, fontWeight: 400 };
 
-// ── Project gear repository (spine of the scaffold → session → catalog loop) ──
-
-function GearRepoCard({
-  token,
-  workspaceId,
-  projectTenantId,
-}: {
-  token: string;
-  workspaceId: string;
-  projectTenantId: string;
-}) {
-  const [repo, setRepo] = useState<ProjectGearRepo | null>(null);
-  const [conns, setConns] = useState<Connection[]>([]);
-  const [editing, setEditing] = useState(false);
-  const [connId, setConnId] = useState("");
-  const [repoName, setRepoName] = useState("");
-  const [branch, setBranch] = useState("main");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      const [r, c] = await Promise.all([
-        api.getProjectGearRepo(token, projectTenantId).catch(() => ({ nodes: [] })),
-        api.connections(token, workspaceId).catch(() => ({ items: [] as Connection[] })),
-      ]);
-      const v = r.nodes?.[0]?.value ?? null;
-      setRepo(v);
-      setConns(c.items ?? []);
-      if (v) {
-        setConnId(v.connection_id ?? "");
-        setRepoName(v.repo ?? "");
-        setBranch(v.branch ?? "main");
-      }
-    } catch (e) {
-      setErr(errText(e));
-    }
-  }, [token, workspaceId, projectTenantId]);
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const save = async () => {
-    if (!repoName.trim()) return;
-    setBusy(true);
-    setErr(null);
-    try {
-      await api.setProjectGearRepo(token, projectTenantId, {
-        tenant: workspaceId,
-        connection_id: connId || null,
-        repo: repoName.trim(),
-        branch: branch.trim() || "main",
-      });
-      setEditing(false);
-      await load();
-    } catch (e) {
-      setErr(errText(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const connected = !!repo?.repo;
-  return (
-    <div style={{ ...card, marginBottom: 12 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ fontSize: 12, fontWeight: 600 }}>Gear repository</span>
-        {connected && !editing && (
-          <>
-            <code style={{ fontSize: 12 }}>{repo?.repo}</code>
-            <span style={{ fontSize: 11, opacity: 0.6 }}>· {repo?.branch}</span>
-            <button style={{ marginLeft: "auto", fontSize: 11 }} onClick={() => setEditing(true)}>
-              Change
-            </button>
-          </>
-        )}
-        {!connected && !editing && (
-          <button style={{ marginLeft: "auto", fontSize: 11 }} onClick={() => setEditing(true)}>
-            Connect →
-          </button>
-        )}
-      </div>
-      <p style={{ fontSize: 11, opacity: 0.6, margin: "4px 0 0" }}>
-        Where this project's gears live and where scaffolded gears are written.
-      </p>
-      {err && (
-        <div className="error" style={{ marginTop: 8 }}>
-          {err}
-        </div>
-      )}
-      {editing && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
-          <select value={connId} onChange={(e) => setConnId(e.target.value)}>
-            <option value="">First GitHub connection</option>
-            {conns.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.label} · {c.provider} · {c.account}
-              </option>
-            ))}
-          </select>
-          <input placeholder="owner/name" value={repoName} onChange={(e) => setRepoName(e.target.value)} />
-          <input placeholder="branch (main)" value={branch} onChange={(e) => setBranch(e.target.value)} />
-          <div style={{ display: "flex", gap: 8 }}>
-            <button className="primary" onClick={save} disabled={busy || !repoName.trim()}>
-              Save
-            </button>
-            <button onClick={() => setEditing(false)} disabled={busy}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ── Compose (v1): match the App Spec's capabilities to catalog components ─────
 

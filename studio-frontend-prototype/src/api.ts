@@ -55,9 +55,16 @@ export const TENANT_TYPES = {
 export const PROJECT_CONFIG_TYPE =
   "gts.cf.core.am.tenant_metadata.v1~cf.studio.project.config.v1~";
 
+/** What the project is for, chosen at creation:
+ *  - `new_gears`  — build new gears (repo: create new, or an existing gear store);
+ *  - `product`    — assemble a product from gears (repo: always a new one);
+ *  - `existing`   — import a gears-based app already built (repo: its existing one). */
+export type ProjectKind = "new_gears" | "product" | "existing";
+
 /** The project attributes carried in PROJECT_CONFIG_TYPE metadata. */
 export interface ProjectConfig {
   mode?: ProjectMode;
+  kind?: ProjectKind;
   stages?: string[];
   status?: ProjectStatus;
   /** Seed source: a git url, a brief, or an uploaded file id. */
@@ -1461,6 +1468,24 @@ export const api = {
   ) =>
     request<{ branch: string; commit_sha: string; pr_url?: string | null }>(
       `/studio-components-catalog/v1/projects/${encodeURIComponent(projectId)}/scaffold`,
+      token,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+  /** Create a new repository via the connector and set it as the project's gear repo. */
+  createProjectRepo: (
+    token: string,
+    projectId: string,
+    body: {
+      tenant: string;
+      connection_id?: string | null;
+      owner?: string;
+      is_org?: boolean;
+      name: string;
+      private?: boolean;
+    },
+  ) =>
+    request<{ full_name: string; html_url: string; default_branch: string }>(
+      `/studio-components-catalog/v1/projects/${encodeURIComponent(projectId)}/create-repo`,
       token,
       { method: "POST", body: JSON.stringify(body) },
     ),

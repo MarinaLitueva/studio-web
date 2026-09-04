@@ -667,6 +667,51 @@ impl CatalogService {
         .await
     }
 
+    /// Create a new repository through the connector and record it as this
+    /// project's gear repository. Returns the created repo's full name and URL.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn create_project_repo(
+        &self,
+        ctx: &SecurityContext,
+        project_id: &str,
+        tenant: Uuid,
+        connection_id: Option<Uuid>,
+        owner: Option<&str>,
+        is_org: bool,
+        name: &str,
+        private: bool,
+    ) -> anyhow::Result<super::scaffold::CreatedRepo> {
+        let connectors = self
+            .connectors
+            .as_ref()
+            .ok_or_else(|| anyhow!("connectors service unavailable"))?;
+        let id = match connection_id {
+            Some(id) => id,
+            None => {
+                connectors
+                    .list(ctx, tenant)
+                    .await?
+                    .into_iter()
+                    .find(|c| c.provider == "github")
+                    .ok_or_else(|| anyhow!("no GitHub connection for this tenant"))?
+                    .id
+            }
+        };
+        let (_driver, auth, _conn) = connectors.driver_and_auth(ctx, tenant, id).await?;
+        let http = reqwest::Client::new();
+        let created =
+            super::scaffold::create_repo(&http, &auth, owner, is_org, name, private).await?;
+        // Record it as the project's gear repository so scaffolds land here.
+        let repo_val = json!({
+            "tenant": tenant,
+            "connection_id": connection_id,
+            "repo": created.full_name,
+            "branch": created.default_branch,
+        });
+        self.set_project_repo(ctx, project_id, repo_val).await?;
+        Ok(created)
+    }
+
     fn report(&self, task_id: Option<&str>, message: &str, gears: u32, versions: u32, stored: u32) {
         if let Some(id) = task_id {
             self.tasks.report(id, message, gears, versions, stored);

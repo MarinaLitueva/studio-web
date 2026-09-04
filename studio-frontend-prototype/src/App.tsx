@@ -2370,7 +2370,16 @@ function WorkspaceProjects({
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newMode, setNewMode] = useState<import("./api").ProjectMode>("greenfield");
+  const [newKind, setNewKind] = useState<import("./api").ProjectKind>("new_gears");
+  const [conns, setConns] = useState<import("./api").Connection[]>([]);
+  const [connId, setConnId] = useState("");
+  const [repoMode, setRepoMode] = useState<"create" | "existing">("create");
+  const [repoName, setRepoName] = useState("");
+  const [owner, setOwner] = useState("");
+  const [isOrg, setIsOrg] = useState(false);
+  const [priv, setPriv] = useState(true);
+  const [remoteRepos, setRemoteRepos] = useState<import("./api").RemoteRepo[]>([]);
+  const [pickedRepo, setPickedRepo] = useState("");
   // Inline row editing (rename) + per-row busy for edit/delete.
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
@@ -2394,6 +2403,35 @@ function WorkspaceProjects({
     void reload();
   }, [reload]);
 
+  // Load the workspace's connections when the create card opens.
+  useEffect(() => {
+    if (!creating) return;
+    api
+      .connections(token, workspace.id)
+      .then((r) => setConns(r.items ?? []))
+      .catch(() => {});
+  }, [creating, token, workspace.id]);
+
+  // Repo mode allowed per project kind: product always creates a new repo,
+  // an imported existing app always picks one, new-gears defaults to create.
+  useEffect(() => {
+    if (newKind === "product") setRepoMode("create");
+    else if (newKind === "existing") setRepoMode("existing");
+    else setRepoMode("create");
+  }, [newKind]);
+
+  // When picking an existing repo, list the chosen connection's repositories.
+  useEffect(() => {
+    if (!creating || repoMode !== "existing" || !connId) return;
+    api
+      .connectionRepositories(token, connId, workspace.id)
+      .then((r) => setRemoteRepos(r.items ?? []))
+      .catch(() => setRemoteRepos([]));
+  }, [creating, repoMode, connId, token, workspace.id]);
+
+  const repoDir = (fullPath: string) =>
+    (fullPath.split("/").pop() ?? fullPath).toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
+
   const create = async () => {
     const name = newName.trim();
     if (!name) return;
@@ -2406,9 +2444,63 @@ function WorkspaceProjects({
         tenant_type: TENANT_TYPES.project,
       });
       await api
-        .putProjectConfig(token, tenant.id, { mode: newMode, stages: [], status: "draft" })
+        .putProjectConfig(token, tenant.id, {
+          mode: newKind === "existing" ? "modernize" : "greenfield",
+          kind: newKind,
+          stages: [],
+          status: "draft",
+        })
         .catch(() => {});
+
+      // Resolve the project's repository: create a new one, or attach an existing.
+      const conn = conns.find((c) => c.id === connId);
+      let repoFull = "";
+      let branch = "main";
+      let cloneUrl = "";
+      if (repoMode === "create") {
+        if (!repoName.trim()) throw new Error("enter a name for the new repository");
+        const r = await api.createProjectRepo(token, tenant.id, {
+          tenant: workspace.id,
+          connection_id: connId || null,
+          owner: isOrg ? owner.trim() : undefined,
+          is_org: isOrg,
+          name: repoName.trim(),
+          private: priv,
+        });
+        repoFull = r.full_name;
+        branch = r.default_branch || "main";
+        cloneUrl = `https://github.com/${r.full_name}.git`;
+      } else {
+        const picked = remoteRepos.find((r) => r.full_path === pickedRepo);
+        if (!picked) throw new Error("pick a repository to attach");
+        repoFull = picked.full_path;
+        branch = picked.default_branch || "main";
+        cloneUrl = picked.clone_url;
+        await api.setProjectGearRepo(token, tenant.id, {
+          tenant: workspace.id,
+          connection_id: connId || null,
+          repo: repoFull,
+          branch,
+        });
+      }
+
+      // Add it to the project's repositories list (shown by Repositories/Sources).
+      const s = (await api.workspaceSettings(token, tenant.id).catch(() => null)) ?? {};
+      const entry: import("./api").RepoEntry = {
+        name: repoDir(repoFull),
+        source: "github",
+        url: cloneUrl,
+        target: repoDir(repoFull),
+        branch,
+        token_ref: conn?.secret_ref,
+      };
+      await api
+        .putWorkspaceSettings(token, tenant.id, { ...s, repos: [...(s.repos ?? []), entry] })
+        .catch(() => {});
+
       setNewName("");
+      setRepoName("");
+      setPickedRepo("");
       setCreating(false);
       await reload();
       onChanged();
@@ -2479,25 +2571,112 @@ function WorkspaceProjects({
           <div className="card-head">
             <h2>New project</h2>
           </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 640 }}>
             <input
               placeholder="Project name"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
             />
-            <select
-              value={newMode}
-              onChange={(e) => setNewMode(e.target.value as import("./api").ProjectMode)}
-            >
-              <option value="greenfield">Build something new</option>
-              <option value="modernize">Modernize existing</option>
-            </select>
-            <button className="primary" onClick={() => void create()} disabled={!newName.trim() || busy}>
-              {busy ? "Creating…" : "Create"}
-            </button>
-            <button className="ghost" onClick={() => setCreating(false)}>
-              Cancel
-            </button>
+
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>Project type</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {(
+                  [
+                    ["new_gears", "New Gears", "Build new gears. Create a new repo, or use an existing gear store."],
+                    ["product", "Product from Gears", "Assemble a product from gears. A new repository is created."],
+                    ["existing", "Existing Gears app", "Import a gears-based app already built. Attach its repository."],
+                  ] as [import("./api").ProjectKind, string, string][]
+                ).map(([k, title, desc]) => (
+                  <label
+                    key={k}
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      alignItems: "flex-start",
+                      padding: "8px 10px",
+                      border: "1px solid var(--border,#e2e4e9)",
+                      borderRadius: 8,
+                      background: newKind === k ? "var(--accent-soft,#eef2ff)" : "transparent",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="pkind"
+                      checked={newKind === k}
+                      onChange={() => setNewKind(k)}
+                      style={{ marginTop: 2 }}
+                    />
+                    <span>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{title}</div>
+                      <div style={{ fontSize: 11, opacity: 0.7 }}>{desc}</div>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>Repository</div>
+              <select value={connId} onChange={(e) => setConnId(e.target.value)} style={{ marginBottom: 8, width: "100%" }}>
+                <option value="">First GitHub connection</option>
+                {conns.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.label} · {c.provider} · {c.account}
+                  </option>
+                ))}
+              </select>
+
+              {newKind === "new_gears" && (
+                <div style={{ display: "flex", gap: 12, marginBottom: 8, fontSize: 12 }}>
+                  <label style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                    <input type="radio" name="repomode" checked={repoMode === "create"} onChange={() => setRepoMode("create")} />
+                    Create new
+                  </label>
+                  <label style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                    <input type="radio" name="repomode" checked={repoMode === "existing"} onChange={() => setRepoMode("existing")} />
+                    Use existing gear store
+                  </label>
+                </div>
+              )}
+
+              {repoMode === "create" ? (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <input placeholder="new repo name" value={repoName} onChange={(e) => setRepoName(e.target.value)} />
+                  <label style={{ fontSize: 12, display: "inline-flex", gap: 6, alignItems: "center" }}>
+                    <input type="checkbox" checked={isOrg} onChange={(e) => setIsOrg(e.target.checked)} />
+                    under org
+                  </label>
+                  {isOrg && (
+                    <input placeholder="org login" value={owner} onChange={(e) => setOwner(e.target.value)} style={{ width: 140 }} />
+                  )}
+                  <label style={{ fontSize: 12, display: "inline-flex", gap: 6, alignItems: "center" }}>
+                    <input type="checkbox" checked={priv} onChange={(e) => setPriv(e.target.checked)} />
+                    private
+                  </label>
+                </div>
+              ) : (
+                <select value={pickedRepo} onChange={(e) => setPickedRepo(e.target.value)} style={{ width: "100%" }} disabled={!connId}>
+                  <option value="">{connId ? "— select a repository —" : "pick a connection first"}</option>
+                  {remoteRepos.map((r) => (
+                    <option key={r.id} value={r.full_path}>
+                      {r.full_path}
+                      {r.visibility ? ` · ${r.visibility}` : ""}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="primary" onClick={() => void create()} disabled={!newName.trim() || busy}>
+                {busy ? "Creating…" : "Create project"}
+              </button>
+              <button className="ghost" onClick={() => setCreating(false)}>
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}

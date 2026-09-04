@@ -115,6 +115,33 @@ pub struct ScaffoldResultDto {
     pub pr_url: Option<String>,
 }
 
+/// Create a new repository via the connector and set it as the project's gear repo.
+#[derive(Debug)]
+#[toolkit_macros::api_dto(request)]
+pub struct CreateRepoRequest {
+    /// Tenant that owns the connection (usually the workspace/organization).
+    pub tenant: Uuid,
+    /// Connector connection id; when omitted the first GitHub connection is used.
+    pub connection_id: Option<Uuid>,
+    /// Organization login when `is_org`; empty/None = under the authed user.
+    pub owner: Option<String>,
+    /// Create under an organization (`owner`) rather than the user.
+    pub is_org: Option<bool>,
+    /// New repository name (without owner).
+    pub name: String,
+    /// Private repository (default true).
+    pub private: Option<bool>,
+}
+
+/// The created repository.
+#[derive(Debug)]
+#[toolkit_macros::api_dto(response)]
+pub struct CreateRepoResultDto {
+    pub full_name: String,
+    pub html_url: String,
+    pub default_branch: String,
+}
+
 /// The gear repository connected to a project — where its gears live and where
 /// scaffolded gears are written.
 #[derive(Debug)]
@@ -373,6 +400,37 @@ async fn scaffold_gear(
     }))
 }
 
+async fn create_repo(
+    Extension(ctx): Extension<SecurityContext>,
+    Extension(catalog): Extension<Catalog>,
+    Path(project_id): Path<Uuid>,
+    Json(body): Json<CreateRepoRequest>,
+) -> ApiResult<JsonBody<CreateRepoResultDto>> {
+    let created = catalog
+        .0
+        .create_project_repo(
+            &ctx,
+            &project_id.to_string(),
+            body.tenant,
+            body.connection_id,
+            body.owner.as_deref(),
+            body.is_org.unwrap_or(false),
+            &body.name,
+            body.private.unwrap_or(true),
+        )
+        .await
+        .map_err(|e| {
+            StudioComponentsCatalogError::invalid_argument()
+                .with_constraint(format!("create repo failed: {e:#}"))
+                .create()
+        })?;
+    Ok(Json(CreateRepoResultDto {
+        full_name: created.full_name,
+        html_url: created.html_url,
+        default_branch: created.default_branch,
+    }))
+}
+
 async fn list_versions(
     Extension(ctx): Extension<SecurityContext>,
     Extension(catalog): Extension<Catalog>,
@@ -545,6 +603,28 @@ pub fn register_routes(
                 openapi,
                 StatusCode::OK,
                 "Scaffold written",
+            )
+            .error_400(openapi)
+            .error_401(openapi)
+            .error_500(openapi)
+            .register(router, openapi);
+
+    let router =
+        OperationBuilder::post("/studio-components-catalog/v1/projects/{project_id}/create-repo")
+            .operation_id("studio_components_catalog.create_repo")
+            .summary(
+                "Create a new repository via the connector and set it as the project's gear repo",
+            )
+            .tag("StudioComponentsCatalog")
+            .authenticated()
+            .require_license_features::<License>([])
+            .path_param("project_id", "Project tenant id")
+            .handler(create_repo)
+            .json_request::<CreateRepoRequest>(openapi, "New repository")
+            .json_response_with_schema::<CreateRepoResultDto>(
+                openapi,
+                StatusCode::OK,
+                "Created repository",
             )
             .error_400(openapi)
             .error_401(openapi)

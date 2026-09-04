@@ -137,6 +137,51 @@ pub async fn write_scaffold(
     })
 }
 
+/// A repository created through the connector.
+#[derive(Debug)]
+pub struct CreatedRepo {
+    pub full_name: String,
+    pub html_url: String,
+    pub default_branch: String,
+}
+
+#[derive(Deserialize)]
+struct RepoCreated {
+    full_name: String,
+    html_url: String,
+    default_branch: String,
+}
+
+/// Create a new repository via the GitHub connector. Under an organization when
+/// `is_org` and `owner` are set, otherwise under the authenticated user.
+/// `auto_init` gives it a first commit so a base branch exists to scaffold onto.
+pub async fn create_repo(
+    http: &Client,
+    auth: &ConnectionAuth,
+    owner: Option<&str>,
+    is_org: bool,
+    name: &str,
+    private: bool,
+) -> Result<CreatedRepo> {
+    let path = match owner {
+        Some(o) if is_org && !o.is_empty() => format!("/orgs/{o}/repos"),
+        _ => "/user/repos".to_string(),
+    };
+    let created: RepoCreated = post_json(
+        http,
+        auth,
+        &path,
+        json!({ "name": name, "private": private, "auto_init": true }),
+    )
+    .await
+    .map_err(|e| anyhow!("create repository '{name}': {e}"))?;
+    Ok(CreatedRepo {
+        full_name: created.full_name,
+        html_url: created.html_url,
+        default_branch: created.default_branch,
+    })
+}
+
 async fn get_json<T: for<'de> Deserialize<'de>>(
     http: &Client,
     auth: &ConnectionAuth,
