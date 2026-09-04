@@ -32,7 +32,6 @@ use crate::connectors::driver::ConnectionAuth;
 use crate::connectors::service::ConnectorService;
 
 const UA: &str = "constructor-studio-gears-catalog";
-const DEFAULT_REPO: &str = "constructorfabric/gears-rust";
 
 /// One gear discovered in the repository: the directory that carries its
 /// `gear.toml`, the crate name it maps to, and the field map the UI renders.
@@ -40,7 +39,6 @@ pub struct RepoGear {
     /// Primary crate name for this Gear (`cf-gears-<slug>`), the key the
     /// crates.io side also uses, so the two sources merge by name.
     pub crate_name: String,
-    pub slug: String,
     pub description: Option<String>,
     /// `fieldKey -> { v, b, n, s, l, u }`, written to the profile's `auto` map.
     pub fields: Value,
@@ -116,22 +114,6 @@ impl RepoEnricher {
         })
     }
 
-    /// Fallback: build from the environment (kept for headless setups).
-    pub fn from_env(connectors: Arc<ConnectorService>) -> Option<Self> {
-        let tenant = env_uuid("STUDIO_GEARS_CATALOG_TENANT")?;
-        let repo = env_str("STUDIO_GEARS_CATALOG_REPO").unwrap_or_else(|| DEFAULT_REPO.to_string());
-        let connection_id = env_uuid("STUDIO_GEARS_CATALOG_CONNECTION");
-        let git_ref = env_str("STUDIO_GEARS_CATALOG_REF").unwrap_or_else(|| "HEAD".to_string());
-        Self::new(
-            connectors,
-            tenant,
-            connection_id,
-            repo,
-            git_ref,
-            RepoMode::Gears,
-        )
-    }
-
     /// Read the repository and return one [`RepoGear`] per component. What counts
     /// as a component depends on the mode: a `gear.toml` directory (Gears) or a
     /// `packages/*/package.json` package (FrontX micro-frontends).
@@ -175,7 +157,6 @@ impl RepoEnricher {
             let category = brief_of(&fields, "category");
             out.push(RepoGear {
                 crate_name: format!("cf-gears-{slug}"),
-                slug,
                 description,
                 fields,
                 uml,
@@ -279,7 +260,6 @@ impl RepoEnricher {
 
             out.push(RepoGear {
                 crate_name: comp,
-                slug: dir.rsplit('/').next().unwrap_or(&dir).to_string(),
                 description: desc,
                 fields: Value::Object(f),
                 uml: Vec::new(),
@@ -508,7 +488,7 @@ impl RepoEnricher {
         );
         f.insert(
             "guideline".into(),
-            boolean(rel.iter().any(|p| *p == "docs/operations.md")),
+            boolean(rel.contains(&"docs/operations.md")),
         );
         f.insert(
             "metrics".into(),
@@ -569,7 +549,7 @@ impl RepoEnricher {
             ("decomp", "docs/DECOMPOSITION.md"),
             ("upstream", "docs/UPSTREAM_REQS.md"),
         ] {
-            let present = rel.iter().any(|p| *p == file);
+            let present = rel.contains(&file);
             let value = if !present {
                 docstate("N/A", None)
             } else {
@@ -590,7 +570,7 @@ impl RepoEnricher {
         }
 
         // diagrams + UML: read DESIGN.md once, count mermaid fences and lift them.
-        if rel.iter().any(|p| *p == "docs/DESIGN.md") {
+        if rel.contains(&"docs/DESIGN.md") {
             let full = format!("{dir}/docs/DESIGN.md");
             let link = format!(
                 "https://github.com/{}/blob/{}/{full}",
@@ -636,19 +616,19 @@ impl RepoEnricher {
 
         // owner from CODEOWNERS: the last matching pattern wins in CODEOWNERS,
         // so scan for the most specific line that prefixes this Gear's path.
-        if let Some(text_body) = codeowners {
-            if let Some(owner) = codeowners_match(text_body, dir) {
-                let link = owner
-                    .strip_prefix('@')
-                    .map(|h| format!("https://github.com/{h}"));
-                let mut v = status(&owner, "good");
-                if let Some(obj) = v.as_object_mut() {
-                    if let Some(l) = link {
-                        obj.insert("l".into(), Value::String(l));
-                    }
-                }
-                f.insert("owner".into(), v);
+        if let Some(text_body) = codeowners
+            && let Some(owner) = codeowners_match(text_body, dir)
+        {
+            let link = owner
+                .strip_prefix('@')
+                .map(|h| format!("https://github.com/{h}"));
+            let mut v = status(&owner, "good");
+            if let Some(obj) = v.as_object_mut()
+                && let Some(l) = link
+            {
+                obj.insert("l".into(), Value::String(l));
             }
+            f.insert("owner".into(), v);
         }
 
         // last change date for the directory
@@ -710,17 +690,6 @@ fn docstate(state: &str, link: Option<&str>) -> Value {
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
-
-fn env_str(key: &str) -> Option<String> {
-    std::env::var(key)
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-}
-
-fn env_uuid(key: &str) -> Option<Uuid> {
-    env_str(key).and_then(|s| Uuid::parse_str(&s).ok())
-}
 
 fn parent_dir(path: &str) -> String {
     match path.rfind('/') {

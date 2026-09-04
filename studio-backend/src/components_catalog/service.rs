@@ -438,13 +438,10 @@ impl CatalogService {
                                 if let Some(c) = &rg.category {
                                     obj.insert("category".to_string(), Value::String(c.clone()));
                                 }
-                                if obj.get("description").map(Value::is_null).unwrap_or(true) {
-                                    if let Some(d) = &rg.description {
-                                        obj.insert(
-                                            "description".to_string(),
-                                            Value::String(d.clone()),
-                                        );
-                                    }
+                                if obj.get("description").map(Value::is_null).unwrap_or(true)
+                                    && let Some(d) = &rg.description
+                                {
+                                    obj.insert("description".to_string(), Value::String(d.clone()));
                                 }
                             }
                             let mut prof =
@@ -473,10 +470,11 @@ impl CatalogService {
                 }
             }
             // Surface the error when the repositories were the only source.
-            if !any_ok && sources.crates_io.is_none() {
-                if let Some(e) = last_err {
-                    return Err(e);
-                }
+            if !any_ok
+                && sources.crates_io.is_none()
+                && let Some(e) = last_err
+            {
+                return Err(e);
             }
         }
 

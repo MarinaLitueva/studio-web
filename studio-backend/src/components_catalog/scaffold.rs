@@ -55,6 +55,7 @@ struct PrCreated {
 
 /// Create `branch` off `base_branch`, commit `files` in one commit, and — when
 /// `pr_title` is set — open a pull request back into `base_branch`.
+#[allow(clippy::too_many_arguments)]
 pub async fn write_scaffold(
     http: &Client,
     auth: &ConnectionAuth,
