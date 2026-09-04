@@ -9,7 +9,8 @@ export type ArtifactProvenance = 'checkout' | 'tree' | 'upload' | 'repository';
 
 export interface ArtifactRow {
   id: string;
-  kind: ArtifactKind;
+  /** `null` when the gear sent a kind this portal does not draw — see below. */
+  kind: ArtifactKind | null;
   name: string;
   repository: string;
   path: string;
@@ -17,6 +18,11 @@ export interface ArtifactRow {
   sync: 'ingested';
   updatedAt: number | null;
   provenance: ArtifactProvenance | null;
+}
+
+export interface ArtifactRepository {
+  id: string;
+  name: string;
 }
 
 const KIND_BY_TYPE_ID = new Map<string, ArtifactKind>(
@@ -56,33 +62,46 @@ function pathFromUrl(raw: string | undefined, repository: string): string {
   return path;
 }
 
-function pathOf(kind: ArtifactKind, value: ArtifactNodeValue, repository: string): string {
+function pathOf(
+  kind: ArtifactKind | null,
+  value: ArtifactNodeValue,
+  repository: string
+): string {
   if (kind === 'repo') return '';
   if (kind === 'file') return value.path ?? '';
   return pathFromUrl(value.url, repository);
 }
 
-function nameOf(kind: ArtifactKind, value: ArtifactNodeValue): string {
+function nameOf(kind: ArtifactKind | null, value: ArtifactNodeValue): string {
   if (kind === 'repo') return value.full_path ?? '';
   if (kind === 'file') return value.path?.split('/').pop() ?? value.path ?? '';
   const title = value.title ?? '';
   return value.number != null ? `#${value.number} ${title}`.trim() : title;
 }
 
-export function buildArtifactRows(nodes: readonly ArtifactNodeDto[]): ArtifactRow[] {
-  const repoNames = new Map<string, string>();
+export function buildRepositories(nodes: readonly ArtifactNodeDto[]): ArtifactRepository[] {
+  const repositories: ArtifactRepository[] = [];
   for (const node of nodes) {
-    if (kindOf(node) === 'repo') {
-      repoNames.set(node.instance_id, node.value.full_path ?? '');
-    }
+    if (kindOf(node) !== 'repo') continue;
+    const name = node.value.full_path ?? '';
+    if (name) repositories.push({ id: node.instance_id, name });
   }
+  return repositories.sort((a, b) => a.name.localeCompare(b.name));
+}
 
+/**
+ * Every node in the answer becomes a row. Which kinds belong in a listing is
+ * the gear's decision, taken before it pages — a client that dropped rows here
+ * would be filtering after the page was cut, which leaves `total` and the page
+ * count describing a set the table never shows.
+ */
+export function buildArtifactRows(
+  nodes: readonly ArtifactNodeDto[],
+  repoNames: ReadonlyMap<string, string>
+): ArtifactRow[] {
   const rows: ArtifactRow[] = [];
   for (const node of nodes) {
     const kind = kindOf(node);
-    if (kind === null) continue;
-    if (kind === 'file' && node.value.is_dir === true) continue;
-
     const value = node.value;
     const updatedAt = instant(value);
     const repository =
@@ -97,7 +116,7 @@ export function buildArtifactRows(nodes: readonly ArtifactNodeDto[]): ArtifactRo
       sync: 'ingested',
       updatedAt,
       provenance:
-        updatedAt !== null
+        updatedAt !== null || kind === null
           ? null
           : kind === 'file'
             ? fileProvenance(value)
@@ -106,51 +125,4 @@ export function buildArtifactRows(nodes: readonly ArtifactNodeDto[]): ArtifactRo
   }
 
   return rows;
-}
-
-export function rowRepositories(rows: readonly ArtifactRow[]): string[] {
-  const names = new Set<string>();
-  for (const row of rows) {
-    if (row.repository) names.add(row.repository);
-  }
-  return [...names].sort((a, b) => a.localeCompare(b));
-}
-
-export type UpdatedSort = 'newest' | 'oldest';
-
-export function sortByUpdated(
-  rows: readonly ArtifactRow[],
-  direction: UpdatedSort
-): ArtifactRow[] {
-  const sign = direction === 'newest' ? -1 : 1;
-  return [...rows].sort((a, b) => {
-    if (a.updatedAt === null && b.updatedAt === null) return 0;
-    if (a.updatedAt === null) return 1;
-    if (b.updatedAt === null) return -1;
-    return (a.updatedAt - b.updatedAt) * sign;
-  });
-}
-
-export function missingRepositories(
-  rows: readonly ArtifactRow[],
-  sources: readonly { full_path: string }[]
-): string[] {
-  const present = new Set(rows.map((row) => row.repository).filter(Boolean));
-  return sources.map((source) => source.full_path).filter((path) => !present.has(path));
-}
-
-export function narrowArtifactRows(
-  rows: readonly ArtifactRow[],
-  repository: string | null,
-  search: string
-): ArtifactRow[] {
-  const needle = search.trim().toLocaleLowerCase();
-  return rows.filter((row) => {
-    if (repository !== null && row.repository !== repository) return false;
-    if (!needle) return true;
-    return (
-      row.name.toLocaleLowerCase().includes(needle) ||
-      row.path.toLocaleLowerCase().includes(needle)
-    );
-  });
 }

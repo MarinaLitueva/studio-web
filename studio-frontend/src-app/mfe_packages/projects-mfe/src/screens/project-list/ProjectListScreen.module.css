@@ -56,72 +56,17 @@
   overflow: hidden;
 }
 
-/*
- * ---------------------------------------------------------------------------
- * Re-shaping the kit's Table
- * ---------------------------------------------------------------------------
- * TODO: move this into the kit. A flush single-card table is a design-system
- * shape, not a projects concern, and every screen that draws one will otherwise
- * copy these declarations — the second copy is the point at which they start
- * drifting. Delete this whole block once the kit takes it.
- */
 .table {
   width: 100%;
   table-layout: fixed;
 }
 
-.table.table {
-  border-spacing: 0;
-}
-
-.table.table tr > :is(th, td) {
-  border-block-start: 0;
-  border-inline: 0;
-  border-radius: 0;
-}
-
-/* The card's own border already draws this edge. */
-.table.table tbody tr:last-child > :is(th, td) {
-  border-block-end: 0;
-}
-
-/* Two text lines plus breathing room — the mockup's row rhythm. */
+/* according to the mockup's row */
 .table.table tbody tr > td {
   padding-block: var(--space-4);
 }
 
-/*
- * The mockup's column dividers: a short rule between header cells, not a full
- * cell border. `th + th` gives one before every column but the first, which is
- * exactly where the mockup puts them.
- */
-.table.table thead th + th {
-  position: relative;
-}
-
-.table.table thead th + th::before {
-  content: '';
-  position: absolute;
-  inset-inline-start: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  inline-size: var(--border-width);
-  block-size: var(--icon-size-sm);
-  background: var(--border);
-}
-
-/*
- * Column headers are the mockup's System Micro role: mono, uppercase, muted.
- * That is what separates the header band from the rows without a second
- * background colour.
- */
 .table th {
-  font-family: var(--font-mono);
-  font-size: var(--text-mono-size);
-  line-height: var(--text-mono-line-height);
-  font-weight: var(--text-mono-weight);
-  letter-spacing: var(--text-mono-tracking);
-  text-transform: uppercase;
   color: var(--muted-foreground);
 }
 

@@ -3,7 +3,6 @@
 import {
   apiRegistry,
   eventBus,
-  invalidateQueryCacheForApp,
   type AppDispatch,
   type FrontXApp,
   type RootState,
@@ -74,22 +73,12 @@ export function initArtifactEffects(dispatch: AppDispatch, app: FrontXApp): void
 
     if (repos.length === 0) return;
 
-    const nodesQuery = ingest.nodes({ scope: projectId });
     const stored = new Map<string, number>();
-    let storedSeen = 0;
 
     const superseded = (): boolean => generations.get(projectId) !== generation;
 
     const progressed = (repo: string, status: RepoImportStatus, reason: Refusal | null): void => {
       dispatch(repoProgressed({ projectId, repo, status, reason, stored: stored.get(repo) ?? 0 }));
-    };
-
-    const refreshTable = (): void => {
-      // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-7
-      void invalidateQueryCacheForApp(app, nodesQuery).catch((error: unknown) => {
-        console.warn('[projects] could not re-read artifacts mid-import', error);
-      });
-      // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-7
     };
 
     void (async () => {
@@ -162,21 +151,12 @@ export function initArtifactEffects(dispatch: AppDispatch, app: FrontXApp): void
           // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-10
           // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-11
         }
-
-        // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-6
-        const total = [...stored.values()].reduce((sum, n) => sum + n, 0);
-        if (total > storedSeen) {
-          storedSeen = total;
-          refreshTable();
-        }
-        // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-6
       }
 
       // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-12
       for (const repo of tasks.keys()) {
         progressed(repo, 'unwatched', { kind: 'i18n', key: 'artifacts_reason_unwatched' });
       }
-      refreshTable();
       // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-12
     })();
   });

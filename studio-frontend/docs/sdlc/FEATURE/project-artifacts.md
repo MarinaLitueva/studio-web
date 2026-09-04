@@ -18,7 +18,8 @@
   - [Import State Machine](#import-state-machine)
 - [5. Definitions of Done](#5-definitions-of-done)
   - [The project's rail lives inside the project frame](#the-projects-rail-lives-inside-the-project-frame)
-  - [The table is the prototype's five columns, paged in the client](#the-table-is-the-prototypes-five-columns-paged-in-the-client)
+  - [The table is the prototype's five columns](#the-table-is-the-prototypes-five-columns)
+  - [Filtering, ordering and paging belong to the gear](#filtering-ordering-and-paging-belong-to-the-gear)
   - [The header counts the project, not the filter](#the-header-counts-the-project-not-the-filter)
   - [Updated shows a time or says where the row came from](#updated-shows-a-time-or-says-where-the-row-came-from)
   - [Reads are scoped to the project](#reads-are-scoped-to-the-project)
@@ -90,25 +91,28 @@ have and the choice changes the code:
   `comment`, `commit`, `spec_finding`) and nothing that classifies a document.
   Type survives as the row's leading icon, where being approximate costs
   nothing.
-- **The rows are an allowlist of node types, not a denylist.** Four of the
-  eight belong in this table — `repo`, `file`, `issue`, `pull_request`. The
-  other four are not artifacts a member browses: a `user` is an author, a
-  `spec_finding` is a judgement *about* an artifact, and `comment` and `commit`
-  are pulled and stored on every sync with nothing to gate them, in numbers
-  that dwarf the rows they attach to. Naming what is kept rather than what is
-  dropped is what keeps a ninth node type out of the table on the day it is
-  added, instead of putting it in a row with no name and no path.
-- **Pagination is client-side, and that is a stopgap.** `GET /nodes` has no
-  limit, offset or total, and its `scope` parameter is applied in the handler
-  *after* the whole scope has been read. There is nothing to page against, so
-  the table pages what it holds. This holds for a handful of repositories and
-  stops holding well before a hundred; the fix is server-side paging, which
-  drags a server-side order and server-side filters along with it, since a page
-  of an unordered set is not a page and a filter over one page is not a filter.
-  The kit's `DataTable` is expected to grow the seams this needs — its own
-  documentation lists manual and server-side pagination among the things it
-  deliberately does not wire up yet — so the arrangement here is written to be
-  replaced, not to be lived with.
+- **Which node types are rows is the gear's to decide, not the client's to
+  enumerate.** Four of the eight belong in this table — `repo`, `file`,
+  `issue`, `pull_request`. The other four are not artifacts a member browses: a
+  `user` is an author, a `spec_finding` is a judgement *about* an artifact, and
+  `comment` and `commit` are pulled and stored on every sync with nothing to
+  gate them, in numbers that dwarf the rows they attach to. But naming that set
+  on the wire would make it the client's list to keep correct, and a ninth node
+  type would then land in a row with no name and no path on the day the gear
+  adds it. So the listing asks for no type at all: `GET /nodes` answers with the
+  kinds it holds for browsing, narrowed before it pages, which is the only place
+  a narrowing and a `total` can agree. `type` survives on one call only — the
+  repository lookup below, which asks a different question ("which repositories
+  does this project have"), not a filter over the table.
+- **The page comes from the gear, and so does everything a page depends on.**
+  `GET /nodes` takes `offset`, `limit`, `repo`, `q` and `sort`, and answers with
+  `total` beside the page. That closes the earlier arrangement, where the table
+  paged what it held: the client never saw past the gear's default first fifty
+  nodes, which left rows unnamed once their repository node fell off the end and
+  made a project look half-synced. A page of an unordered set is not a page and
+  a filter over one page is not a filter, so ordering and filtering moved with
+  it rather than after it. What stays on the client is where the member is —
+  which page, which repository, what they typed.
 - **The header counts the project, the table counts the filter.** They are
   allowed to disagree while a filter is on; the search field next to them is the
   explanation.
@@ -186,8 +190,8 @@ Definitions of Done, which are traced.
 6. [ ] - `p1` - **IF** there are no artifacts - `inst-7`
    1. [ ] - `p1` - **RETURN** the section distinguishes "no sources", "sources not synced" and "import running" - `inst-8`
 7. [ ] - `p1` - Show the project's totals in the header and the rows in the table - `inst-9`
-8. [ ] - `p1` - Member narrows the rows by repository or by text - `inst-10`
-9. [ ] - `p1` - **RETURN** the table shows the narrowed rows from its first page - `inst-11`
+8. [ ] - `p1` - Member narrows the rows by repository or by text, or asks for another page - `inst-10`
+9. [ ] - `p1` - **RETURN** the gear answers with that page of the narrowed set, and a narrowing starts again from the first page - `inst-11`
 
 ### Create a project from repositories and land on its artifacts
 
@@ -221,21 +225,21 @@ Definitions of Done, which are traced.
 
 - [ ] `p2` - **ID**: `cpt-studiofrontend-algo-project-artifacts-rows`
 
-**Input**: the project tenant in scope
+**Input**: the project tenant in scope, the chosen repository, the search text and the wanted page
 
-**Output**: the rows to display, the project's totals, or the reason the read failed
+**Output**: the rows of that page, the project's totals, or the reason the read failed
 
 **Steps**:
-1. [ ] - `p1` - `API: GET /cf/studio-artifact-ingest/v1/nodes?scope={project}` - `inst-1`
+1. [ ] - `p1` - `API: GET /cf/studio-artifact-ingest/v1/nodes?scope={project}&sort=updated&limit&offset(&repo&q)` for the wanted page - `inst-1`
 2. [ ] - `p1` - **IF** the gear refuses or is unavailable - `inst-2`
    1. [ ] - `p1` - **RETURN** the refusal; no partial table is shown - `inst-3`
-3. [ ] - `p1` - Index the repository nodes by instance id, so a row can name its repository - `inst-4`
-4. [ ] - `p1` - Keep only the four node types this table shows — repository, file, issue, pull request — and drop every other type unseen - `inst-5`
+3. [ ] - `p1` - `API: GET /cf/studio-artifact-ingest/v1/nodes?scope={project}&type=repo` for the repositories in scope, so a row can name its repository and the filter can offer it - `inst-4`
+4. [ ] - `p1` - Take the kinds the gear answered with as the rows; no type is asked for and none is dropped once the page is cut - `inst-5`
 5. [ ] - `p1` - Index the findings by the node they are about, so a row knows how many are open - `inst-6`
 6. [ ] - `p1` - For each artifact node, derive its name, repository, path, sync state, and either a timestamp or the label naming where the row came from - `inst-7`
-7. [ ] - `p1` - Order the rows by timestamp, newest first, with the timestampless last - `inst-8`
-8. [ ] - `p1` - Count the artifacts, and the repositories they came from - `inst-9`
-9. [ ] - `p1` - **RETURN** the rows and the totals - `inst-10`
+7. [ ] - `p1` - Keep the order the gear answered in; it is global across pages and the client has no standing to re-sort it - `inst-8`
+8. [ ] - `p1` - `API: GET /cf/studio-artifact-ingest/v1/nodes?scope={project}&limit=1` for the project's own total, which no filter may move - `inst-9`
+9. [ ] - `p1` - **RETURN** the page's rows, the filtered total the paginator counts against, and the project's total - `inst-10`
 
 ### Decide whether this is a first import
 
@@ -270,8 +274,8 @@ Definitions of Done, which are traced.
    1. [x] - `p1` - Record that repository as unsyncable and continue with the rest - `inst-3`
 3. [x] - `p1` - `API: POST /cf/studio-artifact-ingest/v1/sync (provider, base_url, secret_ref, repo_full_path, project, workspace)` for each source, a bounded number at a time - `inst-4`
 4. [x] - `p1` - `API: GET /cf/studio-artifact-ingest/v1/tasks/{id}` for the tasks not yet settled, on an interval - `inst-5`
-5. [x] - `p1` - **IF** a task reports that stored objects have grown - `inst-6`
-   1. [x] - `p1` - Invalidate the artifacts read so the table takes in what is now queryable - `inst-7`
+5. [x] - `p1` - Report each task's stored count onward, so a reader can tell that what is queryable has grown - `inst-6`
+   1. [x] - `p1` - **IF** it has grown, the read that displays it re-issues itself; the import does not reach into its cache - `inst-7`
 6. [x] - `p1` - **IF** the gear no longer knows a task, or three polls in a row go unanswered - `inst-8`
    1. [x] - `p1` - Treat it as lost rather than pending, and stop asking about it - `inst-9`
 7. [x] - `p1` - **IF** a task failed - `inst-10`
@@ -351,20 +355,12 @@ anything.
 **Touches**:
 - Entities: `ProjectRail`, `ProjectScreen`, `navSlice`
 
-### The table is the prototype's five columns, paged in the client
+### The table is the prototype's five columns
 
 - [x] `p1` - **ID**: `cpt-studiofrontend-dod-project-artifacts-table`
 
-The system **MUST** show name, repository, path, sync state and updated, **MUST**
-page the rows it holds rather than requesting a page, and **MUST** return to the
-first page whenever the filter or the search changes.
-
-`GET /nodes` answers with everything in scope — no limit, no cursor, no total —
-so the page boundary is the client's whether we like it or not. **This is a
-temporary arrangement, and the temporary part is named here so it is not
-mistaken for the design.** The fix is server-side paging, which drags a
-server-side order and server-side filters along with it, since a page of an
-unordered set is not a page and a filter over one page is not a filter.
+The system **MUST** show name, repository, path, sync state and updated, and
+**MUST** render the page it was handed without reordering or re-filtering it.
 
 The table is built on the kit's `Table` primitives rather than on its
 `DataTable`, and that is what makes the rest of this DoD reachable. `DataTable`
@@ -375,20 +371,13 @@ same question the same way: `table-layout: fixed`, the width on each column's
 own class, `nowrap` on the narrow columns, and truncation on the content
 element rather than on the cell.
 
-Owning the markup means owning the page and the sort, which closes three things
-`DataTable` could not do. Numbered pages and the row-range line beside them are
-both in the design and both beyond its prev/next footer. And returning to the
-first page on a filter change no longer needs the table to be remounted — the
-remount also discarded the sort, so ordering by Updated and then typing in the
-search silently lost the ordering.
+Owning the markup also buys the footer the design asks for: numbered pages and
+the row-range line beside them, both beyond `DataTable`'s prev/next. The table
+holds no page state of its own — it is given the offset and the total and
+reports which page was asked for, so the one component that knows the filter is
+the one that decides where the paging starts.
 
-The order of operations is the whole of the correctness: the rows are narrowed
-by the filter and the search, then sorted, then sliced into a page. Sorting the
-page instead of the narrowed set would reorder only what happens to be visible,
-and the page index is clamped as well as reset, because a narrowing search can
-stand a member past the end without any input changing again.
-
-Two columns carry a decision rather than a field:Two columns carry a decision rather than a field:
+Two columns carry a decision rather than a field:
 
 - **Repository** is a join. A node names its repository by instance id, not by
   name; the name is on the repository's own node in the same answer.
@@ -405,6 +394,50 @@ Two columns carry a decision rather than a field:Two columns carry a decision ra
 - API: `GET /cf/studio-artifact-ingest/v1/nodes`
 - Entities: `ArtifactsSection`, `artifactColumns`, `artifactRow`
 
+### Filtering, ordering and paging belong to the gear
+
+- [x] `p1` - **ID**: `cpt-studiofrontend-dod-project-artifacts-page`
+
+The system **MUST** ask the gear for one page and render exactly that, **MUST**
+send the repository filter, the search text and the sort with the request rather
+than applying them after it, **MUST** count the paginator against the `total`
+the gear returns, and **MUST** return to the first page whenever the filter or
+the search changes.
+
+The earlier arrangement read "everything in scope" and paged it on the client.
+It never did: `GET /nodes` defaults to fifty and the request carried no `limit`,
+so the client held the first fifty nodes by instance id and paged those. The
+damage was not just a short table. A row names its repository by instance id and
+the name lives on the repository's own node, so once a repository node fell past
+the cut its rows went nameless; and a shortfall check that compared those fifty
+rows against the project's configured sources reported repositories as never
+pulled in. A page of an unordered set is not a page, and a filter over one page
+is not a filter — which is why the order and the filters had to move with the
+page rather than after it.
+
+Three reads serve the section, and each answers a question the others cannot:
+the page itself; the repository nodes, because the page need not contain the
+repository a row points at and the filter must offer every repository, not the
+ones that happen to be on screen; and a `limit=1` read whose only purpose is
+`total`, so a search can narrow the table without moving what the header says
+the project holds. That last one is the same read that decides a first import,
+so it is one request, not two.
+
+The search waits for the typing to settle before it becomes a request. Ordering
+is `sort=updated` and only that: the gear offers newest-first or its own stable
+order by instance id, and "by instance id" is not an order a member asked for.
+Re-sorting the page on the client is the one thing this DoD forbids outright —
+it would order the fifteen rows in hand and silently disagree with every other
+page. The offset is clamped as well as reset, because a filtered set can shrink
+under a member who is standing on its last page.
+
+**Implements**:
+- `cpt-studiofrontend-algo-project-artifacts-rows`
+
+**Touches**:
+- API: `GET /cf/studio-artifact-ingest/v1/nodes`
+- Entities: `ArtifactIngestApiService`, `useArtifacts`, `ArtifactsSection`, `ArtifactsTable`
+
 ### The header counts the project, not the filter
 
 - [x] `p1` - **ID**: `cpt-studiofrontend-dod-project-artifacts-counters`
@@ -412,16 +445,19 @@ Two columns carry a decision rather than a field:Two columns carry a decision ra
 The system **MUST** state the project's artifact total and the number of
 repositories those artifacts came from, **MUST** compute both over the whole
 project rather than over the searched rows, **MUST** restate itself around a
-chosen repository — how many rows are shown out of that repository's own total —
-and **MUST NOT** state how many artifacts are complete or need attention.
+chosen repository — that repository's own total, named — and **MUST NOT** state
+how many artifacts are complete or need attention.
 
 A search does not change what the project holds, so it must not move these
 numbers; the footer's range is what reports it, and the two disagreeing is
-intended. Choosing a repository is different in kind: the member has said which
-repository they are looking at, and a project-wide total is then answering a
-question nobody asked. The prototype makes the same split — `1,286 artifacts ·
-97 repositories` with nothing chosen, `1 shown · 96 artifacts in trust-center`
-once one is.
+intended. Keeping that true once the gear does the filtering costs a second
+read: the page's `total` is the filtered count, so the project's own count is
+asked for separately and is the one the header uses. Choosing a repository is
+different in kind: the member has said which repository they are looking at, and
+a project-wide total is then answering a question nobody asked. The prototype
+makes the same split — `1,286 artifacts · 97 repositories` with nothing chosen,
+`96 artifacts in trust-center` once one is. How many of those are on screen is
+the footer's sentence, not the header's.
 
 The repository count is what the graph holds, not a "reached out of
 configured" pair. The pair was specified here first, to keep a failed sync
@@ -433,9 +469,11 @@ repositories were never written into its config, which made the pair render as
 "1 of 0". A failed sync now surfaces where it is actually actionable: against
 its own repository in the import state, not as a subtraction in a header.
 
-The same answer feeds the repository filter, and for the same reason: its
-options are the repositories the rows name, so it can never offer one with no
-rows or miss one with rows.
+The repository read feeds the filter, and for the same reason: its options are
+every repository node in scope, so the filter can never miss one whose rows
+happen to sit on a page the member has not opened. Its value is the repository
+node's instance id, because that is what the gear filters on; the name is for
+the member to read.
 
 The two counters the mockup adds — complete, and needing attention — are not
 shown. Both are derived from spec-quality findings, and nothing calls the
@@ -446,16 +484,17 @@ attention is not a missing number; it is a false assurance.
 - `cpt-studiofrontend-algo-project-artifacts-rows`
 
 **Touches**:
-- Entities: `ArtifactsControlStrip`, `useArtifacts`
+- API: `GET /cf/studio-artifact-ingest/v1/nodes`
+- Entities: `ArtifactsSection`, `useArtifacts`, `useArtifactCount`
 
 ### Updated shows a time or says where the row came from
 
 - [x] `p1` - **ID**: `cpt-studiofrontend-dod-project-artifacts-updated`
 
 The system **MUST** show a relative time for rows that have one, **MUST** name
-the row's provenance for rows that do not, **MUST** sort by the underlying
+the row's provenance for rows that do not, **MUST** order by the underlying
 instant rather than by the rendered text, and **MUST** keep the rows without an
-instant at the end in both sort directions.
+instant at the end.
 
 Issues and pull requests are the only rows with an instant: their nodes carry a
 created and an updated timestamp. Nothing else does. A repository node is
@@ -467,11 +506,16 @@ table. So provenance is not the file column's special case; it is what every
 row but an issue or a pull request shows. Formatting an absent instant as an age
 would be an invention; naming where the row came from is not.
 
-Sorting therefore reads a hidden instant, and rows without one are pinned last
-whichever way the column is sorted: sending them to the top on "oldest first"
-would fill the first screen with the least informative rows. The column's first
-click sorts newest first, and the sort cannot be cycled back to none, because
-"none" is the order the graph happened to answer in.
+Ordering therefore reads a hidden instant, and rows without one are pinned last.
+The gear does the ordering, and it offers one direction: `sort=updated` is
+newest first, and its timestampless nodes land at the end because an absent
+`updated_at` compares as the empty string. So the column states the order rather
+than offering to change it — a static newest-first mark, no toggle. The
+alternative reads worse than it sounds: oldest-first would have to be faked by
+paging the set backwards and reversing each page, which puts the least
+informative rows on the first screen and breaks this DoD's own last clause.
+**Oldest-first is left to the gear** — one more branch in its `sort` match — and
+until then the direction is not offered rather than being approximated.
 
 **Implements**:
 - `cpt-studiofrontend-algo-project-artifacts-rows`
@@ -491,13 +535,16 @@ tag equals the scope. Passing the workspace would list every sibling project's
 artifacts under one project's heading; passing nothing would list the whole
 installation's.
 
-Entering the section is itself a read, not a redraw of what the frame fetched
-when the project opened. A node carries one project tag, and a sync writes it:
-another project pulling the same repository moves those nodes into its own
-scope, and this project's answer silently shrinks. Nothing announces that, so
-the section asks again on every entry and the shortfall banner is drawn from
-that answer. The read that is already in flight when the section opens is not
-re-issued.
+A repository attached to two projects is two graphs, not one moving between
+them. Every deterministic node id the gear writes takes the attachment scope —
+the project, or the workspace for a workspace-level source — as its first
+component, so pulling `acme/example` into a second project cannot overwrite or
+empty the first project's copy of it. This is why the section no longer draws a
+shortfall banner naming repositories with nothing pulled in: the case it existed
+for cannot happen, and the check behind it could only ever compare the page in
+hand against the project's configured sources, which reported a false shortfall
+for every repository past the first page. A sync that genuinely failed is still
+reported, against its own repository, in the import state.
 
 **Implements**:
 - `cpt-studiofrontend-algo-project-artifacts-rows`
@@ -653,11 +700,14 @@ placeholder, a dash or a zero dressed as an answer.
 - [ ] The table has exactly the columns Name, Repository, Path, Sync and Updated, in that order.
 - [ ] Every row names the repository it came from by name, not by an identifier.
 - [ ] Rows for issues and pull requests show a relative time in Updated; every other row — files and repositories alike — names where it came from instead.
-- [ ] Sorting Updated puts the newest first on the first click, and rows without a time stay at the bottom in both directions.
+- [ ] Updated is marked as newest-first, offers no way to reverse it, and rows without a time sit at the bottom.
 - [ ] The header states the number of artifacts and the number of repositories they came from, each in the singular when there is one.
 - [ ] Narrowing by text changes the table and the footer, and leaves the header's totals as they were.
-- [ ] Choosing a repository restates the header as how many rows are shown out of that repository's own total, and names the repository.
+- [ ] Choosing a repository restates the header as that repository's own total, names it, and starts the table again from the first page.
 - [ ] Narrowing by text while on a later page shows the matching rows from the first page, not an empty page.
+- [ ] A project with more artifacts than one page holds lists them all across the paginator, and the footer's total is the gear's, not the page's.
+- [ ] The repository filter offers every repository in the project, including ones whose rows are not on the page in view.
+- [ ] Every row on every page names its repository; none is left blank.
 - [ ] The header states nothing about artifacts being complete or needing attention.
 - [ ] A project with no sources shows an empty state that says so and offers no sync.
 - [ ] A project with sources and nothing ingested shows an empty state that offers a sync.
@@ -670,6 +720,6 @@ placeholder, a dash or a zero dressed as an answer.
 - [ ] One repository failing to sync leaves the other repositories' rows in the table, and the failure is reported against that repository.
 - [ ] Every repository failing to sync is reported, and re-entering the section does not start the import again.
 - [ ] Leaving Artifacts for another section and returning shows the rows that arrived while it was away.
-- [ ] A repository pulled into another project stops being listed here on the next entry to the section, without a reload, and is named as having nothing pulled in.
+- [ ] Pulling a repository into another project leaves this project's rows for it untouched, and no banner claims a repository was never pulled in.
 - [ ] No request for artifacts is made without the open project as its scope.
 - [ ] No row shows a document kind, a readiness percentage, or a per-file ingest status.

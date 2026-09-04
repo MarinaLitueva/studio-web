@@ -41,7 +41,7 @@ export interface ArtifactColumn {
   key: string;
   label: string;
   className: string;
-  sortable?: boolean;
+  sorted?: boolean;
   render: (row: ArtifactRow) => React.ReactNode;
 }
 
@@ -106,9 +106,11 @@ export function artifactColumns({
       className: styles.colName,
       render: (row) => (
         <span className={styles.nameCell}>
-          <span className={styles.kindIcon} aria-hidden="true">
-            {KIND_ICON[row.kind]}
-          </span>
+          {row.kind !== null && (
+            <span className={styles.kindIcon} aria-hidden="true">
+              {KIND_ICON[row.kind]}
+            </span>
+          )}
           <span className={styles.nameText}>{row.name}</span>
         </span>
       ),
@@ -137,7 +139,7 @@ export function artifactColumns({
       key: 'updated',
       label: labels.updated,
       className: styles.colUpdated,
-      sortable: true,
+      sorted: true,
       render: (row) =>
         row.updatedAt !== null
           ? formatRelative(row.updatedAt)

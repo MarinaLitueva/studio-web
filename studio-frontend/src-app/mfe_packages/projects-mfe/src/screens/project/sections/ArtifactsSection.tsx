@@ -14,10 +14,9 @@ import { useOrganization, useWorkspace } from '@constructor-studio/mfe-shared';
 import { Search } from 'lucide-react';
 import { useProjectText } from '../../../i18n';
 import type { ProjectSource } from '../../../api/types';
-import { useArtifacts } from '../../../shared/useArtifacts';
+import { ARTIFACTS_PAGE_SIZE, useArtifacts } from '../../../shared/useArtifacts';
 import { useArtifactImport, useProjectImport } from '../../../shared/useArtifactImport';
 import { useThemedRoot } from '../../../shared/useThemedRoot';
-import { narrowArtifactRows, rowRepositories } from '../../../model/artifact';
 import { artifactColumns } from './artifactColumns';
 import { ArtifactsTable } from './ArtifactsTable';
 import { notComeThrough, repoImportLine } from './repoImportText';
@@ -25,6 +24,8 @@ import styles from './ArtifactsSection.module.css';
 import frame from '../ProjectScreen.module.css';
 
 const ALL_REPOSITORIES = '__all__';
+
+const SEARCH_SETTLE_MS = 300;
 
 const SyncNow: React.FC<{
   projectId: string;
@@ -58,29 +59,38 @@ interface ArtifactsSectionProps {
 export const ArtifactsSection: React.FC<ArtifactsSectionProps> = ({ projectId }) => {
   const t = useProjectText();
   const { formatRelative } = useFormatters();
-  const { rows, sources, loading, failed, refetch } = useArtifacts(projectId);
   const importState = useProjectImport(projectId);
   const { org } = useOrganization();
   const { workspace } = useWorkspace();
 
   const [repository, setRepository] = React.useState<string | null>(null);
+  const [typed, setTyped] = React.useState('');
   const [search, setSearch] = React.useState('');
+  const [offset, setOffset] = React.useState(0);
   const [container, findThemedRoot] = useThemedRoot();
 
-  const readInFlight = React.useRef(loading);
   React.useEffect(() => {
-    if (!readInFlight.current) refetch();
-  }, [refetch]);
+    if (typed === search) return;
+    const timer = setTimeout(() => {
+      setSearch(typed);
+      setOffset(0);
+    }, SEARCH_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [typed, search]);
 
-  const repositories = React.useMemo(() => rowRepositories(rows), [rows]);
+  const { rows, total, projectTotal, repositories, sources, loading, failed, refetch } =
+    useArtifacts(projectId, { repo: repository, search, offset });
 
-  const repositoryTotal = React.useMemo(
-    () => (repository === null ? 0 : rows.filter((row) => row.repository === repository).length),
-    [rows, repository]
-  );
-  const narrowed = React.useMemo(
-    () => narrowArtifactRows(rows, repository, search),
-    [rows, repository, search]
+  React.useEffect(() => {
+    if (total > 0 && offset >= total) {
+      const lastPage = Math.ceil(total / ARTIFACTS_PAGE_SIZE) - 1;
+      setOffset(lastPage * ARTIFACTS_PAGE_SIZE);
+    }
+  }, [total, offset]);
+
+  const chosen = React.useMemo(
+    () => repositories.find((entry) => entry.id === repository) ?? null,
+    [repositories, repository]
   );
 
   const columns = React.useMemo(
@@ -130,8 +140,7 @@ export const ArtifactsSection: React.FC<ArtifactsSectionProps> = ({ projectId })
       </div>
     );
   }
-
-  if (rows.length === 0) {
+  if (projectTotal === 0) {
     const running = importState.phase === 'running';
     const failedImport = importState.phase === 'failed';
     const messageKey =
@@ -166,10 +175,10 @@ export const ArtifactsSection: React.FC<ArtifactsSectionProps> = ({ projectId })
     <div ref={findThemedRoot} className={styles.section}>
       <header className={styles.strip}>
         <p className={styles.totals}>
-          {repository === null ? (
+          {chosen === null ? (
             <>
-              {t(rows.length === 1 ? 'artifacts_count_one' : 'artifacts_count_many', {
-                count: rows.length,
+              {t(projectTotal === 1 ? 'artifacts_count_one' : 'artifacts_count_many', {
+                count: projectTotal,
               })}
               <span className={styles.totalsDivider}>·</span>
               {t(
@@ -180,11 +189,7 @@ export const ArtifactsSection: React.FC<ArtifactsSectionProps> = ({ projectId })
               )}
             </>
           ) : (
-            t('artifacts_in_repository', {
-              shown: narrowed.length,
-              total: repositoryTotal,
-              repo: repository,
-            })
+            t('artifacts_in_repository', { total, repo: chosen.name })
           )}
           {importState.phase === 'running' && (
             <>
@@ -197,9 +202,10 @@ export const ArtifactsSection: React.FC<ArtifactsSectionProps> = ({ projectId })
           {repositories.length > 1 && (
             <Select
               value={repository ?? ALL_REPOSITORIES}
-              onValueChange={(next: string | null) =>
-                setRepository(!next || next === ALL_REPOSITORIES ? null : next)
-              }
+              onValueChange={(next: string | null) => {
+                setRepository(!next || next === ALL_REPOSITORIES ? null : next);
+                setOffset(0);
+              }}
             >
               <SelectTrigger
                 size="sm"
@@ -211,7 +217,8 @@ export const ArtifactsSection: React.FC<ArtifactsSectionProps> = ({ projectId })
                     <span className={styles.truncate}>
                       {!selected || selected === ALL_REPOSITORIES
                         ? t('artifacts_all_repositories', { count: repositories.length })
-                        : String(selected)}
+                        : (repositories.find((entry) => entry.id === selected)?.name ??
+                          String(selected))}
                     </span>
                   )}
                 </SelectValue>
@@ -222,10 +229,10 @@ export const ArtifactsSection: React.FC<ArtifactsSectionProps> = ({ projectId })
                     {t('artifacts_all_repositories', { count: repositories.length })}
                   </span>
                 </SelectItem>
-                {repositories.map((name: string) => (
-                  <SelectItem key={name} value={name}>
-                    <span className={styles.truncate} title={name}>
-                      {name}
+                {repositories.map((entry) => (
+                  <SelectItem key={entry.id} value={entry.id}>
+                    <span className={styles.truncate} title={entry.name}>
+                      {entry.name}
                     </span>
                   </SelectItem>
                 ))}
@@ -235,25 +242,33 @@ export const ArtifactsSection: React.FC<ArtifactsSectionProps> = ({ projectId })
           <Input
             className={styles.search}
             type="search"
-            value={search}
+            value={typed}
             icon={<Search size={16} strokeWidth={1.3} />}
             placeholder={t('artifacts_search')}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => setTyped(event.target.value)}
             aria-label={t('artifacts_search')}
           />
         </div>
       </header>
       <ArtifactsTable
-        rows={narrowed}
+        rows={rows}
         columns={columns}
-        resetKey={`${repository ?? ''}|${search}`}
+        offset={offset}
+        total={total}
+        pageSize={ARTIFACTS_PAGE_SIZE}
+        onOffsetChange={setOffset}
         labels={{
           table: t('section_artifacts'),
           emptyMessage: t('artifacts_no_matches'),
           previous: t('artifacts_prev_page'),
           next: t('artifacts_next_page'),
-          range: (from: number, to: number, total: number) =>
-            t('artifacts_range', { from, to, total }),
+          sortedNewest: t('artifacts_sorted_newest'),
+          range: (from: number, to: number, count: number) =>
+            t(count === 1 ? 'artifacts_range_one' : 'artifacts_range', {
+              from,
+              to,
+              total: count,
+            }),
           page: (index: number) => t('artifacts_page', { index }),
         }}
       />

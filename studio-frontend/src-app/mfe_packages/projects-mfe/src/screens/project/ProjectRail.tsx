@@ -60,7 +60,7 @@ export const ProjectRail: React.FC<ProjectRailProps> = ({ section }) => {
           tooltip={{ children: label, side: 'right', container: themedRoot ?? undefined }}
           onClick={() => requestSection(entry.section)}
         >
-          {entry.icon}
+          <span className={styles.glyph}>{entry.icon}</span>
           <span>{label}</span>
         </SidebarMenuButton>
       </SidebarMenuItem>

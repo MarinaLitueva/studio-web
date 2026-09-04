@@ -11,8 +11,8 @@ import {
   TableHeader,
   TableRow,
 } from '@gears-frontx/ui-kit';
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight } from 'lucide-react';
-import { sortByUpdated, type ArtifactRow, type UpdatedSort } from '../../../model/artifact';
+import { ArrowDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import type { ArtifactRow } from '../../../model/artifact';
 import type { ArtifactColumn } from './artifactColumns';
 import styles from './ArtifactsSection.module.css';
 
@@ -21,6 +21,7 @@ export interface ArtifactsTableLabels {
   emptyMessage: string;
   previous: string;
   next: string;
+  sortedNewest: string;
   range: (from: number, to: number, total: number) => string;
   page: (index: number) => string;
 }
@@ -29,12 +30,13 @@ interface ArtifactsTableProps {
   rows: readonly ArtifactRow[];
   columns: readonly ArtifactColumn[];
   labels: ArtifactsTableLabels;
-  resetKey: string;
-  pageSize?: number;
+  offset: number;
+  total: number;
+  pageSize: number;
+  onOffsetChange: (offset: number) => void;
 }
 
-const DEFAULT_PAGE_SIZE = 15;
-const MAX_PAGES_SHOWN = 7;
+const MAX_PAGES_SHOWN = 4;
 
 function pageWindow(current: number, count: number): number[] {
   if (count <= MAX_PAGES_SHOWN) return Array.from({ length: count }, (_, i) => i);
@@ -44,33 +46,18 @@ function pageWindow(current: number, count: number): number[] {
 }
 
 // @cpt-dod:cpt-studiofrontend-dod-project-artifacts-table:p1
+// @cpt-dod:cpt-studiofrontend-dod-project-artifacts-page:p1
 export const ArtifactsTable: React.FC<ArtifactsTableProps> = ({
   rows,
   columns,
   labels,
-  resetKey,
-  pageSize = DEFAULT_PAGE_SIZE,
+  offset,
+  total,
+  pageSize,
+  onOffsetChange,
 }) => {
-  const [sort, setSort] = React.useState<UpdatedSort>('newest');
-  const [page, setPage] = React.useState(0);
-
-  const seenReset = React.useRef(resetKey);
-  if (seenReset.current !== resetKey) {
-    seenReset.current = resetKey;
-    if (page !== 0) setPage(0);
-  }
-
-  const sorted = React.useMemo(() => sortByUpdated(rows, sort), [rows, sort]);
-
-  const pageCount = Math.max(1, Math.ceil(sorted.length / pageSize));
-  const current = Math.min(page, pageCount - 1);
-  const from = current * pageSize;
-  const visible = sorted.slice(from, from + pageSize);
-
-  const toggleSort = (): void => {
-    setSort((previous) => (previous === 'newest' ? 'oldest' : 'newest'));
-    setPage(0);
-  };
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const current = Math.min(Math.floor(offset / pageSize), pageCount - 1);
 
   return (
     <>
@@ -79,20 +66,11 @@ export const ArtifactsTable: React.FC<ArtifactsTableProps> = ({
           <TableRow>
             {columns.map((column) => (
               <TableHead key={column.key} className={column.className}>
-                {column.sortable ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className={styles.sortButton}
-                    onClick={toggleSort}
-                  >
+                {column.sorted ? (
+                  <span className={styles.sortMark} title={labels.sortedNewest}>
                     {column.label}
-                    {sort === 'oldest' ? (
-                      <ArrowUp size={14} strokeWidth={1.5} />
-                    ) : (
-                      <ArrowDown size={14} strokeWidth={1.5} />
-                    )}
-                  </Button>
+                    <ArrowDown size={14} strokeWidth={1.5} aria-hidden="true" />
+                  </span>
                 ) : (
                   column.label
                 )}
@@ -101,14 +79,14 @@ export const ArtifactsTable: React.FC<ArtifactsTableProps> = ({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {visible.length === 0 ? (
+          {rows.length === 0 ? (
             <TableRow>
               <TableCell colSpan={columns.length} className={styles.emptyCell}>
                 {labels.emptyMessage}
               </TableCell>
             </TableRow>
           ) : (
-            visible.map((row) => (
+            rows.map((row) => (
               <TableRow key={row.id}>
                 {columns.map((column) => (
                   <TableCell key={column.key} className={column.className}>
@@ -123,7 +101,7 @@ export const ArtifactsTable: React.FC<ArtifactsTableProps> = ({
 
       <div className={styles.footer}>
         <span className={styles.range}>
-          {labels.range(sorted.length === 0 ? 0 : from + 1, from + visible.length, sorted.length)}
+          {labels.range(total === 0 ? 0 : offset + 1, offset + rows.length, total)}
         </span>
         <Pagination className={styles.pagination}>
           <PaginationContent>
@@ -134,7 +112,7 @@ export const ArtifactsTable: React.FC<ArtifactsTableProps> = ({
                 className={styles.pageStep}
                 aria-label={labels.previous}
                 disabled={current === 0}
-                onClick={() => setPage(current - 1)}
+                onClick={() => onOffsetChange((current - 1) * pageSize)}
                 icon={<ChevronLeft size={16} strokeWidth={1.5} />}
               />
             </PaginationItem>
@@ -146,7 +124,7 @@ export const ArtifactsTable: React.FC<ArtifactsTableProps> = ({
                   className={styles.pageNumber}
                   aria-label={labels.page(index + 1)}
                   aria-current={index === current ? 'page' : undefined}
-                  onClick={() => setPage(index)}
+                  onClick={() => onOffsetChange(index * pageSize)}
                 >
                   {index + 1}
                 </Button>
@@ -159,7 +137,7 @@ export const ArtifactsTable: React.FC<ArtifactsTableProps> = ({
                 className={styles.pageStep}
                 aria-label={labels.next}
                 disabled={current >= pageCount - 1}
-                onClick={() => setPage(current + 1)}
+                onClick={() => onOffsetChange((current + 1) * pageSize)}
                 icon={<ChevronRight size={16} strokeWidth={1.5} />}
               />
             </PaginationItem>

@@ -8,6 +8,8 @@ export const ARTIFACT_NODE_TYPES = {
 
 export type ArtifactKind = keyof typeof ARTIFACT_NODE_TYPES;
 
+export const ARTIFACT_REPO_TYPE = 'repo';
+
 export interface ArtifactNodeValue {
   repo?: string;
   full_path?: string;
@@ -38,6 +40,8 @@ export interface ArtifactNodeDto {
 
 export interface ArtifactNodeListDto {
   nodes: ArtifactNodeDto[];
+  total: number;
+  next_cursor?: string;
 }
 
 /** `POST /sync` */

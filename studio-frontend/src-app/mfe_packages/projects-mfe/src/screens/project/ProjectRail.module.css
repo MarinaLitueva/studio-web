@@ -7,13 +7,11 @@
   --sidebar: var(--card);
   --sidebar-accent: color-mix(in oklab, var(--muted) 70%, transparent);
   --sidebar-accent-foreground: var(--foreground);
+  --rail-icon-size: 1.125rem;
 }
 
 .provider .panel {
-  box-shadow: none;
-  transition:
-    width 0.2s linear,
-    box-shadow 0.2s ease;
+  transition: box-shadow 0.2s ease;
 }
 
 .provider:hover .panel,
@@ -33,26 +31,33 @@
 .panel .menu .item {
   width: 100%;
   height: var(--control-height-lg);
-  padding-inline: calc((var(--control-height-lg) - var(--icon-size-md)) / 2);
-  gap: var(--space-3);
+  padding-inline: 0;
+  gap: 0;
+  justify-content: flex-start;
   border-radius: var(--radius-lg);
-  color: var(--sidebar-foreground);
   font-weight: var(--text-label-weight);
 }
 
-.panel .menu .item > svg {
-  width: var(--icon-size-md);
-  height: var(--icon-size-md);
+.glyph {
+  display: grid;
+  place-items: center;
+  flex: none;
+  inline-size: var(--control-height-lg);
+}
+
+.glyph svg {
+  inline-size: var(--rail-icon-size);
+  block-size: var(--rail-icon-size);
   opacity: 0.68;
+}
+
+.item[data-active] .glyph svg {
+  opacity: 1;
 }
 
 .panel .menu .item[data-active] {
   background-color: color-mix(in oklab, var(--primary) 10%, transparent);
   color: var(--primary);
-}
-
-.panel .menu .item[data-active] > svg {
-  opacity: 1;
 }
 
 .panel .rule[data-orientation] {
