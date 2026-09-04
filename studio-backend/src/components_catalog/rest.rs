@@ -87,6 +87,21 @@ pub struct SaveGearProfileRequest {
     pub profile: Value,
 }
 
+/// The gear repository connected to a project — where its gears live and where
+/// scaffolded gears are written.
+#[derive(Debug)]
+#[toolkit_macros::api_dto(request)]
+pub struct SetProjectRepoRequest {
+    /// Tenant that owns the connection (usually the workspace/organization).
+    pub tenant: Uuid,
+    /// Connector connection id; when omitted the first GitHub connection is used.
+    pub connection_id: Option<Uuid>,
+    /// `owner/name` of the repository.
+    pub repo: String,
+    /// Branch scaffolded gears are written to (default `main`).
+    pub branch: Option<String>,
+}
+
 /// A repository source picked on the Gears page.
 #[derive(Debug)]
 #[toolkit_macros::api_dto(request)]
@@ -251,6 +266,49 @@ async fn save_profile(
     Ok(Json(dto))
 }
 
+async fn get_project_repo(
+    Extension(ctx): Extension<SecurityContext>,
+    Extension(catalog): Extension<Catalog>,
+    Path(project_id): Path<Uuid>,
+) -> ApiResult<JsonBody<CatalogNodeListResponse>> {
+    let node = catalog
+        .0
+        .get_project_repo(&ctx, &project_id.to_string())
+        .await
+        .map_err(|e| CanonicalError::internal(format!("{e:#}")).create())?;
+    Ok(Json(CatalogNodeListResponse {
+        nodes: to_dtos(node.into_iter().collect()),
+    }))
+}
+
+async fn set_project_repo(
+    Extension(ctx): Extension<SecurityContext>,
+    Extension(catalog): Extension<Catalog>,
+    Path(project_id): Path<Uuid>,
+    Json(body): Json<SetProjectRepoRequest>,
+) -> ApiResult<JsonBody<CatalogNodeDto>> {
+    let repo = serde_json::json!({
+        "tenant": body.tenant,
+        "connection_id": body.connection_id,
+        "repo": body.repo,
+        "branch": body.branch.unwrap_or_else(|| "main".to_string()),
+    });
+    let node = catalog
+        .0
+        .set_project_repo(&ctx, &project_id.to_string(), repo)
+        .await
+        .map_err(|e| {
+            StudioComponentsCatalogError::invalid_argument()
+                .with_constraint(format!("invalid gear repo: {e:#}"))
+                .create()
+        })?;
+    let dto = to_dtos(vec![node])
+        .into_iter()
+        .next()
+        .expect("one node converts to one DTO");
+    Ok(Json(dto))
+}
+
 async fn list_versions(
     Extension(ctx): Extension<SecurityContext>,
     Extension(catalog): Extension<Catalog>,
@@ -370,6 +428,42 @@ pub fn register_routes(
         .error_401(openapi)
         .error_500(openapi)
         .register(router, openapi);
+
+    let router = OperationBuilder::get(
+        "/studio-components-catalog/v1/projects/{project_id}/gear-repo",
+    )
+    .operation_id("studio_components_catalog.get_project_repo")
+    .summary("The gear repository connected to a project (0 or 1 node)")
+    .tag("StudioComponentsCatalog")
+    .authenticated()
+    .require_license_features::<License>([])
+    .path_param("project_id", "Project tenant id")
+    .handler(get_project_repo)
+    .json_response_with_schema::<CatalogNodeListResponse>(
+        openapi,
+        StatusCode::OK,
+        "Connected gear repo",
+    )
+    .error_401(openapi)
+    .error_500(openapi)
+    .register(router, openapi);
+
+    let router = OperationBuilder::post(
+        "/studio-components-catalog/v1/projects/{project_id}/gear-repo",
+    )
+    .operation_id("studio_components_catalog.set_project_repo")
+    .summary("Connect (or update) the gear repository for a project")
+    .tag("StudioComponentsCatalog")
+    .authenticated()
+    .require_license_features::<License>([])
+    .path_param("project_id", "Project tenant id")
+    .handler(set_project_repo)
+    .json_request::<SetProjectRepoRequest>(openapi, "Gear repository")
+    .json_response_with_schema::<CatalogNodeDto>(openapi, StatusCode::OK, "Connected gear repo")
+    .error_400(openapi)
+    .error_401(openapi)
+    .error_500(openapi)
+    .register(router, openapi);
 
     router.layer(Extension(Catalog(service)))
 }

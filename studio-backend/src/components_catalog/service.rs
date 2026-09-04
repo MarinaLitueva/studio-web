@@ -551,6 +551,43 @@ impl CatalogService {
         Ok(node)
     }
 
+    /// The gear repository connected to a project (where its gears live and where
+    /// scaffolded gears are written), or `None` when none is connected yet.
+    pub async fn get_project_repo(
+        &self,
+        ctx: &SecurityContext,
+        project_id: &str,
+    ) -> anyhow::Result<Option<GtsNode>> {
+        let want = gts::project_gear_repo_instance_id(project_id);
+        let nodes = self.sink.list(ctx, Some("project_gear_repo")).await?;
+        Ok(nodes.into_iter().find(|n| n.instance_id == want))
+    }
+
+    /// Connect (or update) the gear repository for a project. `repo` is an open
+    /// JSON object — `{connection_id, repo, branch}` — and the service stamps in
+    /// the `project_id` identity before persisting.
+    pub async fn set_project_repo(
+        &self,
+        ctx: &SecurityContext,
+        project_id: &str,
+        repo: Value,
+    ) -> anyhow::Result<GtsNode> {
+        let mut value = repo
+            .as_object()
+            .cloned()
+            .ok_or_else(|| anyhow!("gear repo must be a JSON object"))?;
+        value.insert(
+            "project_id".to_owned(),
+            Value::String(project_id.to_owned()),
+        );
+        let node = gts::project_gear_repo_node(project_id, Value::Object(value));
+        self.sink.register_types(ctx).await?;
+        self.sink
+            .upsert(ctx, std::slice::from_ref(&node), &[])
+            .await?;
+        Ok(node)
+    }
+
     fn report(&self, task_id: Option<&str>, message: &str, gears: u32, versions: u32, stored: u32) {
         if let Some(id) = task_id {
             self.tasks.report(id, message, gears, versions, stored);

@@ -3843,31 +3843,60 @@ function IngestedArtifacts({
   scope?: string;
   refreshKey: number;
 }) {
+  const PAGE = 50;
   const [nodes, setNodes] = useState<import("./api").ArtifactNode[] | null>(null);
   const [total, setTotal] = useState<number | null>(null);
-  const [nextCursor, setNextCursor] = useState<string | undefined>();
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [offset, setOffset] = useState(0);
+  const [repoFilter, setRepoFilter] = useState("");
+  const [sort, setSort] = useState<"updated" | "">("updated");
+  const [qInput, setQInput] = useState("");
+  const [query, setQuery] = useState("");
+  const [repos, setRepos] = useState<import("./api").ArtifactNode[]>([]);
+  const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [tab, setTab] = useState<"issue" | "pull_request" | "file">("issue");
 
-  const reload = useCallback(() => {
-    setErr(null);
-    setNodes(null);
-    setTotal(null);
-    setNextCursor(undefined);
-    api
-      .listArtifactNodes(token, tab, scope, undefined, 50)
-      .then((r) => {
-        setNodes(r.nodes ?? []);
-        setTotal(r.total ?? (r.nodes?.length ?? 0));
-        setNextCursor(r.next_cursor);
-      })
-      .catch((e) => setErr(errText(e)));
-  }, [token, scope, tab]);
+  const load = useCallback(
+    (nextOffset: number) => {
+      setErr(null);
+      setBusy(true);
+      api
+        .listArtifactNodes(token, tab, scope, undefined, PAGE, {
+          repo: repoFilter || undefined,
+          sort: sort || undefined,
+          q: query || undefined,
+          offset: nextOffset,
+        })
+        .then((r) => {
+          setNodes(r.nodes ?? []);
+          setTotal(r.total ?? (r.nodes?.length ?? 0));
+          setOffset(nextOffset);
+        })
+        .catch((e) => setErr(errText(e)))
+        .finally(() => setBusy(false));
+    },
+    [token, scope, tab, repoFilter, sort, query],
+  );
 
+  // First page whenever the tab, scope, repo filter or sort changes.
   useEffect(() => {
-    reload();
-  }, [reload, refreshKey]);
+    setNodes(null);
+    load(0);
+  }, [load, refreshKey]);
+
+  // The repositories in scope, for the repo-filter dropdown.
+  useEffect(() => {
+    let alive = true;
+    api
+      .listArtifactNodes(token, "repo", scope, undefined, 200)
+      .then((r) => {
+        if (alive) setRepos(r.nodes ?? []);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [token, scope]);
 
   const rows = nodes ?? [];
 
@@ -3889,17 +3918,12 @@ function IngestedArtifacts({
   return (
     <div className="card">
       <div className="card-head">
-        <h2>
-          Ingested
-          {nodes
-            ? ` · ${nodes.length}${total != null && total > nodes.length ? ` of ${total}` : ""}`
-            : ""}
-        </h2>
+        <h2>Ingested{total != null ? ` · ${total}` : ""}</h2>
         <div style={{ display: "flex", gap: 8 }}>
           <button className="ghost" onClick={openGraphInStudio} title="Open the Workspace Graph in the embedded Studio IDE">
             Open graph in Studio
           </button>
-          <button className="ghost" onClick={reload}>
+          <button className="ghost" onClick={() => load(offset)} disabled={busy}>
             Refresh
           </button>
         </div>
@@ -3922,6 +3946,52 @@ function IngestedArtifacts({
           Files
         </button>
       </div>
+      <div className="row" style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <label style={{ fontSize: 12, opacity: 0.7 }}>Repo</label>
+        <select value={repoFilter} onChange={(e) => setRepoFilter(e.target.value)} disabled={busy}>
+          <option value="">All repositories</option>
+          {repos.map((r) => (
+            <option key={r.instance_id} value={r.instance_id}>
+              {String(r.value.full_path ?? r.value.name ?? r.instance_id)}
+            </option>
+          ))}
+        </select>
+        <label style={{ fontSize: 12, opacity: 0.7, marginLeft: 8 }}>Sort</label>
+        <select value={sort} onChange={(e) => setSort(e.target.value as "updated" | "")} disabled={busy}>
+          <option value="updated">Updated (newest)</option>
+          <option value="">Default</option>
+        </select>
+        <form
+          style={{ display: "flex", gap: 6, marginLeft: "auto" }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            setQuery(qInput.trim());
+          }}
+        >
+          <input
+            placeholder="Search title / author…"
+            value={qInput}
+            onChange={(e) => setQInput(e.target.value)}
+            style={{ minWidth: 180 }}
+          />
+          <button className="ghost" type="submit" disabled={busy}>
+            Search
+          </button>
+          {query && (
+            <button
+              className="ghost"
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setQInput("");
+                setQuery("");
+              }}
+            >
+              Clear
+            </button>
+          )}
+        </form>
+      </div>
       {err && <p className="error">{err}</p>}
       {nodes === null ? (
         <p className="empty">Loading artifacts…</p>
@@ -3931,10 +4001,7 @@ function IngestedArtifacts({
         </p>
       ) : tab === "file" ? (
         <ul className="rows">
-          {rows
-            .slice()
-            .sort((a, b) => (a.value.path ?? "").localeCompare(b.value.path ?? ""))
-            .map((n) => {
+          {rows.map((n) => {
               const v = n.value;
               const kb = typeof v.size === "number" ? `${(v.size / 1024).toFixed(1)} KB` : "";
               return (
@@ -3963,10 +4030,7 @@ function IngestedArtifacts({
         </ul>
       ) : (
         <ul className="rows">
-          {rows
-            .slice()
-            .sort((a, b) => (b.value.number ?? 0) - (a.value.number ?? 0))
-            .map((n) => {
+          {rows.map((n) => {
               const v = n.value;
               const url = typeof v.url === "string" ? v.url : undefined;
               return (
@@ -3998,31 +4062,21 @@ function IngestedArtifacts({
             })}
         </ul>
       )}
-      {nextCursor && (
-        <div style={{ marginTop: 12 }}>
+      {total != null && total > PAGE && (
+        <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 10 }}>
+          <button className="ghost" disabled={busy || offset === 0} onClick={() => load(Math.max(0, offset - PAGE))}>
+            ← Prev
+          </button>
+          <span style={{ fontSize: 12, opacity: 0.7 }}>
+            {rows.length > 0 ? `${offset + 1}–${offset + rows.length}` : "0"} of {total} ·
+            {" "}page {Math.floor(offset / PAGE) + 1} of {Math.max(1, Math.ceil(total / PAGE))}
+          </span>
           <button
             className="ghost"
-            disabled={loadingMore}
-            onClick={async () => {
-              setLoadingMore(true);
-              setErr(null);
-              try {
-                const page = await api.listArtifactNodes(token, tab, scope, nextCursor, 50);
-                setNodes((current) => [...(current ?? []), ...(page.nodes ?? [])]);
-                setTotal(page.total ?? total);
-                setNextCursor(page.next_cursor);
-              } catch (e) {
-                setErr(errText(e));
-              } finally {
-                setLoadingMore(false);
-              }
-            }}
+            disabled={busy || offset + PAGE >= total}
+            onClick={() => load(offset + PAGE)}
           >
-            {loadingMore
-              ? "Loading…"
-              : total != null && total > rows.length
-                ? `Load more (${total - rows.length} left)`
-                : "Load more"}
+            Next →
           </button>
         </div>
       )}

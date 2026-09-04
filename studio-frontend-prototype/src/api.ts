@@ -740,6 +740,19 @@ export interface DocRules {
   forbid_placeholders: boolean;
   min_title_words: number;
 }
+export type DocQuestionKind = "text" | "long_text" | "bool" | "single" | "multi";
+export interface DocQuestion {
+  id: string;
+  prompt: string;
+  kind: DocQuestionKind;
+  options: string[];
+  required: boolean;
+  /** Capability tag this answer seeds for the Composer. */
+  capability?: string | null;
+  /** Section key the answer is written under when the document is generated. */
+  section?: string | null;
+  help?: string | null;
+}
 export interface DocType {
   key: string;
   name: string;
@@ -750,6 +763,8 @@ export interface DocType {
   body: string;
   sections: DocSection[];
   rules: DocRules;
+  /** Intake questionnaire; empty for types without one. */
+  questionnaire?: DocQuestion[];
 }
 export interface Doc {
   id: string;
@@ -777,6 +792,16 @@ export interface DocValidation {
   conforms: boolean;
   sections: DocSectionStatus[];
   issues: string[];
+}
+
+/** The gear repository connected to a project — where its gears live and where
+ *  scaffolded gears are written. */
+export interface ProjectGearRepo {
+  project_id?: string;
+  tenant?: string;
+  connection_id?: string | null;
+  repo?: string;
+  branch?: string;
 }
 
 export const api = {
@@ -1283,11 +1308,22 @@ export const api = {
   /** Read back the ingested artifact nodes, optionally filtered by type
    * substring (`issue`, `pull_request`, `file`, `repo`) and scoped to a tenant
    * (`scope` matches a node's workspace_id OR project_id). */
-  listArtifactNodes: (token: string, type?: string, scope?: string, cursor?: string, limit?: number) => {
+  listArtifactNodes: (
+    token: string,
+    type?: string,
+    scope?: string,
+    cursor?: string,
+    limit?: number,
+    opts?: { repo?: string; sort?: "updated"; offset?: number; q?: string },
+  ) => {
     const qs = new URLSearchParams();
     if (type) qs.set("type", type);
     if (scope) qs.set("scope", scope);
-    if (cursor) qs.set("cursor", cursor);
+    if (opts?.repo) qs.set("repo", opts.repo);
+    if (opts?.sort) qs.set("sort", opts.sort);
+    if (opts?.q) qs.set("q", opts.q);
+    if (opts?.offset != null) qs.set("offset", String(opts.offset));
+    else if (cursor) qs.set("cursor", cursor);
     if (limit) qs.set("limit", String(limit));
     const suffix = qs.toString();
     return request<ArtifactNodePage>(
@@ -1397,6 +1433,24 @@ export const api = {
     request<{ nodes: CatalogNode[] }>(
       `/studio-components-catalog/v1/versions${crate ? `?crate=${encodeURIComponent(crate)}` : ""}`,
       token,
+    ),
+
+  /** The gear repository connected to a project (0 or 1 node). */
+  getProjectGearRepo: (token: string, projectId: string) =>
+    request<{ nodes: { value: ProjectGearRepo }[] }>(
+      `/studio-components-catalog/v1/projects/${encodeURIComponent(projectId)}/gear-repo`,
+      token,
+    ),
+  /** Connect (or update) the gear repository for a project. */
+  setProjectGearRepo: (
+    token: string,
+    projectId: string,
+    body: { tenant: string; connection_id?: string | null; repo: string; branch?: string },
+  ) =>
+    request<CatalogNode>(
+      `/studio-components-catalog/v1/projects/${encodeURIComponent(projectId)}/gear-repo`,
+      token,
+      { method: "POST", body: JSON.stringify(body) },
     ),
 
   /* ── studio-session gear: per-workspace Theia IDE containers ── */
