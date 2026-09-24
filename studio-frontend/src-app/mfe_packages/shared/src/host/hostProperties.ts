@@ -23,6 +23,9 @@ export const STUDIO_SHARED_PROPERTY_CONTEXT_SECTION =
 export const STUDIO_SHARED_PROPERTY_CONTEXT_WORKSPACE =
   'gts.frontx.mfes.comm.shared_property.v1~constructor_studio.context.workspace.selected.v1~';
 
+export const STUDIO_SHARED_PROPERTY_CONTEXT_ARTIFACT =
+  'gts.frontx.mfes.comm.shared_property.v1~constructor_studio.context.artifact.selected.v1~';
+
 /**
  * The address the frame of a frame-entry micro-frontend loads (ADR-0021).
  * The entry names this property rather than carrying an address, so the

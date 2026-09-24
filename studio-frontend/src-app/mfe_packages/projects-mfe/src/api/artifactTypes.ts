@@ -4,6 +4,10 @@ export const ARTIFACT_NODE_TYPES = {
   file: 'gts.cf.studio.artifact.file.v1~',
   issue: 'gts.cf.studio.artifact.issue.v1~',
   pullRequest: 'gts.cf.studio.artifact.pull_request.v1~',
+  // Not in the gear's default listing ("graph detail"); reached through `type`.
+  commit: 'gts.cf.studio.artifact.commit.v1~',
+  comment: 'gts.cf.studio.artifact.comment.v1~',
+  user: 'gts.cf.studio.artifact.user.v1~',
 } as const;
 
 export type ArtifactKind = keyof typeof ARTIFACT_NODE_TYPES;
@@ -22,9 +26,12 @@ export interface ArtifactNodeValue {
   url?: string;
   size?: number;
   sha?: string;
+  /** Commits only. */
+  short_sha?: string;
+  login?: string;
   is_dir?: boolean;
   has_text?: boolean;
-  /** RFC 3339. Issues and pull requests only — no other node type has one. */
+  /** RFC 3339. Issues, pull requests, commits and comments — files, repos and users have none. */
   created_at?: string;
   updated_at?: string;
   origin?: string;

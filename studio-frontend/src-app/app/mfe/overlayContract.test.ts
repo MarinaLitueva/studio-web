@@ -36,6 +36,8 @@ import extensionOverlaySchemaJson from './schemas/extension_overlay.v1.json';
 import extensionScreenLeveledSchemaJson from './schemas/extension_screen_leveled.v1.json';
 import actionContextPublishSchemaJson from './schemas/action_context_publish.v1.json';
 import actionContextWorkspacesPublishSchemaJson from './schemas/action_context_workspaces_publish.v1.json';
+import actionContextArtifactOpenSchemaJson from './schemas/action_context_artifact_open.v1.json';
+import sharedPropertyContextArtifactSchemaJson from './schemas/shared_property_context_artifact.v1.json';
 import sharedPropertyContextSectionSchemaJson from './schemas/shared_property_context_section.v1.json';
 import sharedPropertyContextProjectSchemaJson from './schemas/shared_property_context_project.v1.json';
 import sharedPropertyContextOrganizationSchemaJson from './schemas/shared_property_context_organization.v1.json';
@@ -43,7 +45,11 @@ import sharedPropertyContextWorkspaceSchemaJson from './schemas/shared_property_
 import sharedPropertySessionProfileSchemaJson from './schemas/shared_property_session_user_profile.v1.json';
 import sharedPropertySpaceFrameUrlSchemaJson from './schemas/shared_property_space_frame_url.v1.json';
 import entryIframeSchemaJson from './schemas/entry_iframe.v1.json';
-import { STUDIO_SHARED_PROPERTY_CONTEXT_PROJECT } from '@constructor-studio/mfe-shared';
+import {
+  STUDIO_ACTION_ARTIFACT_OPEN,
+  STUDIO_SHARED_PROPERTY_CONTEXT_ARTIFACT,
+  STUDIO_SHARED_PROPERTY_CONTEXT_PROJECT,
+} from '@constructor-studio/mfe-shared';
 
 /**
  * The GTS id grammar, as far as this test needs it: every `~`-separated segment
@@ -106,6 +112,9 @@ gtsPlugin.registerSchema(actionContextPublishSchemaJson as JSONSchema);
 // The overlay-domain counterpart: a workspace an MFE has just created, handed to
 // the shell that owns the list it belongs in.
 gtsPlugin.registerSchema(actionContextWorkspacesPublishSchemaJson as JSONSchema);
+// The artifact a member asked to open, and the shell's echo of it (#319, #320).
+gtsPlugin.registerSchema(actionContextArtifactOpenSchemaJson as JSONSchema);
+gtsPlugin.registerSchema(sharedPropertyContextArtifactSchemaJson as JSONSchema);
 gtsPlugin.registerSchema(sharedPropertyContextSectionSchemaJson as JSONSchema);
 gtsPlugin.registerSchema(sharedPropertyContextProjectSchemaJson as JSONSchema);
 gtsPlugin.registerSchema(sharedPropertyContextOrganizationSchemaJson as JSONSchema);
@@ -269,6 +278,44 @@ describe('generated MFE manifest', () => {
     it('rejects a value that is neither, so a wrong publish fails at the publisher', () => {
       expect(publish(42)).toThrow();
       expect(publish('')).toThrow();
+    });
+  });
+
+  describe('selected-artifact property', () => {
+    const publish = (value: unknown): (() => void) => () =>
+      gtsPlugin.register({
+        id: `${STUDIO_SHARED_PROPERTY_CONTEXT_ARTIFACT}frontx.mfes.comm.runtime.v1`,
+        value,
+      } as never);
+
+    it('is declared as a domain action by projects-mfe, and by no other entry', () => {
+      // #319: the MFE asks; the answer below is the shell's (#320).
+      const entries = manifests.flatMap((config) => config.entries);
+      const declaring = entries.filter((entry) =>
+        (entry.domainActions ?? []).includes(STUDIO_ACTION_ARTIFACT_OPEN)
+      );
+      expect(declaring.map((entry) => entry.id)).toEqual([
+        expect.stringContaining('constructor_studio.projects.mfe.main'),
+      ]);
+    });
+
+    it('admits what the address will carry — no projectId, that is its own property', () => {
+      expect(
+        publish({ artifactId: 'n-1', repository: 'group/repo', path: 'docs/a.md', kind: 'file' })
+      ).not.toThrow();
+    });
+
+    it('admits null — outside the editor is a published value, not an absent one', () => {
+      expect(publish(null)).not.toThrow();
+    });
+
+    it('rejects a kind the MFE does not send, and a field the address does not know', () => {
+      expect(
+        publish({ artifactId: 'n-1', repository: 'r', path: 'p', kind: 'spec_finding' })
+      ).toThrow();
+      expect(
+        publish({ artifactId: 'n-1', repository: 'r', path: 'p', kind: 'file', url: 'x' })
+      ).toThrow();
     });
   });
 

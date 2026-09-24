@@ -22,6 +22,8 @@ import sharedPropertyContextOrganizationSchemaJson from '@/app/mfe/schemas/share
 import sharedPropertyContextWorkspaceSchemaJson from '@/app/mfe/schemas/shared_property_context_workspace.v1.json';
 import sharedPropertyContextSectionSchemaJson from '@/app/mfe/schemas/shared_property_context_section.v1.json';
 import actionContextWorkspacesPublishSchemaJson from '@/app/mfe/schemas/action_context_workspaces_publish.v1.json';
+import actionContextArtifactOpenSchemaJson from '@/app/mfe/schemas/action_context_artifact_open.v1.json';
+import sharedPropertyContextArtifactSchemaJson from '@/app/mfe/schemas/shared_property_context_artifact.v1.json';
 import sharedPropertySessionProfileSchemaJson from '@/app/mfe/schemas/shared_property_session_user_profile.v1.json';
 import sharedPropertySpaceFrameUrlSchemaJson from '@/app/mfe/schemas/shared_property_space_frame_url.v1.json';
 import entryIframeSchemaJson from '@/app/mfe/schemas/entry_iframe.v1.json';
@@ -60,6 +62,10 @@ gtsPlugin.registerSchema(actionContextPublishSchemaJson as JSONSchema);
 // The overlay-domain counterpart: a workspace an MFE has just created, handed to
 // the shell that owns the list it belongs in.
 gtsPlugin.registerSchema(actionContextWorkspacesPublishSchemaJson as JSONSchema);
+// One artifact a member asked to open (#319), and the shell's echo of which one
+// the editor is on (#320). The MFE publishes, the shell owns the answer.
+gtsPlugin.registerSchema(actionContextArtifactOpenSchemaJson as JSONSchema);
+gtsPlugin.registerSchema(sharedPropertyContextArtifactSchemaJson as JSONSchema);
 // The shell -> MFE half of the same slot. `sharedProperties` on a domain and
 // `requiredProperties` on an entry both carry an `x-gts-ref` that checks the type
 // is IN THE REGISTRY, not merely that the string looks right, so an unregistered
