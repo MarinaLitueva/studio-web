@@ -57,8 +57,8 @@ function pathFromUrl(raw: string | undefined, repository: string): string {
   if (!raw) return '';
   let path: string;
   try {
-    const { pathname, search } = new URL(raw);
-    path = `${pathname}${search}`;
+    const { pathname, search, hash } = new URL(raw);
+    path = `${pathname}${search}${hash}`;
   } catch {
     path = raw;
   }
@@ -125,7 +125,7 @@ export function buildArtifactRows(
       sync: 'ingested',
       updatedAt,
       provenance:
-        updatedAt !== null || kind === null
+        updatedAt !== null || kind === null || kind === 'user'
           ? null
           : kind === 'file'
             ? fileProvenance(value)

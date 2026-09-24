@@ -9,6 +9,7 @@ vi.mock('@gears-frontx/react', async (importOriginal) => ({
 
 import artifactOpenSchema from './schemas/action_context_artifact_open.v1.json';
 import artifactSelectedSchema from './schemas/shared_property_context_artifact.v1.json';
+import { ARTIFACT_NODE_TYPES } from '../../mfe_packages/projects-mfe/src/api/artifactTypes';
 import {
   artifactRequestOf,
   createArtifactOpenHandler,
@@ -160,6 +161,12 @@ describe('artifact open request', () => {
   it('names the same kinds as the property the shell answers with', () => {
     expect(artifactSelectedSchema.properties.value.properties.kind.enum).toEqual(
       artifactOpenSchema.properties.payload.properties.kind.enum
+    );
+  });
+
+  it('names the kinds projects-mfe sends — its ArtifactKind tokens', () => {
+    expect([...artifactOpenSchema.properties.payload.properties.kind.enum].sort()).toEqual(
+      Object.keys(ARTIFACT_NODE_TYPES).sort()
     );
   });
 });

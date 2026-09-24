@@ -23,6 +23,7 @@ export const STUDIO_SHARED_PROPERTY_CONTEXT_SECTION =
 export const STUDIO_SHARED_PROPERTY_CONTEXT_WORKSPACE =
   'gts.frontx.mfes.comm.shared_property.v1~constructor_studio.context.workspace.selected.v1~';
 
+/** `{artifactId, repository, path, kind}` of the artifact the editor is on, or `null` outside it. */
 export const STUDIO_SHARED_PROPERTY_CONTEXT_ARTIFACT =
   'gts.frontx.mfes.comm.shared_property.v1~constructor_studio.context.artifact.selected.v1~';
 

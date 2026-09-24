@@ -51,6 +51,8 @@ export interface ArtifactsView {
   rows: ArtifactRow[];
   total: number;
   projectTotal: number;
+  repositoryTotal: number | null;
+  repositoryTotalFailed: boolean;
   repositories: ArtifactRepository[];
   sources: ProjectSource[];
   /** Nothing to show yet: the first page, the repositories or the count. */
@@ -116,6 +118,13 @@ export function useArtifacts(projectId: string, query: ArtifactsQuery): Artifact
   const repositoryNodes = useApiQuery(ingest.nodes(repositoryParams));
   const scope = useArtifactCount(projectId);
 
+  const repositoryTotalParams = useMemo<NodesParams>(
+    () =>
+      query.repo ? { scope: projectId, repo: query.repo, limit: 1 } : { scope: projectId, limit: 1 },
+    [projectId, query.repo]
+  );
+  const repositoryTotalNodes = useApiQuery(ingest.nodes(repositoryTotalParams));
+
   const repositories = useMemo(
     () => buildRepositories(repositoryNodes.data?.nodes ?? []),
     [repositoryNodes.data]
@@ -133,7 +142,8 @@ export function useArtifacts(projectId: string, query: ArtifactsQuery): Artifact
     void cache.invalidate(ingest.nodes(pageParams));
     void cache.invalidate(ingest.nodes(repositoryParams));
     void cache.invalidate(ingest.nodes({ scope: projectId, limit: 1 }));
-  }, [cache, ingest, pageParams, repositoryParams, projectId]);
+    void cache.invalidate(ingest.nodes(repositoryTotalParams));
+  }, [cache, ingest, pageParams, repositoryParams, projectId, repositoryTotalParams]);
 
   useImportRefresh(projectId, refetch);
 
@@ -141,6 +151,8 @@ export function useArtifacts(projectId: string, query: ArtifactsQuery): Artifact
     rows,
     total: page.data?.total ?? held?.total ?? 0,
     projectTotal: scope.total,
+    repositoryTotal: query.repo && repositoryTotalNodes.data ? repositoryTotalNodes.data.total : null,
+    repositoryTotalFailed: query.repo !== null && repositoryTotalNodes.isError,
     repositories,
     sources: scope.sources,
     loading: (page.isLoading && held === null) || repositoryNodes.isLoading || scope.loading,

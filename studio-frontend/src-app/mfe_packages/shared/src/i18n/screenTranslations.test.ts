@@ -39,4 +39,25 @@ describe('loadScreenTranslations', () => {
     );
     expect((await load('ru')).title).toBe('Проекты');
   });
+
+  it('falls back to English when the locale import fails', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const files = modules({ en: { title: 'Projects' } });
+    files[`${DIR}/de.json`] = vi.fn(async () => {
+      throw new Error('chunk load failed');
+    });
+    const load = loadScreenTranslations(files, DIR);
+    expect(await load('de')).toEqual({ title: 'Projects' });
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('rejects when the English import fails', async () => {
+    const files = modules({ ru: { title: 'Проекты' } });
+    files[`${DIR}/en.json`] = vi.fn(async () => {
+      throw new Error('chunk load failed');
+    });
+    const load = loadScreenTranslations(files, DIR);
+    await expect(load('ru')).rejects.toThrow('chunk load failed');
+  });
 });

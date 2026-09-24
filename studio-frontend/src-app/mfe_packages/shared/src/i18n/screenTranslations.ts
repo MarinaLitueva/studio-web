@@ -17,7 +17,13 @@ export function loadScreenTranslations(modules: TranslationModules, directory: s
   return async (language: string): Promise<Record<string, string>> => {
     const english = modules[`${directory}/en.json`];
     const own = language === 'en' ? undefined : modules[`${directory}/${language}.json`];
-    const [base, local] = await Promise.all([english?.(), own?.()]);
+    const [base, local] = await Promise.all([
+      english?.(),
+      own?.().catch((error) => {
+        console.warn(`[screenTranslations] ${directory}/${language}.json failed to load`, error);
+        return undefined;
+      }),
+    ]);
     return { ...base?.default, ...local?.default };
   };
 }

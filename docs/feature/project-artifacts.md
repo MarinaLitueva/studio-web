@@ -776,7 +776,7 @@ placeholder, a dash or a zero dressed as an answer.
 - [ ] Activating Artifacts shows the artifacts table; the open project does not change and the list behind it is not re-read.
 - [ ] The table has exactly the columns Name, Repository, Path, Sync and Updated, in that order.
 - [ ] Every row names the repository it came from by name, not by an identifier.
-- [ ] Rows for issues and pull requests show a relative time in Updated; every other row — files and repositories alike — names where it came from instead.
+- [ ] Rows for issues, pull requests, commits and comments show a relative time in Updated; files and repositories name where they came from instead; an author's row leaves it empty, since the gear gives an author no time.
 - [ ] Updated is marked as newest-first, offers no way to reverse it, and rows without a time sit at the bottom.
 - [ ] The header states the number of artifacts, in the singular when there is one, and no number of repositories.
 - [ ] Narrowing by text changes the table and the footer, and leaves the header's totals as they were.
@@ -785,7 +785,7 @@ placeholder, a dash or a zero dressed as an answer.
 - [ ] A project with more artifacts than one page holds lists them all across the paginator, and the footer's total is the gear's, not the page's.
 - [ ] The repository filter offers every repository in the project, including ones whose rows are not on the page in view.
 - [ ] The repository filter is shown whenever the table is, with one repository as with many, and opens on all repositories.
-- [ ] Every row on every page names its repository; none is left blank.
+- [ ] Every row on every page names its repository; none is left blank — except an author's, which belongs to no repository.
 - [ ] The header states nothing about artifacts being complete or needing attention.
 - [ ] A project with no sources shows an empty state that says so and offers no sync.
 - [ ] A project with sources and nothing ingested shows an empty state that offers a sync.

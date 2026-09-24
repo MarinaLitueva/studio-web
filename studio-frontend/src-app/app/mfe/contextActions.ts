@@ -115,7 +115,7 @@ export function createArtifactOpenHandler(): ActionHandler {
   return ActionHandler.fromFunction(async (_actionTypeId, payload) => {
     const request = artifactRequestOf(payload);
     if (!request) {
-      console.warn('shell  artifact open: payload refused', payload);
+      console.warn('[shell] artifact open: payload refused', payload);
       return;
     }
     // TODO(#320): navigate to the editor instead of logging.

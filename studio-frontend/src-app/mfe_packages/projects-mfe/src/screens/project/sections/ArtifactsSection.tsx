@@ -29,15 +29,7 @@ import frame from '../ProjectScreen.module.css';
 const ALL_REPOSITORIES = '__all__';
 const ALL_KINDS = '__all__';
 
-const KINDS: readonly ArtifactKind[] = [
-  'file',
-  'issue',
-  'pullRequest',
-  'repo',
-  'commit',
-  'comment',
-  'user',
-];
+// In the filter's order. A `Record`, so a new kind does not compile without a label.
 const KIND_LABEL_KEY: Record<ArtifactKind, string> = {
   file: 'artifacts_kind_file',
   issue: 'artifacts_kind_issue',
@@ -47,6 +39,7 @@ const KIND_LABEL_KEY: Record<ArtifactKind, string> = {
   comment: 'artifacts_kind_comment',
   user: 'artifacts_kind_user',
 };
+const KINDS = Object.keys(KIND_LABEL_KEY) as ArtifactKind[];
 
 const SEARCH_SETTLE_MS = 300;
 
@@ -103,8 +96,19 @@ export const ArtifactsSection: React.FC<ArtifactsSectionProps> = ({ projectId })
     return () => clearTimeout(timer);
   }, [typed, search]);
 
-  const { rows, total, projectTotal, repositories, sources, loading, refreshing, failed, refetch } =
-    useArtifacts(projectId, { repo: repository, kind, search, offset });
+  const {
+    rows,
+    total,
+    projectTotal,
+    repositoryTotal,
+    repositoryTotalFailed,
+    repositories,
+    sources,
+    loading,
+    refreshing,
+    failed,
+    refetch,
+  } = useArtifacts(projectId, { repo: repository, kind, search, offset });
 
   React.useEffect(() => {
     if (total > 0 && offset >= total) {
@@ -212,8 +216,12 @@ export const ArtifactsSection: React.FC<ArtifactsSectionProps> = ({ projectId })
             t(projectTotal === 1 ? 'artifacts_count_one' : 'artifacts_count_many', {
               count: projectTotal,
             })
+          ) : repositoryTotalFailed ? (
+            chosen.name
+          ) : repositoryTotal === null ? (
+            <Skeleton className={styles.rangeSkeleton} />
           ) : (
-            t('artifacts_in_repository', { total, repo: chosen.name })
+            t('artifacts_in_repository', { total: repositoryTotal, repo: chosen.name })
           )}
           {importState.phase === 'running' && (
             <>
