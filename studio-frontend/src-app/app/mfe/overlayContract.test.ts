@@ -22,29 +22,13 @@ import {
   overlayDomain,
   screenDomain,
   gtsPlugin,
-  themeSchema,
-  languageSchema,
-  extensionScreenSchema,
-  type JSONSchema,
   type MfeEntryMF,
   type Extension,
 } from '@gears-frontx/react';
 // Not re-exported by @gears-frontx/react — this is the contract check
 // `registerExtension` runs after the type-system register succeeds.
 import { validateContract } from '@gears-frontx/mfes';
-import extensionOverlaySchemaJson from './schemas/extension_overlay.v1.json';
-import extensionScreenLeveledSchemaJson from './schemas/extension_screen_leveled.v1.json';
-import actionContextPublishSchemaJson from './schemas/action_context_publish.v1.json';
-import actionContextWorkspacesPublishSchemaJson from './schemas/action_context_workspaces_publish.v1.json';
-import actionContextArtifactOpenSchemaJson from './schemas/action_context_artifact_open.v1.json';
-import sharedPropertyContextArtifactSchemaJson from './schemas/shared_property_context_artifact.v1.json';
-import sharedPropertyContextSectionSchemaJson from './schemas/shared_property_context_section.v1.json';
-import sharedPropertyContextProjectSchemaJson from './schemas/shared_property_context_project.v1.json';
-import sharedPropertyContextOrganizationSchemaJson from './schemas/shared_property_context_organization.v1.json';
-import sharedPropertyContextWorkspaceSchemaJson from './schemas/shared_property_context_workspace.v1.json';
-import sharedPropertySessionProfileSchemaJson from './schemas/shared_property_session_user_profile.v1.json';
-import sharedPropertySpaceFrameUrlSchemaJson from './schemas/shared_property_space_frame_url.v1.json';
-import entryIframeSchemaJson from './schemas/entry_iframe.v1.json';
+import { SHELL_SCHEMAS } from './schemas';
 import {
   STUDIO_ACTION_ARTIFACT_OPEN,
   STUDIO_SHARED_PROPERTY_CONTEXT_ARTIFACT,
@@ -98,38 +82,8 @@ const entriesById = new Map(
   manifests.flatMap((config) => config.entries).map((entry) => [entry.id, entry])
 );
 
-// Exactly what main.tsx registers before constructing the app. If this list and
-// main.tsx's ever diverge, this test passes while the browser fails — keep them
-// in step.
-gtsPlugin.registerSchema(themeSchema);
-gtsPlugin.registerSchema(languageSchema);
-gtsPlugin.registerSchema(extensionScreenSchema);
-gtsPlugin.registerSchema(extensionOverlaySchemaJson as JSONSchema);
-gtsPlugin.registerSchema(extensionScreenLeveledSchemaJson as JSONSchema);
-// The context-slot action an MFE executes against the screen domain. Same rule
-// as above: GTS refuses to route an action instance whose type has no schema.
-gtsPlugin.registerSchema(actionContextPublishSchemaJson as JSONSchema);
-// The overlay-domain counterpart: a workspace an MFE has just created, handed to
-// the shell that owns the list it belongs in.
-gtsPlugin.registerSchema(actionContextWorkspacesPublishSchemaJson as JSONSchema);
-// The artifact a member asked to open, and the shell's echo of it (#319, #320).
-gtsPlugin.registerSchema(actionContextArtifactOpenSchemaJson as JSONSchema);
-gtsPlugin.registerSchema(sharedPropertyContextArtifactSchemaJson as JSONSchema);
-gtsPlugin.registerSchema(sharedPropertyContextSectionSchemaJson as JSONSchema);
-gtsPlugin.registerSchema(sharedPropertyContextProjectSchemaJson as JSONSchema);
-gtsPlugin.registerSchema(sharedPropertyContextOrganizationSchemaJson as JSONSchema);
-// The level between them: a project's parent and the Projects list's root.
-gtsPlugin.registerSchema(sharedPropertyContextWorkspaceSchemaJson as JSONSchema);
-gtsPlugin.registerSchema(sharedPropertySessionProfileSchemaJson as JSONSchema);
-// The address a frame-entry MFE loads. Registered for the same reason as the
-// context properties above: `sharedProperties` carries an `x-gts-ref` that
-// checks the type is in the registry, so an unregistered id fails registration
-// and takes bootstrapMFE with it.
-gtsPlugin.registerSchema(sharedPropertySpaceFrameUrlSchemaJson as JSONSchema);
-// A frame is an entry the host loads into an iframe. Registered before any
-// package declaring one: GTS refuses to register an instance whose type has
-// no schema, and the refusal takes bootstrapMFE down with it.
-gtsPlugin.registerSchema(entryIframeSchemaJson as JSONSchema);
+// Exactly what main.tsx registers before constructing the app.
+for (const schema of SHELL_SCHEMAS) gtsPlugin.registerSchema(schema);
 
 describe('generated MFE manifest', () => {
   it('was generated — an empty aggregate means `npm run generate:mfe-manifests` was skipped', () => {

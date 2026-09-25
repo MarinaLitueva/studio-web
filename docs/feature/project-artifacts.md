@@ -167,6 +167,7 @@ Actor ids are defined in the [PRD](../prd/constructor-studio.md); a gear taking 
 - **Decomposition**: [DECOMPOSITION](../decomposition/constructor-studio.md), entry `cpt-studio-feature-project-artifacts`
 - **ADR**: [ADR-0008 — simplified navigation shell](../adr/0008-simplified-navigation-shell.md) — the project's rail lives inside the project frame, not in the shell
 - **ADR**: [ADR-0010 — a project is an AM tenant](../adr/0010-projects-are-am-tenants.md) — what `scope` addresses
+- **ADR**: [ADR-0028 — the address decides where the shell is](../adr/0028-the-address-decides-where-the-shell-is.md) — the router an opened file will navigate on
 - **Feature**: [Create a project](project-create.md) — writes the sources this feature syncs
 - **Feature**: [Workspaces in scope](workspace-scope.md) — the parent tenant tagged onto every synced node
 - **Feature**: [Connect a source host](connection-create.md) — holds the `secret_ref` a sync needs
@@ -712,15 +713,17 @@ both cells, so the name and the menu cannot disagree.
 The action is its own, `context.artifact.open`, not a fourth `kind` of the
 projects publish: workspaces got their own action for the same reason, and an
 artifact is a different entity from the project it sits in. Its answer is the
-shell's — with the router (#320) the request becomes a navigation, the shell
-mounts the editor and writes the artifact into the address, and
+shell's — once the editor navigation (#320) lands on the router ADR-0028
+brought in, the request becomes a navigation: the shell mounts the editor and
+writes the artifact into the address, and
 `context.artifact.selected` is what it echoes back, `null` outside the editor.
 Nothing here writes that property; `ChildMfeBridge` has no `updateSharedProperty`,
 and a local write beside the publish would fork the answer across the realm
 boundary, as it once did for the open project.
 
-Until the router lands, the shell's handler checks the request and does nothing
-with it. The handler cannot wait for #320: the registry refuses a domain that
+Until then — there is no editor screen to navigate to yet, and the address
+does not carry an artifact — the shell's handler checks the request and does
+nothing with it. The handler cannot wait for #320: the registry refuses a domain that
 declares an action without a handler, and the action has to be declared,
 because the contract check rejects an entry whose domain action the domain does
 not list. Either refusal is no screen slot at all — which is why a test

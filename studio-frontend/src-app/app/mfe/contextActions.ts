@@ -3,7 +3,7 @@
 
 import { ActionHandler, eventBus } from '@gears-frontx/react';
 import '@/app/events/bootstrapEvents';
-import artifactOpenSchema from '@/app/mfe/schemas/action_context_artifact_open.v1.json';
+import { STUDIO_ARTIFACT_KINDS, type StudioArtifactKind } from '@constructor-studio/mfe-shared';
 
 interface ContextEntityPayload {
   id: string;
@@ -94,20 +94,24 @@ export function createWorkspacePublishHandler(): ActionHandler {
   });
 }
 
-const ARTIFACT_KINDS: ReadonlySet<string> = new Set(
-  artifactOpenSchema.properties.payload.properties.kind.enum
-);
+const ARTIFACT_KINDS: ReadonlySet<string> = new Set(STUDIO_ARTIFACT_KINDS);
 
 /** The open-artifact payload as the schema names it, or `null` when it is not one. */
 export function artifactRequestOf(
   payload: Record<string, unknown> | undefined
-): { projectId: string; artifactId: string; repository: string; path: string; kind: string } | null {
+): {
+  projectId: string;
+  artifactId: string;
+  repository: string;
+  path: string;
+  kind: StudioArtifactKind;
+} | null {
   const { projectId, artifactId, repository, path, kind } = payload ?? {};
   if (typeof projectId !== 'string' || !projectId) return null;
   if (typeof artifactId !== 'string' || !artifactId) return null;
   if (typeof repository !== 'string' || typeof path !== 'string') return null;
   if (typeof kind !== 'string' || !ARTIFACT_KINDS.has(kind)) return null;
-  return { projectId, artifactId, repository, path, kind };
+  return { projectId, artifactId, repository, path, kind: kind as StudioArtifactKind };
 }
 
 // @cpt-dod:cpt-studiofrontend-dod-project-artifacts-open-request:p1

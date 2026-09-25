@@ -151,7 +151,7 @@ describe('artifact open request', () => {
     expect(artifactRequestOf(undefined)).toBeNull();
   });
 
-  it('is accepted and changes nothing on the bus until the router answers it (#320)', async () => {
+  it('is accepted and changes nothing on the bus until the editor navigation answers it (#320)', async () => {
     vi.spyOn(console, 'info').mockImplementation(() => {});
     mockEmit.mockClear();
     await expect(createArtifactOpenHandler().handleAction('action', REQUEST)).resolves.toBeUndefined();

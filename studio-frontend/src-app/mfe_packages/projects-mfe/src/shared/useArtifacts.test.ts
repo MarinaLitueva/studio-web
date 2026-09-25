@@ -1,6 +1,7 @@
 import { renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NodesParams } from '../api/ArtifactIngestApiService';
+import { ARTIFACT_NODE_TYPES } from '../api/artifactTypes';
 
 /**
  * The header's repository total is its own read: the table's page carries the
@@ -85,5 +86,21 @@ describe('the repository total in the header', () => {
     );
     result.current.refetch();
     expect(invalidate).toHaveBeenCalledWith({ params: { scope: 'p1', repo: 'r-1', limit: 1 } });
+  });
+});
+
+describe('the type filter', () => {
+  const pageRequest = () =>
+    answer.mock.calls.map(([params]) => params).find((params) => params.sort === 'updated');
+
+  it('sends the chosen kind as its full GTS id', () => {
+    renderHook(() => useArtifacts('p1', { repo: null, kind: 'issue', search: '', offset: 0 }));
+    expect(pageRequest()?.type).toBe(ARTIFACT_NODE_TYPES.issue);
+  });
+
+  it('sends no type for all types — the gear answers its default kinds', () => {
+    renderHook(() => useArtifacts('p1', { repo: null, kind: null, search: '', offset: 0 }));
+    expect(pageRequest()).toBeDefined();
+    expect(pageRequest()).not.toHaveProperty('type', expect.anything());
   });
 });
