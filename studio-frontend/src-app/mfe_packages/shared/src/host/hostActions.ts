@@ -17,6 +17,18 @@ export const STUDIO_ACTION_WORKSPACES_PUBLISH =
 export const STUDIO_ACTION_ARTIFACT_OPEN =
   'gts.frontx.mfes.comm.action.v1~constructor_studio.context.artifact.open.v1~';
 
+export const STUDIO_ARTIFACT_KINDS = [
+  'repo',
+  'file',
+  'issue',
+  'pullRequest',
+  'commit',
+  'comment',
+  'user',
+] as const;
+
+export type StudioArtifactKind = (typeof STUDIO_ARTIFACT_KINDS)[number];
+
 /** projects-mfe's New workspace overlay, opened from organization-mfe as well. */
 export const STUDIO_EXTENSION_WORKSPACE_CREATE =
   'gts.frontx.mfes.ext.extension.v1~frontx.screensets.layout.overlay.v1~constructor_studio.overlays.workspace_create.main.v1';

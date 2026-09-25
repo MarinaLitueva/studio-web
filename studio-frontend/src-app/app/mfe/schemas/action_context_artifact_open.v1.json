@@ -39,7 +39,7 @@
             "comment",
             "user"
           ],
-          "$comment": "The MFE's ArtifactKind tokens (projects-mfe/src/api/artifactTypes.ts), not the gear's type ids. #320 writes this token into the address; only file opens in the editor today."
+          "$comment": "STUDIO_ARTIFACT_KINDS in mfe-shared (host/hostActions.ts), not the gear's type ids. #320 writes this token into the address; only file opens in the editor today."
         }
       },
       "required": [

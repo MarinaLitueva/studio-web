@@ -785,7 +785,7 @@ placeholder, a dash or a zero dressed as an answer.
 - [ ] A project with more artifacts than one page holds lists them all across the paginator, and the footer's total is the gear's, not the page's.
 - [ ] The repository filter offers every repository in the project, including ones whose rows are not on the page in view.
 - [ ] The repository filter is shown whenever the table is, with one repository as with many, and opens on all repositories.
-- [ ] Every row on every page names its repository; none is left blank — except an author's, which belongs to no repository.
+- [ ] Every row on every page names its repository by name — except an author's, which belongs to none, and a row whose repository is not among the project's repositories, which is left blank rather than named by a guess.
 - [ ] The header states nothing about artifacts being complete or needing attention.
 - [ ] A project with no sources shows an empty state that says so and offers no sync.
 - [ ] A project with sources and nothing ingested shows an empty state that offers a sync.

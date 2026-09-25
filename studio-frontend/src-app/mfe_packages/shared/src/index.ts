@@ -18,10 +18,12 @@ export {
   STUDIO_ACTION_CONTEXT_PUBLISH,
   STUDIO_ACTION_WORKSPACES_PUBLISH,
   STUDIO_ACTION_ARTIFACT_OPEN,
+  STUDIO_ARTIFACT_KINDS,
   STUDIO_EXTENSION_WORKSPACE_CREATE,
   sendToHost,
   sendAndForget,
   type HostAction,
+  type StudioArtifactKind,
 } from './host/hostActions';
 export {
   OrganizationProvider,
