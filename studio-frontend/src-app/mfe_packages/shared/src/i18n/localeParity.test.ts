@@ -1,4 +1,3 @@
-/// <reference types="node" />
 /**
  * Every key of a screen's `en.json` is in its `ru.json`.
  *
