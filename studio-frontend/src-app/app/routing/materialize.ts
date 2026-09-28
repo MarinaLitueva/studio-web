@@ -89,6 +89,8 @@ export function createMaterializer(deps: MaterializerDeps): Materializer {
   let stuckIn: number | null = null;
   /** The entry point a failed mount fell back to, so its own failure is not fallen back from — once (ADR-0028). */
   let fallbackTo: string | null = null;
+  /** The visit whose editor had nothing to open and nowhere to go, so that is said once per address. */
+  let editorStrandedIn: number | null = null;
 
   const screensOf = (registry: MfeRegistry): ScreenExtension[] =>
     registry.getExtensionsForDomain(screenDomain.id) as ScreenExtension[];
@@ -362,7 +364,10 @@ export function createMaterializer(deps: MaterializerDeps): Materializer {
         materialize();
         return;
       }
-      warn(`${reason}, and the ${level} level has no entry point to fall back to`);
+      if (editorStrandedIn !== visit) {
+        warn(`${reason}, and the ${level} level has no entry point to fall back to`);
+        editorStrandedIn = visit;
+      }
     } else if (wanted.artifact) {
       warn(`Artifact ${wanted.artifact} belongs on the editor, not on ${group.token}; dropping it`);
     }

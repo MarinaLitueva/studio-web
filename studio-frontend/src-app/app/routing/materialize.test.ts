@@ -241,6 +241,16 @@ describe('materialize', () => {
       expect(mocks.mountScreen).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: 'space.main' }));
     });
 
+    it('says it once per address, however often the same address is applied again', () => {
+      const stripped = screens.filter((candidate) => levelOf(candidate) === 'organization' || candidate.id === 'space.main');
+      const { materialize, transition, warn } = setup('/?screen=space;org=o1;workspace=w1;project=p1', { ...ready, projects: [ATLAS] }, stripped);
+      materialize();
+      materialize();
+      expect(warn.mock.calls.filter(([text]) => String(text).includes('no entry point'))).toHaveLength(1);
+      transition();
+      expect(warn.mock.calls.filter(([text]) => String(text).includes('no entry point'))).toHaveLength(2);
+    });
+
     it('leaves the editor, artifact and all, when the project turns out not to be one', async () => {
       const { materialize, adapter, catalogs, state } = setup(
         '/?screen=space;org=o1;workspace=w1;project=w1;artifact=n-1;repository=group%2Frepo;path=docs%2Fa.md;kind=file',
