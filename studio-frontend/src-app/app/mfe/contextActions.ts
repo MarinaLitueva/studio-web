@@ -122,7 +122,6 @@ export function createArtifactOpenHandler(): ActionHandler {
       console.warn('[shell] artifact open: payload refused', payload);
       return;
     }
-    // TODO(#320): navigate to the editor instead of logging.
-    console.info('[shell] artifact open received', request);
+    eventBus.emit('app/context/artifact/requested', request);
   });
 }

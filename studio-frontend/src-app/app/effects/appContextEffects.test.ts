@@ -227,4 +227,82 @@ describe('registerAppContextEffects', () => {
     await emit('app/context/project/changed', { projectId: 'p2' });
     expect(handle.navigation.navigate).toHaveBeenCalledWith({ token: 'projects', org: 'o1', workspace: 'w1', project: 'p2' }, 'push');
   });
+
+  describe('opening an artifact', () => {
+    const REQUEST = { projectId: 'p1', artifactId: 'n-1', repository: 'group/repo', path: 'docs/a.md', kind: 'file' };
+
+    it('pushes the editor with the artifact, keeping the level context', async () => {
+      handle.groups.mockReturnValue(
+        groupScreens([...screens, screen('space.main', '/space', 'project', { placement: 'hidden' })])
+      );
+      await emit('app/context/artifact/requested', REQUEST);
+      expect(handle.navigation.navigate).toHaveBeenCalledWith(
+        {
+          token: 'space',
+          org: 'o1',
+          workspace: 'w1',
+          project: 'p1',
+          artifact: 'n-1',
+          repository: 'group/repo',
+          path: 'docs/a.md',
+          kind: 'file',
+        },
+        'push'
+      );
+      expect(dispatch).not.toHaveBeenCalled();
+    });
+
+    it('does not navigate when no screen answers to the editor token', async () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      await emit('app/context/artifact/requested', REQUEST);
+      expect(handle.navigation.navigate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('leaving the editor through the path', () => {
+    const IN_EDITOR = {
+      token: 'space',
+      org: 'o1',
+      workspace: 'w1',
+      project: 'p1',
+      artifact: 'n-1',
+      repository: 'group/repo',
+      path: 'docs/a.md',
+      kind: 'file',
+    };
+
+    beforeEach(() => {
+      handle.groups.mockReturnValue(
+        groupScreens([...screens, screen('space.main', '/space', 'project', { placement: 'hidden' })])
+      );
+      handle.navigation.currentRoute.mockReturnValue(IN_EDITOR);
+    });
+
+    it('another project opens at the project entry point', async () => {
+      await emit('app/context/project/changed', { projectId: 'p2' });
+      expect(handle.navigation.navigate).toHaveBeenCalledWith(
+        { token: 'projects', org: 'o1', workspace: 'w1', project: 'p2' },
+        'push'
+      );
+    });
+
+    it('another workspace opens at the workspace entry point', async () => {
+      await emit('app/context/workspace/changed', { workspaceId: 'w2' });
+      expect(handle.navigation.navigate).toHaveBeenCalledWith({ token: 'projects', org: 'o1', workspace: 'w2' }, 'push');
+    });
+
+    it('closing the project opens the workspace entry point', async () => {
+      await emit('app/context/project/closed');
+      expect(handle.navigation.navigate).toHaveBeenCalledWith({ token: 'projects', org: 'o1', workspace: 'w1' }, 'push');
+    });
+
+    it('another organization picked on a hidden organization-level screen opens the organization entry point', async () => {
+      handle.groups.mockReturnValue(
+        groupScreens([...screens, screen('fixture', '/fixture/frame', 'organization', { placement: 'hidden' })])
+      );
+      handle.navigation.currentRoute.mockReturnValue({ token: 'fixture', org: 'o1' });
+      await emit('app/context/org/changed', { orgId: 'o2' });
+      expect(handle.navigation.navigate).toHaveBeenCalledWith({ token: 'organization', org: 'o2' }, 'push');
+    });
+  });
 });

@@ -6,11 +6,11 @@
  * reached says something other than the address — a default filled, an id
  * refused — it writes the normalized route with `replace`. A converged state
  * writes nothing, which is what makes the library's echo of the shell's own
- * write harmless. This is the only writer of `org`, `workspace`, `project`
- * and `section`, and the only caller of `mountScreen`.
+ * write harmless. This is the only writer of `org`, `workspace`, `project`,
+ * `section` and `artifact`, and the only caller of `mountScreen`.
  */
 import { screenDomain, type FrontXApp, type MfeRegistry, type ScreenExtension } from '@gears-frontx/react';
-import { TENANT_TYPES, errorMessage } from '@constructor-studio/mfe-shared';
+import { STUDIO_ARTIFACT_KINDS, TENANT_TYPES, errorMessage, type StudioArtifactKind } from '@constructor-studio/mfe-shared';
 import { entryPointOf, levelOf, sectionOf, type ScreenLevel } from '@/app/mfe/screenLevels';
 import { isMountingScreen, mountScreen } from '@/app/mfe/mountScreen';
 import { publishStudioContext } from '@/app/mfe/sharedContext';
@@ -19,14 +19,39 @@ import {
   openContextProject,
   readAppContext,
   rememberProject,
+  setContextArtifact,
   setContextOrg,
   setContextSection,
   setContextWorkspace,
+  type ContextArtifact,
 } from '@/app/slices/appContextSlice';
 import type { ContextCatalogs } from '@/app/effects/contextCatalogs';
-import { routesEqual, type ShellRoute } from './route';
+import { EDITOR_SCREEN_TOKEN, routesEqual, type ShellRoute } from './route';
 import { groupOfExtension, groupOfToken, type ScreenGroup } from './screenTokens';
 import type { ShellNavigation } from './navigation';
+
+const ARTIFACT_KINDS: ReadonlySet<string> = new Set(STUDIO_ARTIFACT_KINDS);
+
+// @cpt-dod:cpt-studiofrontend-dod-shell-levels-artifact-address:p1
+function artifactOf(route: ShellRoute): ContextArtifact | null {
+  if (!route.artifact || !route.kind || !ARTIFACT_KINDS.has(route.kind)) return null;
+  return {
+    artifactId: route.artifact,
+    repository: route.repository ?? '',
+    path: route.path ?? '',
+    kind: route.kind as StudioArtifactKind,
+  };
+}
+
+function sameArtifact(held: ContextArtifact | null, wanted: ContextArtifact | null): boolean {
+  if (!held || !wanted) return held === wanted;
+  return (
+    held.artifactId === wanted.artifactId &&
+    held.repository === wanted.repository &&
+    held.path === wanted.path &&
+    held.kind === wanted.kind
+  );
+}
 
 export interface MaterializerDeps {
   app: FrontXApp;
@@ -314,6 +339,18 @@ export function createMaterializer(deps: MaterializerDeps): Materializer {
     } else if (readAppContext(app).section !== null) {
       dispatch(setContextSection(null));
     }
+
+    // Artifact: only the editor, and only inside a project, carries one.
+    const artifact = next.project && group.token === EDITOR_SCREEN_TOKEN ? artifactOf(wanted) : null;
+    if (artifact) {
+      next.artifact = artifact.artifactId;
+      next.repository = artifact.repository;
+      next.path = artifact.path;
+      next.kind = artifact.kind;
+    } else if (wanted.artifact && group.token === EDITOR_SCREEN_TOKEN) {
+      warn(`Artifact ${wanted.artifact} is not one the editor can open; dropping it`);
+    }
+    if (!sameArtifact(readAppContext(app).artifact, artifact)) dispatch(setContextArtifact(artifact));
 
     publishStudioContext(app);
     // @cpt-end:cpt-studiofrontend-algo-shell-levels-click:p1:inst-2

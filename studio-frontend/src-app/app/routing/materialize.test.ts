@@ -42,6 +42,7 @@ const screens = [
   screen('projects.main', '/projects', 'workspace', { order: 20 }),
   screen('projects.overview', '/projects/overview', 'project', { section: 'overview', order: 10 }),
   screen('projects.artifacts', '/projects/artifacts', 'project', { section: 'artifacts', order: 20 }),
+  screen('space.main', '/space', 'project', { placement: 'hidden' }),
 ];
 const groups = groupScreens(screens);
 
@@ -132,6 +133,54 @@ describe('materialize', () => {
     expect(state().project).toEqual(ATLAS);
     expect(state().section).toBe('artifacts');
     expect(mocks.publish).toHaveBeenCalled();
+  });
+
+  describe('an artifact in the address', () => {
+    const IN_EDITOR = '/?screen=space;org=o1;workspace=w1;project=p1;artifact=n-1;repository=group%2Frepo;path=docs%2Fa.md;kind=file';
+    const ARTIFACT = { artifactId: 'n-1', repository: 'group/repo', path: 'docs/a.md', kind: 'file' };
+
+    it('mounts the editor in the open project and holds the artifact', () => {
+      const { materialize, state, adapter } = setup(IN_EDITOR, { ...ready, projects: [ATLAS] });
+      const writes = vi.spyOn(adapter, 'replaceState');
+      materialize();
+      expect(mocks.mountScreen).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: 'space.main' }));
+      expect(state().project).toEqual(ATLAS);
+      expect(state().artifact).toEqual(ARTIFACT);
+      expect(state().section).toBeNull();
+      expect(writes).not.toHaveBeenCalled();
+    });
+
+    it('clears the artifact when the address goes back to the artifact list', () => {
+      const { materialize, transition, state, navigation } = setup(IN_EDITOR, { ...ready, projects: [ATLAS] });
+      materialize();
+      navigation.navigate({ token: 'projects', org: 'o1', workspace: 'w1', project: 'p1', section: 'artifacts' }, 'push');
+      transition();
+      expect(state().artifact).toBeNull();
+      expect(state().project).toEqual(ATLAS);
+      expect(state().section).toBe('artifacts');
+      expect(mocks.mountScreen).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ id: 'projects.main' }));
+    });
+
+    it('drops an artifact from a screen that is not the editor', () => {
+      const { materialize, state, adapter } = setup(
+        '/?screen=projects;org=o1;workspace=w1;project=p1;section=artifacts;artifact=n-1;kind=file',
+        { ...ready, projects: [ATLAS] }
+      );
+      materialize();
+      expect(state().artifact).toBeNull();
+      expect(adapter.url()).toBe('/?screen=projects;org=o1;workspace=w1;project=p1;section=artifacts');
+    });
+
+    it('drops an artifact of a kind the editor does not know, with a warning', () => {
+      const { materialize, state, adapter, warn } = setup(
+        '/?screen=space;org=o1;workspace=w1;project=p1;artifact=n-1;kind=spec_finding',
+        { ...ready, projects: [ATLAS] }
+      );
+      materialize();
+      expect(state().artifact).toBeNull();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('n-1'));
+      expect(adapter.url()).toBe('/?screen=space;org=o1;workspace=w1;project=p1');
+    });
   });
 
   it('waits for the workspace list before opening the project, then opens it', () => {
