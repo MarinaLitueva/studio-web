@@ -349,18 +349,20 @@ export function createMaterializer(deps: MaterializerDeps): Materializer {
       next.kind = artifact.kind;
     } else if (group.token === EDITOR_SCREEN_TOKEN) {
       const level: ScreenLevel = next.project ? 'project' : 'workspace';
+      const reason = !next.project
+        ? 'The editor needs a project'
+        : wanted.artifact && !artifactOf(wanted)
+          ? `Artifact ${wanted.artifact} is not one the editor can open`
+          : 'The editor has nothing to open';
       const fallback = entryRoute(registry, level, next);
       if (fallback && fallback.token !== group.token) {
-        warn(
-          wanted.artifact && !artifactOf(wanted)
-            ? `Artifact ${wanted.artifact} is not one the editor can open; opening the ${level} entry point instead`
-            : `The editor has nothing to open; opening the ${level} entry point instead`
-        );
+        warn(`${reason}; opening the ${level} entry point instead`);
         if (next.project) fallback.project = next.project;
         navigation.navigate(fallback, 'replace');
         materialize();
         return;
       }
+      warn(`${reason}, and the ${level} level has no entry point to fall back to`);
     } else if (wanted.artifact) {
       warn(`Artifact ${wanted.artifact} belongs on the editor, not on ${group.token}; dropping it`);
     }
