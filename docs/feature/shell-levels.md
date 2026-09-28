@@ -581,8 +581,11 @@ project or workspace picked in it opens at that level's entry point, never at
 the editor: a hidden screen is never the one a level opens on, and the editor
 means nothing without its artifact. Forward and reload
 remount the editor cold (ADR-0021); the address is what survives. An artifact on another
-screen, or of a kind the editor does not know, is dropped from the address with
-a warning rather than published. The editor screen is `space-mfe`, a frame
+screen is dropped from the address with a warning rather than published. An
+editor address with nothing the editor can open (a kind it does not know, no
+artifact, no project, or a project the lookup refuses) lands on the level's
+entry point instead, with a warning, the way a failed mount falls back. The
+editor screen is `space-mfe`, a frame
 package; while there is no session its frame shows the package's own static
 page (#321), and the artifact reaches the frame in #323.
 

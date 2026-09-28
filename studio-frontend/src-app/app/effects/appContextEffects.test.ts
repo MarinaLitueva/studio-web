@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { FrontXApp } from '@gears-frontx/react';
 
 type BusHandler = (payload?: unknown) => void | Promise<void>;
@@ -37,6 +37,7 @@ vi.mock('@/app/routing/startRouting', () => ({ startRouting: mockStartRouting })
 vi.mock('@/app/effects/contextCatalogs', () => ({ createContextCatalogs: vi.fn(() => catalogs) }));
 
 import { screen } from '@frontx-test-utils/screenFixture';
+import { levelOf } from '@/app/mfe/screenLevels';
 import { groupScreens } from '@/app/routing/screenTokens';
 import {
   addContextWorkspace,
@@ -84,6 +85,7 @@ describe('registerAppContextEffects', () => {
   afterEach(() => {
     listeners.clear();
     vi.clearAllMocks();
+    (app.mfeRegistry!.getExtensionsForDomain as Mock).mockReturnValue(screens);
   });
 
   it('starts routing once the slot is attached, and only retries the address after that', async () => {
@@ -294,6 +296,16 @@ describe('registerAppContextEffects', () => {
     it('closing the project opens the workspace entry point', async () => {
       await emit('app/context/project/closed');
       expect(handle.navigation.navigate).toHaveBeenCalledWith({ token: 'projects', org: 'o1', workspace: 'w1' }, 'push');
+    });
+
+    it('drops the switch, without throwing, when the level has no entry point to leave for', async () => {
+      const orgOnly = screens.filter((candidate) => levelOf(candidate) === 'organization');
+      const hidden = screen('space.main', '/space', 'project', { placement: 'hidden' });
+      (app.mfeRegistry!.getExtensionsForDomain as Mock).mockReturnValue([...orgOnly, hidden]);
+      handle.groups.mockReturnValue(groupScreens([...orgOnly, hidden]));
+      await emit('app/context/project/changed', { projectId: 'p2' });
+      await emit('app/context/project/closed');
+      expect(handle.navigation.navigate).not.toHaveBeenCalled();
     });
 
     it('another organization picked on a hidden organization-level screen opens the organization entry point', async () => {

@@ -161,17 +161,42 @@ describe('materialize', () => {
       expect(mocks.mountScreen).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ id: 'projects.main' }));
     });
 
-    it('drops an artifact from a screen that is not the editor', () => {
-      const { materialize, state, adapter } = setup(
+    it('drops an artifact from a screen that is not the editor, with a warning', () => {
+      const { materialize, state, adapter, warn } = setup(
         '/?screen=projects;org=o1;workspace=w1;project=p1;section=artifacts;artifact=n-1;kind=file',
         { ...ready, projects: [ATLAS] }
       );
       materialize();
       expect(state().artifact).toBeNull();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('n-1'));
       expect(adapter.url()).toBe('/?screen=projects;org=o1;workspace=w1;project=p1;section=artifacts');
     });
 
-    it('drops an artifact of a kind the editor does not know, with a warning', () => {
+    it('holds an artifact whose kind carries no repository or path, and writes nothing', () => {
+      const { materialize, state, adapter } = setup('/?screen=space;org=o1;workspace=w1;project=p1;artifact=u-1;kind=user', {
+        ...ready, projects: [ATLAS],
+      });
+      const writes = vi.spyOn(adapter, 'replaceState');
+      materialize();
+      expect(state().artifact).toEqual({ artifactId: 'u-1', repository: '', path: '', kind: 'user' });
+      expect(adapter.url()).toBe('/?screen=space;org=o1;workspace=w1;project=p1;artifact=u-1;kind=user');
+      expect(writes).not.toHaveBeenCalled();
+    });
+
+    it('dispatches the artifact once and keeps the same object while the address holds it', () => {
+      const { materialize, state } = setup(IN_EDITOR, { ...ready, projects: [ATLAS] });
+      materialize();
+      const held = state().artifact;
+      expect(held).toEqual(ARTIFACT);
+      materialize();
+      materialize();
+      expect(state().artifact).toBe(held);
+    });
+
+    // The editor means nothing without its artifact (shell-levels.md): an
+    // address that names the editor and no artifact it can open lands on the
+    // project's entry point instead, the way a failed mount falls back.
+    it('drops an artifact of a kind the editor does not know, with a warning, and leaves the editor', () => {
       const { materialize, state, adapter, warn } = setup(
         '/?screen=space;org=o1;workspace=w1;project=p1;artifact=n-1;kind=spec_finding',
         { ...ready, projects: [ATLAS] }
@@ -179,7 +204,42 @@ describe('materialize', () => {
       materialize();
       expect(state().artifact).toBeNull();
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('n-1'));
-      expect(adapter.url()).toBe('/?screen=space;org=o1;workspace=w1;project=p1');
+      expect(adapter.url()).toBe('/?screen=projects;org=o1;workspace=w1;project=p1;section=overview');
+      expect(mocks.mountScreen).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: 'projects.main' }));
+      expect(mocks.mountScreen).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: 'space.main' }));
+      expect(adapter.length()).toBe(1);
+    });
+
+    it('opens the project entry point when the editor address names no artifact at all', () => {
+      const { materialize, adapter } = setup('/?screen=space;org=o1;workspace=w1;project=p1', {
+        ...ready, projects: [ATLAS],
+      });
+      materialize();
+      expect(adapter.url()).toBe('/?screen=projects;org=o1;workspace=w1;project=p1;section=overview');
+      expect(mocks.mountScreen).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: 'space.main' }));
+    });
+
+    it('opens the workspace entry point when the editor address names no project', () => {
+      const { materialize, adapter } = setup(
+        '/?screen=space;org=o1;workspace=w1;artifact=n-1;repository=group%2Frepo;path=docs%2Fa.md;kind=file',
+        ready
+      );
+      materialize();
+      expect(adapter.url()).toBe('/?screen=projects;org=o1;workspace=w1');
+      expect(mocks.mountScreen).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: 'space.main' }));
+    });
+
+    it('leaves the editor, artifact and all, when the project turns out not to be one', async () => {
+      const { materialize, adapter, catalogs, state } = setup(
+        '/?screen=space;org=o1;workspace=w1;project=w1;artifact=n-1;repository=group%2Frepo;path=docs%2Fa.md;kind=file',
+        ready
+      );
+      catalogs.resolveProject.mockResolvedValue({ id: 'w1', name: 'Work', tenant_type: TENANT_TYPES.workspace, parent_id: 'o1' });
+      materialize();
+      // Held while the lookup is on its way: a reload must not lose the artifact.
+      expect(state().artifact).toEqual(ARTIFACT);
+      await vi.waitFor(() => expect(adapter.url()).toBe('/?screen=projects;org=o1;workspace=w1'));
+      expect(state().artifact).toBeNull();
     });
   });
 
@@ -401,7 +461,6 @@ describe('materialize', () => {
     expect(mocks.mountScreen).not.toHaveBeenCalled();
   });
 
-  // Reviewer finding: the registry logs a failed chain and resolves — it never rejects.
   it('stops after one fallback when the chain resolves without mounting', async () => {
     mocks.mountScreen.mockImplementation(async () => undefined);
     const { materialize, transition, adapter, warn, navigation } = setup('/?screen=people;org=o1', ready);
@@ -423,9 +482,6 @@ describe('materialize', () => {
     expect(mocks.mountScreen).toHaveBeenCalledTimes(3);
   });
 
-  // Reviewer finding (vasylcf): the guard against a second fallback was one flag
-  // for the whole session, so after an entry point failed once no later failure
-  // anywhere was fallen back from.
   it('falls back once per address: a later failure elsewhere gets its own fallback', async () => {
     mocks.mountScreen.mockImplementation(async () => undefined);
     const { materialize, transition, adapter, warn, navigation } = setup('/?screen=people;org=o1', ready);
@@ -491,8 +547,6 @@ describe('materialize', () => {
     expect(adapter.url()).toBe('/?screen=people;org=o1');
   });
 
-  // Reviewer finding (vasylcf, round 2): a failure about an address since left
-  // must not mark that address stuck for a later return to it.
   it('a failure about an address since left does not block a later return to it', async () => {
     mocks.mounted = ['gears'];
     let finish!: () => void;
