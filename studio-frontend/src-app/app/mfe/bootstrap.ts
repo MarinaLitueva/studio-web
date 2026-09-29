@@ -151,6 +151,7 @@ export function firstFrameUrl(manifests: readonly MfeManifestConfig[]): string |
 }
 
 /** The editor's frame entry (#321). The fixture reads the same property, so the editor's address wins over catalogue order. */
+// TODO(#322): the session gate's address replaces this seed, and the shell stops naming space-mfe.
 const SPACE_FRAME_ENTRY =
   'gts.frontx.mfes.mfe.entry.v1~constructor_studio.mfes.mfe.entry_iframe.v1~constructor_studio.space.mfe.main.v1';
 

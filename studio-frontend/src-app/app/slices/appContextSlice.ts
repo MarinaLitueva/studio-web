@@ -3,19 +3,12 @@
 
 // @cpt-dod:cpt-studiofrontend-dod-shell-levels-no-address:p1
 import { createSlice, type FrontXApp, type ReducerPayload } from '@gears-frontx/react';
-import type { StudioArtifactKind } from '@constructor-studio/mfe-shared';
+import type { StudioArtifact } from '@constructor-studio/mfe-shared';
 
 export interface ContextEntity {
   id: string;
   name: string;
   count?: number;
-}
-
-export interface ContextArtifact {
-  artifactId: string;
-  repository: string;
-  path: string;
-  kind: StudioArtifactKind;
 }
 
 /**
@@ -45,7 +38,7 @@ export interface AppContextState {
   projects: ContextEntity[];
   projectsStatus: CatalogStatus;
   section: string | null;
-  artifact: ContextArtifact | null;
+  artifact: StudioArtifact | null;
   loading: boolean;
   access: AccessState;
 }
@@ -230,7 +223,7 @@ const {
       state.section = action.payload;
     },
 
-    setContextArtifact: (state: AppContextState, action: ReducerPayload<ContextArtifact | null>) => {
+    setContextArtifact: (state: AppContextState, action: ReducerPayload<StudioArtifact | null>) => {
       state.artifact = action.payload;
     },
   },

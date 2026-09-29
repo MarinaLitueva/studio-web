@@ -10,7 +10,7 @@
  * `section` and `artifact`, and the only caller of `mountScreen`.
  */
 import { screenDomain, type FrontXApp, type MfeRegistry, type ScreenExtension } from '@gears-frontx/react';
-import { STUDIO_ARTIFACT_KINDS, TENANT_TYPES, errorMessage, type StudioArtifactKind } from '@constructor-studio/mfe-shared';
+import { TENANT_TYPES, errorMessage, isStudioArtifactKind, type StudioArtifact } from '@constructor-studio/mfe-shared';
 import { entryPointOf, levelOf, sectionOf, type ScreenLevel } from '@/app/mfe/screenLevels';
 import { isMountingScreen, mountScreen } from '@/app/mfe/mountScreen';
 import { publishStudioContext } from '@/app/mfe/sharedContext';
@@ -23,27 +23,24 @@ import {
   setContextOrg,
   setContextSection,
   setContextWorkspace,
-  type ContextArtifact,
 } from '@/app/slices/appContextSlice';
 import type { ContextCatalogs } from '@/app/effects/contextCatalogs';
 import { EDITOR_SCREEN_TOKEN, routesEqual, type ShellRoute } from './route';
 import { groupOfExtension, groupOfToken, type ScreenGroup } from './screenTokens';
 import type { ShellNavigation } from './navigation';
 
-const ARTIFACT_KINDS: ReadonlySet<string> = new Set(STUDIO_ARTIFACT_KINDS);
-
 // @cpt-dod:cpt-studiofrontend-dod-shell-levels-artifact-address:p1
-function artifactOf(route: ShellRoute): ContextArtifact | null {
-  if (!route.artifact || !route.kind || !ARTIFACT_KINDS.has(route.kind)) return null;
+function artifactOf(route: ShellRoute): StudioArtifact | null {
+  if (!route.artifact || !isStudioArtifactKind(route.kind)) return null;
   return {
     artifactId: route.artifact,
     repository: route.repository ?? '',
     path: route.path ?? '',
-    kind: route.kind as StudioArtifactKind,
+    kind: route.kind,
   };
 }
 
-function sameArtifact(held: ContextArtifact | null, wanted: ContextArtifact | null): boolean {
+function sameArtifact(held: StudioArtifact | null, wanted: StudioArtifact | null): boolean {
   if (!held || !wanted) return held === wanted;
   return (
     held.artifactId === wanted.artifactId &&

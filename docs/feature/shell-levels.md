@@ -578,7 +578,7 @@ Opening is a `push`, so Back is the way out: the router reports the entry the
 person left, the artifact list of the same project, and the shell mounts that
 screen again with the project still open. The path is the other way out: a
 project or workspace picked in it opens at that level's entry point, never at
-the editor: a hidden screen is never the one a level opens on, and the editor
+the editor. A hidden screen is never the one a level opens on, and the editor
 means nothing without its artifact. Forward and reload
 remount the editor cold (ADR-0021); the address is what survives. An artifact on another
 screen is dropped from the address with a warning rather than published. An
@@ -622,4 +622,4 @@ page (#321), and the artifact reaches the frame in #323.
 - [ ] A screen declared `placement: hidden` appears in no level's rail and is never the screen a level opens on, yet the shell still mounts it when asked by id.
 - [ ] Opening a file from a project's artifacts replaces the project area with the editor while the rail, the path and the top bar stay put, and the address carries `screen=space` and the artifact.
 - [ ] Back from the editor shows the artifact list of the same project, with the project still open; Forward and reload show the editor again on the same artifact.
-- [ ] Picking another project or workspace in the path while the editor is open leaves the editor for that level's entry point; the editor never stays on screen without an artifact.
+- [ ] Picking another project or workspace in the path while the editor is open leaves the editor for that level's entry point; only when the level has none does the editor stay, with no artifact and a warning.
