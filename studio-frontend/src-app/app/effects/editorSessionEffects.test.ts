@@ -240,27 +240,51 @@ describe('createEditorSession', () => {
       expect(published()).toEqual([ADDRESS]);
     });
 
-    it('still puts the run back when the read before the wait fails once', async () => {
-      vi.useFakeTimers();
-      vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-      const h = harness();
-      h.launch.mockResolvedValue(session('starting', RUN));
-      h.tasks.run.mockReturnValue({
-        fetch: vi
-          .fn()
-          .mockResolvedValueOnce(run('failed', 'gave up'))
-          .mockRejectedValueOnce(refusal(502))
-          .mockResolvedValue(run('failed', 'gave up')),
-      });
-      h.tasks.retry.mockReturnValue({ fetch: vi.fn().mockResolvedValue(run('queued')) });
-      h.open();
-      await vi.waitFor(() => expect(h.state().phase).toBe('failed'));
+    describe('with the clock held', () => {
+      beforeEach(() => vi.useFakeTimers());
+      afterEach(() => vi.useRealTimers());
 
-      h.editor.retry();
-      await vi.advanceTimersByTimeAsync(2_000);
-      await vi.waitFor(() => expect(h.tasks.retry).toHaveBeenCalledWith(RUN));
-      expect(h.state().phase).toBe('launching');
-      vi.useRealTimers();
+      it('still puts the run back when the read before the wait fails once', async () => {
+        vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const h = harness();
+        h.launch.mockResolvedValue(session('starting', RUN));
+        h.tasks.run.mockReturnValue({
+          fetch: vi
+            .fn()
+            .mockResolvedValueOnce(run('failed', 'gave up'))
+            .mockRejectedValueOnce(refusal(502))
+            .mockResolvedValue(run('failed', 'gave up')),
+        });
+        h.tasks.retry.mockReturnValue({ fetch: vi.fn().mockResolvedValue(run('queued')) });
+        h.open();
+        await vi.waitFor(() => expect(h.state().phase).toBe('failed'));
+
+        h.editor.retry();
+        await vi.advanceTimersByTimeAsync(2_000);
+        await vi.waitFor(() => expect(h.tasks.retry).toHaveBeenCalledWith(RUN));
+        expect(h.state().phase).toBe('launching');
+      });
+
+      it('falls through to the poll after five unreadable reads, and gives up after five more', async () => {
+        vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const h = harness();
+        h.launch.mockResolvedValue(session('starting', RUN));
+        const read = vi.fn().mockResolvedValueOnce(run('failed', 'gave up')).mockRejectedValue(refusal(502));
+        h.tasks.run.mockReturnValue({ fetch: read });
+        h.open();
+        await vi.waitFor(() => expect(h.state().phase).toBe('failed'));
+
+        h.editor.retry();
+        // One read at once, four more two seconds apart: nothing is put back on a run nobody could read.
+        await vi.advanceTimersByTimeAsync(8_000);
+        expect(h.tasks.retry).not.toHaveBeenCalled();
+        expect(h.state().phase).toBe('launching');
+        expect(read).toHaveBeenCalledTimes(6);
+
+        await vi.advanceTimersByTimeAsync(10_000);
+        expect(h.state().failure).toEqual({ kind: 'read' });
+        expect(h.events.streamFrom).not.toHaveBeenCalled();
+      });
     });
 
     it('follows the run as it is when somebody else already put it back', async () => {

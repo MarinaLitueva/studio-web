@@ -168,7 +168,7 @@ describe('FetchEventSource', () => {
 
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(source.readyState).toBe(2); // CLOSED
-    // Nobody gave a cursor, so nobody is waiting on `done`: as on main, only `error`.
+    // Nobody gave a cursor, so nobody is waiting on `done`: a refusal only stops the stream and fires `error`.
     expect(ended).toBe(false);
   });
 

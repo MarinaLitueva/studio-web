@@ -79,6 +79,12 @@ export interface StudioEventPage {
 /** The largest page `GET /events` serves (`limit` is clamped to 500). */
 const GAP_PAGE = 500;
 
+/**
+ * Everything published after `cursor` up to the tenant's high-water mark as
+ * of the first page, oldest first. Stops at that mark, or at an empty page —
+ * not at a short one, so a lowered server clamp cannot turn this back into a
+ * one-page read; whatever is published past the mark is on the live stream.
+ */
 export async function pageThrough(
   read: (afterSeq: number, limit: number) => Promise<StudioEventPage>,
   cursor: number,
@@ -91,7 +97,7 @@ export async function pageThrough(
     mark ??= page.latest_seq;
     events.push(...page.events);
     const last = page.events[page.events.length - 1];
-    if (page.events.length < GAP_PAGE || !last || last.seq >= mark) return events;
+    if (!last || last.seq >= mark) return events;
     after = last.seq;
   }
 }

@@ -307,7 +307,7 @@ router, the shell's effects and the frame.
       1. [ ] - `p1` - **RETURN** failed - `inst-22`
    4. [ ] - `p1` - **IF** five reads in a row fail for a reason other than 404 - `inst-30`
       1. [ ] - `p1` - **RETURN** failed: the state could not be read - `inst-31`
-   4. [ ] - `p1` - **IF** three minutes pass — one attempt of the backend's own probe, since nobody else waits here - `inst-23`
+   5. [ ] - `p1` - **IF** three minutes pass — one attempt of the backend's own probe, since nobody else waits here - `inst-23`
       1. [ ] - `p1` - **RETURN** failed: not ready in time - `inst-24`
 3. [ ] - `p1` - Close the stream and stop reading as soon as there is an answer - `inst-25`
 
@@ -400,9 +400,11 @@ sent at all.
 
 - [ ] `p1` - **ID**: `cpt-studiofrontend-dod-editor-session-reuse-or-launch`
 
-The system **MUST** ask for the session when the editor screen is materialized
-with a project, **MUST** rely on the launch being idempotent per project instead
-of listing sessions first, and **MUST NOT** launch one for any other screen.
+The system **MUST** ask for the session when the editor comes on screen with a
+project, once per stay — a file switch inside it asks nothing, leaving and
+coming back asks again — **MUST** rely on the launch being idempotent per
+project instead of listing sessions first, and **MUST NOT** launch one for any
+other screen.
 
 **Implements**:
 - `cpt-studiofrontend-flow-editor-session-open`

@@ -149,8 +149,9 @@ export class FetchEventSource implements EventSourceLike {
       } catch (error) {
         if (this.abort.signal.aborted) break;
         if (error instanceof FatalStreamError) {
-          // A consumer waiting from a cursor is told (`done`); `events` only
-          // stops, as on main — the same split as a failed replay.
+          // A consumer waiting from a cursor is told (`done`). A stream given
+          // none has nobody waiting on `done`: a refusal only stops it and
+          // fires `error` — the same split as a failed replay.
           if (this.fromGiven) this.end();
           else this.readyState = CLOSED;
           this.dispatch('error', new Event('error'));
