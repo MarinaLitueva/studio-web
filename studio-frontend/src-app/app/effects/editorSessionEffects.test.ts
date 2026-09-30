@@ -134,9 +134,9 @@ function harness() {
   mockGetService.mockImplementation((service: unknown) => services.get(service));
 
   const editor = createEditorSession(app);
-  const open = (visit = 1, projectId = PROJECT): void =>
-    editor.sync({ projectId, orgId: ORG, editor: true, visit });
-  return { editor, open, state: () => state, phases, events, stream, disconnect, launch, sessions, tasks, accounts };
+  const open = (projectId = PROJECT): void => editor.sync({ projectId, orgId: ORG, editor: true });
+  const leave = (projectId = PROJECT): void => editor.sync({ projectId, orgId: ORG, editor: false });
+  return { editor, open, leave, state: () => state, phases, events, stream, disconnect, launch, sessions, tasks, accounts };
 }
 
 const published = (): unknown[] => publishFrameUrl.mock.calls.map(([, url]) => url);
@@ -398,7 +398,7 @@ describe('createEditorSession', () => {
     h.open();
     await vi.waitFor(() => expect(h.stream.onEvent).not.toBeNull());
 
-    h.editor.sync({ projectId: 'p2', orgId: ORG, editor: false, visit: 2 });
+    h.editor.sync({ projectId: 'p2', orgId: ORG, editor: false });
     expect(published()).toEqual([null]);
     expect(h.state().phase).toBe('idle');
     await vi.waitFor(() => expect(h.disconnect).toHaveBeenCalled());
@@ -409,19 +409,20 @@ describe('createEditorSession', () => {
     expect(h.state().phase).toBe('idle');
   });
 
-  // `materialize` makes many passes per visit.
-  it('asks once per visit, however many passes materialize makes, and never off the editor', async () => {
+  // `materialize` makes many passes per address, and a file switch inside the editor is a new address.
+  it('asks once while the editor stays on screen, whatever it shows, and again when it comes back', async () => {
     const h = harness();
     h.launch.mockResolvedValue(session('running'));
 
-    h.open(1);
-    h.open(1);
+    h.open();
+    h.open();
     await vi.waitFor(() => expect(h.state().phase).toBe('ready'));
-    h.open(1);
-    h.editor.sync({ projectId: PROJECT, orgId: ORG, editor: false, visit: 2 });
+    h.open();
+    h.leave();
+    h.leave();
     expect(h.launch).toHaveBeenCalledTimes(1);
 
-    h.open(3);
+    h.open();
     await vi.waitFor(() => expect(h.launch).toHaveBeenCalledTimes(2));
   });
 
@@ -446,9 +447,10 @@ describe('createEditorSession', () => {
     const h = harness();
     h.launch.mockResolvedValue(session('running'));
 
-    h.open(1);
+    h.open();
     await vi.waitFor(() => expect(h.state().phase).toBe('ready'));
-    h.open(2);
+    h.leave();
+    h.open();
     await vi.waitFor(() => expect(published()).toEqual([ADDRESS, ADDRESS]));
 
     expect(h.launch).toHaveBeenCalledTimes(2);
@@ -463,12 +465,64 @@ describe('createEditorSession', () => {
     h.open();
     await vi.waitFor(() => expect(h.launch).toHaveBeenCalled());
 
-    h.editor.sync({ projectId: 'p2', orgId: ORG, editor: false, visit: 2 });
+    h.editor.sync({ projectId: 'p2', orgId: ORG, editor: false });
     answer.resolve(session('running'));
     await settle();
 
     expect(published()).toEqual([null]);
     expect(h.state().phase).toBe('idle');
+  });
+
+  it("launches the next project while staying on the editor, and drops the first one's late answer", async () => {
+    const h = harness();
+    const first = deferred<ReturnType<typeof session>>();
+    h.launch.mockReturnValueOnce(first.promise).mockResolvedValue({ ...session('running'), workspace_id: 'p2' });
+    h.open();
+    await vi.waitFor(() => expect(h.launch).toHaveBeenCalledTimes(1));
+
+    h.open('p2');
+    expect(published()).toEqual([null]);
+    await vi.waitFor(() => expect(h.launch).toHaveBeenCalledTimes(2));
+    expect(h.launch).toHaveBeenLastCalledWith({ workspace_id: 'p2', repos: REPOS });
+
+    first.resolve(session('running'));
+    await vi.waitFor(() => expect(h.state().phase).toBe('ready'));
+    await settle();
+    expect(published()).toEqual([null, ADDRESS]);
+  });
+
+  describe('coming back to a ready editor', () => {
+    it('draws launching and republishes only once the run succeeds when the session has to start again', async () => {
+      const h = harness();
+      h.launch.mockResolvedValueOnce(session('running')).mockResolvedValue(session('starting', RUN));
+      h.tasks.run.mockReturnValue({ fetch: vi.fn().mockResolvedValue(run('queued')) });
+      h.open();
+      await vi.waitFor(() => expect(h.state().phase).toBe('ready'));
+
+      h.leave();
+      h.open();
+      await vi.waitFor(() => expect(h.stream.onEvent).not.toBeNull());
+      expect(h.state().phase).toBe('launching');
+      expect(published()).toEqual([ADDRESS]);
+
+      h.stream.onEvent?.(taskEvent(1, 'task.succeeded'));
+      await vi.waitFor(() => expect(h.state().phase).toBe('ready'));
+      expect(published()).toEqual([ADDRESS, ADDRESS]);
+    });
+
+    it('ends failed on a refusal and leaves the earlier address alone', async () => {
+      const h = harness();
+      h.launch.mockResolvedValueOnce(session('running')).mockRejectedValue(refusal(503, 'no room'));
+      h.open();
+      await vi.waitFor(() => expect(h.state().phase).toBe('ready'));
+
+      h.leave();
+      h.open();
+      await vi.waitFor(() => expect(h.state().phase).toBe('failed'));
+
+      expect(h.state().failure).toEqual({ kind: 'refused', detail: 'no room' });
+      expect(published()).toEqual([ADDRESS]);
+    });
   });
 
   describe('the failure branches', () => {
@@ -529,6 +583,22 @@ describe('createEditorSession', () => {
     describe('with the clock held', () => {
       beforeEach(() => vi.useFakeTimers());
       afterEach(() => vi.useRealTimers());
+
+      it('reads the run instead of streaming when the one read before the wait fails', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const h = harness();
+        h.launch.mockResolvedValue(session('starting', RUN));
+        const read = vi.fn().mockRejectedValueOnce(refusal(500)).mockResolvedValue(run('succeeded'));
+        h.tasks.run.mockReturnValue({ fetch: read });
+
+        h.open();
+        await vi.waitFor(() => expect(h.state().phase).toBe('launching'));
+        await vi.advanceTimersByTimeAsync(2_000);
+
+        expect(h.state().phase).toBe('ready');
+        expect(h.events.streamFrom).not.toHaveBeenCalled();
+        expect(warn).toHaveBeenCalledTimes(1);
+      });
 
       it('reads the run instead of streaming when the cursor cannot be read', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);

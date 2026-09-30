@@ -86,7 +86,12 @@ interface MfeManifestConfig {
   schemas?: JSONSchema[];
 }
 
-/** A frame entry as the generator emits it: an address, and no module. */
+/**
+ * A frame entry as the generator emits it: an address, and no module. The
+ * shell reads nothing from `publicPath` since #322 (the frame shows what the
+ * property holds); it stays because the catalogue says where every package is
+ * served, frame packages included, and `dev:all` and the e2e suite read that.
+ */
 interface MfeEntryFrameConfig {
   id: string;
   requiredProperties: string[];

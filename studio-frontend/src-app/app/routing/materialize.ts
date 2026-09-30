@@ -380,7 +380,6 @@ export function createMaterializer(deps: MaterializerDeps): Materializer {
       projectId: next.project ?? null,
       orgId: next.org ?? null,
       editor: group.token === EDITOR_SCREEN_TOKEN && next.project !== undefined,
-      visit,
     });
 
     if (!routesEqual(next, address)) navigation.navigate(next, 'replace');

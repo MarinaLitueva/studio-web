@@ -1284,7 +1284,7 @@ requirements are planned (`cpt-studio-fr-authz-row-roles`,
 
 - [ ] `p1` - **ID**: `cpt-studio-feature-editor-session`
 
-- **Purpose**: The official portal's editor screen reaches the project's Theia session: the shell reuses a live one or launches it with the project's repositories, follows it until it answers, shows launching and failure, and hands the gate's address to the frame only. The backend is in place; this is the portal slice of `cpt-studio-feature-ide-sessions`.
+- **Purpose**: The official portal's editor screen reaches the project's Theia session: the shell reuses a live one or launches it with the project's repositories, follows it until it answers, shows launching and failure, and hands the gate's address to the frame only. The backend's session API is in place, and this entry changes its readiness key and reuse probe; the rest is the portal slice of `cpt-studio-feature-ide-sessions`.
 
 - **Depends On**: `cpt-studio-feature-shell-levels`, `cpt-studio-feature-project-create`, `cpt-studio-feature-ide-sessions`
 

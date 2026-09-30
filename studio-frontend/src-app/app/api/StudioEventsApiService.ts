@@ -45,8 +45,9 @@ export interface StudioEvent<P = unknown> {
 /**
  * What a `task.*` event carries: one transition of a `studio-tasks` run.
  *
- * The same fields `GET /studio-tasks/v1/runs/{id}` answers with, so a view can
- * be fed by either without a second mapping. `phase` arrives on
+ * The same run `GET /studio-tasks/v1/runs/{id}` answers with, under the
+ * event's own names: `run_id` for its `id`, `phase` for `progress`, `error`
+ * for `last_error`; `state` and `attempts` are the same. `phase` arrives on
  * `task.progress`; `summary` / `error` / `result` on the terminal ones.
  */
 export interface StudioRunEvent {
@@ -73,6 +74,24 @@ export interface StudioEventPage {
    * caller fell out of the server's retained window and lost events.
    */
   latest_seq: number;
+}
+
+/** The largest page `GET /events` serves (`limit` is clamped to 500). */
+const GAP_PAGE = 500;
+
+export async function pageThrough(
+  read: (afterSeq: number, limit: number) => Promise<StudioEventPage>,
+  cursor: number,
+): Promise<StudioEvent[]> {
+  const events: StudioEvent[] = [];
+  let after = cursor;
+  for (;;) {
+    const page = await read(after, GAP_PAGE);
+    events.push(...page.events);
+    const last = page.events[page.events.length - 1];
+    if (page.events.length < GAP_PAGE || !last) return events;
+    after = last.seq;
+  }
 }
 
 export class StudioEventsApiService extends BaseApiService {
@@ -102,19 +121,20 @@ export class StudioEventsApiService extends BaseApiService {
       new SseAuthPlugin({
         resume: {
           cursorOf: (event) => (event as StudioEvent | null)?.seq,
-          gap: async (cursor) => {
-            const page = await restProtocol.get<StudioEventPage>(
-              `/events?after_seq=${cursor}`,
-            );
-            return page.events;
-          },
+          gap: (cursor) =>
+            pageThrough(
+              (afterSeq, limit) =>
+                restProtocol.get<StudioEventPage>(`/events?after_seq=${afterSeq}&limit=${limit}`),
+              cursor,
+            ),
         },
       }),
     );
   }
 
   /**
-   * The live stream, from now on. A reconnect replays what it missed; one
+   * The live stream, from now on. A reconnect replays what it missed, page by
+   * page ({@link pageThrough}); one
    * that cannot keeps the stream and loses the gap, logged (`streamFrom` ends
    * instead).
    *

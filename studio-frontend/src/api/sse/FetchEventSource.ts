@@ -131,8 +131,12 @@ export class FetchEventSource implements EventSourceLike {
     this.abort.abort();
   }
 
-  /** Nothing more will be delivered: `done` is what the protocol hands on as `onComplete`. */
+  /**
+   * Nothing more will be delivered: `done` is what the protocol hands on as
+   * `onComplete`. Not after `close()`: a replay that settles late is nobody's.
+   */
   private end(): void {
+    if (this.readyState === CLOSED) return;
     this.dispatch('done', new MessageEvent('done', { data: '' }));
     this.close();
   }
@@ -145,7 +149,10 @@ export class FetchEventSource implements EventSourceLike {
       } catch (error) {
         if (this.abort.signal.aborted) break;
         if (error instanceof FatalStreamError) {
-          this.end();
+          // A consumer waiting from a cursor is told (`done`); `events` only
+          // stops, as on main — the same split as a failed replay.
+          if (this.fromGiven) this.end();
+          else this.readyState = CLOSED;
           this.dispatch('error', new Event('error'));
           return;
         }

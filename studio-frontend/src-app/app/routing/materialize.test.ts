@@ -157,11 +157,11 @@ describe('materialize', () => {
       const { materialize, transition, navigation } = setup(IN_EDITOR, { ...ready, projects: [ATLAS] }, screens, session);
 
       materialize();
-      expect(session.sync).toHaveBeenLastCalledWith({ projectId: 'p1', orgId: 'o1', editor: true, visit: 0 });
+      expect(session.sync).toHaveBeenLastCalledWith({ projectId: 'p1', orgId: 'o1', editor: true });
 
       navigation.navigate({ token: 'projects', org: 'o1', workspace: 'w1', project: 'p1', section: 'artifacts' }, 'push');
       transition();
-      expect(session.sync).toHaveBeenLastCalledWith({ projectId: 'p1', orgId: 'o1', editor: false, visit: 1 });
+      expect(session.sync).toHaveBeenLastCalledWith({ projectId: 'p1', orgId: 'o1', editor: false });
     });
 
     it('clears the artifact when the address goes back to the artifact list', () => {

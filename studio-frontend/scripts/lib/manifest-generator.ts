@@ -322,6 +322,11 @@ export class ManifestGenerator {
     };
   }
 
+  /**
+   * Where the frame package is served. Nothing in the shell loads it since
+   * #322, but the catalogue names an address for every package, and the dev
+   * and e2e tooling read it — so a frame package still needs one.
+   */
   private resolveFramePublicPath(packageDir: string, devUrl: string | undefined): string {
     if (this.globalBaseUrl !== null) {
       return this.globalBaseUrl.endsWith('/') ? this.globalBaseUrl : `${this.globalBaseUrl}/`;

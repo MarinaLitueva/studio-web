@@ -17,6 +17,7 @@ vi.mock('@/app/i18n/shellTranslations', () => ({ useShellText: () => (key: strin
 
 import { EDITOR_SESSION_SLICE_KEY, type EditorSessionState } from '@/app/slices/editorSessionSlice';
 import { EditorSessionStatus } from './EditorSessionStatus';
+import DICTIONARY from '@/app/i18n/en.json';
 
 function show(state: Partial<EditorSessionState>): void {
   store.state = {
@@ -64,14 +65,15 @@ describe('EditorSessionStatus', () => {
     ['a state that could not be read', { kind: 'read' }, 'editor_session_reason_read'],
     ["the portal's own error", { kind: 'unexpected' }, 'editor_session_reason_unexpected'],
     ['sources that could not be read', { kind: 'sources' }, 'editor_session_reason_sources'],
-    ['a failure with no reason at all', null, 'editor_session_reason_sources'],
   ] as const)('explains %s', (_case, failure, reason) => {
-    show({ phase: 'failed', failure: failure as EditorSessionState['failure'] });
+    show({ phase: 'failed', failure });
     render(<EditorSessionStatus />);
 
     const alert = screen.getByRole('alert');
     expect(alert.textContent).toContain('editor_session_failed');
     expect(alert.textContent).toContain(reason);
+    // A key the component asks for must be in the dictionary, or a raw key renders.
+    if (reason.startsWith('editor_session_')) expect(DICTIONARY).toHaveProperty(reason);
   });
 
   it('asks the shell to try again', () => {

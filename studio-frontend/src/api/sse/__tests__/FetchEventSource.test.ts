@@ -168,7 +168,48 @@ describe('FetchEventSource', () => {
 
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(source.readyState).toBe(2); // CLOSED
-    expect(ended).toBe(true);
+    // Nobody gave a cursor, so nobody is waiting on `done`: as on main, only `error`.
+    expect(ended).toBe(false);
+  });
+
+  it('tells a consumer waiting from a cursor that a refused stream is over', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 401 }));
+    const source = new FetchEventSource('/stream', {
+      fetchImpl,
+      resume: { cursorOf: (e) => (e as { seq: number }).seq, gap: async () => [], from: 0 },
+    });
+    let ended = false;
+    source.addEventListener('done', () => {
+      ended = true;
+    });
+
+    await until(() => ended, 'the consumer to be told');
+
+    expect(source.readyState).toBe(2); // CLOSED
+  });
+
+  it('says nothing to a consumer that closed the stream while a replay was still out', async () => {
+    let rejectGap: (error: Error) => void = () => undefined;
+    const gap = () =>
+      new Promise<readonly unknown[]>((_resolve, reject) => {
+        rejectGap = reject;
+      });
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(sseResponse([])).mockImplementation(pending);
+    const source = new FetchEventSource('/stream', {
+      fetchImpl,
+      resume: { cursorOf: (e) => (e as { seq: number }).seq, gap, from: 0 },
+    });
+    let ended = false;
+    source.addEventListener('done', () => {
+      ended = true;
+    });
+
+    await until(() => source.readyState === 1, 'the connection to open');
+    source.close();
+    rejectGap(new Error('catch-up unavailable'));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(ended).toBe(false);
   });
 
   it('routes named frames to listeners, not to onmessage', async () => {

@@ -90,7 +90,20 @@ and each changes the code:
   under each person's own token, and then no `token_ref` is sent at all.
 - **The launch is lazy.** A session starts when the editor screen opens with a
   project, not when a project is opened: a session is a container, and most
-  visits to a project never reach the editor.
+  visits to a project never reach the editor. It is asked for once per stay on
+  the editor: a file switch inside it asks nothing, leaving and coming back
+  asks again.
+- **The IDE is in a same-origin frame, for now.** On a stand the session's
+  address is `/studio/{id}/` on the portal's own origin, and `MfeHandlerIframe`
+  sets no `sandbox` — Theia needs `allow-same-origin` and `allow-scripts`, and
+  with both on one origin `sandbox` isolates nothing. Script that runs inside
+  the IDE's page — an extension, a repository's own tooling, another member at
+  a terminal of the shared session — can reach `window.parent` and the portal's
+  `sessionStorage`, where the refresh token of whoever has the editor open is
+  kept. This is accepted here as it has been for the prototype on the same
+  stands (a local Docker backend answers on another port, so on another
+  origin). #323 decides sandboxing with same-origin in mind; a separate origin
+  for `/studio/` is the alternative if it decides against it.
 - **Leaving the editor does not stop the session.** Stopping is the backend's
   (`session.reap`). Unsaved buffers are still lost when the frame unmounts;
   that is the open #310 question, not this feature's.
@@ -274,6 +287,8 @@ router, the shell's effects and the frame.
          1. [ ] - `p1` - **RETURN** ready - `inst-6`
       3. [ ] - `p1` - **IF** it `failed` or was `cancelled` - `inst-7`
          1. [ ] - `p1` - **RETURN** failed with the run's `last_error` - `inst-8`
+      4. [ ] - `p1` - **IF** the read fails for a reason other than 404 — the run may have ended before the cursor, and the stream would never say - `inst-26`
+         1. [ ] - `p1` - Read the run every two seconds instead of the stream, as in `inst-16` - `inst-27`
    3. [ ] - `p1` - **IF** `task.succeeded` - `inst-9`
       1. [ ] - `p1` - **RETURN** ready; the address is the launch's, so nothing is read - `inst-10`
    4. [ ] - `p1` - **IF** `task.failed` or `task.cancelled` - `inst-11`
@@ -282,12 +297,16 @@ router, the shell's effects and the frame.
       1. [ ] - `p1` - Stay launching - `inst-14`
    6. [ ] - `p1` - **IF** the stream fails, or cannot replay what it missed - `inst-15`
       1. [ ] - `p1` - `API: GET /cf/studio-tasks/v1/runs/{id}` every two seconds, past the shared fetch cache, and answer from its state as from the events - `inst-16`
+      2. [ ] - `p1` - **IF** five reads in a row fail for a reason other than 404 - `inst-28`
+         1. [ ] - `p1` - **RETURN** failed: the state could not be read; the first failure is logged - `inst-29`
 2. [ ] - `p1` - **IF** there is no `ready_run_id` — a deployment without `studio-tasks` - `inst-17`
    1. [ ] - `p1` - `API: GET /cf/studio-session/v1/sessions/{id}` every two seconds, past the shared fetch cache; the read itself probes the container - `inst-18`
    2. [ ] - `p1` - **IF** the record says `running` - `inst-19`
       1. [ ] - `p1` - **RETURN** ready - `inst-20`
    3. [ ] - `p1` - **IF** the record says `stopped`, or the session is gone (404) - `inst-21`
       1. [ ] - `p1` - **RETURN** failed - `inst-22`
+   4. [ ] - `p1` - **IF** five reads in a row fail for a reason other than 404 - `inst-30`
+      1. [ ] - `p1` - **RETURN** failed: the state could not be read - `inst-31`
    4. [ ] - `p1` - **IF** three minutes pass — one attempt of the backend's own probe, since nobody else waits here - `inst-23`
       1. [ ] - `p1` - **RETURN** failed: not ready in time - `inst-24`
 3. [ ] - `p1` - Close the stream and stop reading as soon as there is an answer - `inst-25`
@@ -400,7 +419,8 @@ of listing sessions first, and **MUST NOT** launch one for any other screen.
 The system **MUST** read the studio-events cursor past the shared fetch cache
 before the launch and follow `ready_run_id` from it until the run ends,
 **MUST** read that run once before it waits on the stream, **MUST** read the run
-every two seconds when the stream fails or cannot replay, **MUST** read the
+every two seconds when the stream fails or cannot replay or when that one read
+before the wait fails, **MUST** read the
 session record every two seconds only when there is no run, **MUST NOT**
 set a deadline of its own while there is a run, and **MUST** end the wait as
 failed, with the first failure logged, when the run or the record cannot be
@@ -471,7 +491,7 @@ same launch. One connect to the port is what the next read would do anyway.
 - `cpt-studiofrontend-algo-editor-session-launch`
 
 **Touches**:
-- Code: `studio-backend/src/studio_session/rest.rs` (`create_session`), `service.rs` (`probe`)
+- Code: `studio-backend/src/studio_session/service.rs` (`SessionService::create`, `probe`)
 
 ### The event client replays from the cursor it is given
 

@@ -49,7 +49,6 @@ export interface EditorScope {
   projectId: string | null;
   orgId: string | null;
   editor: boolean;
-  visit: number;
 }
 
 export interface EditorSession {
@@ -93,7 +92,8 @@ export function createEditorSession(app: FrontXApp): EditorSession {
 
   let project: string | null = null;
   let org: string | null = null;
-  let enteredVisit: number | null = null;
+  /** The editor is on screen and its session was asked for; a file switch inside it asks nothing. */
+  let entered = false;
   let generation = 0;
   let inFlight = false;
   /** Ends the wait in flight at once, closing its stream. */
@@ -220,8 +220,13 @@ export function createEditorSession(app: FrontXApp): EditorSession {
     retrying: boolean,
     superseded: () => boolean
   ): Promise<Outcome | null> => {
-    const ended = endOf(await readRun(runId));
+    const read = await readRun(runId);
     if (superseded()) return null;
+    if (read === null) {
+      console.warn('[editor-session] run unreadable before the wait, polling instead:', lastReadError);
+      return waitForRun(runId, null, superseded);
+    }
+    const ended = endOf(read);
     if (!ended) return waitForRun(runId, cursor, superseded);
     if (ended.ready || !retrying || ended === RUN_GONE) return ended;
 
@@ -310,19 +315,23 @@ export function createEditorSession(app: FrontXApp): EditorSession {
     stopWait?.();
   };
 
-  const sync = ({ projectId, orgId, editor, visit }: EditorScope): void => {
+  const sync = ({ projectId, orgId, editor }: EditorScope): void => {
     if (projectId !== project) {
       if (project !== null) publishFrameUrl(app, null);
       abandon();
       project = projectId;
-      enteredVisit = null;
+      entered = false;
       dispatch(editorSessionReset());
     }
     org = orgId;
     const shown = editor && projectId !== null;
     if (readEditorSession(app).shown !== shown) dispatch(editorSessionShown(shown));
-    if (!shown || !projectId || !orgId || visit === enteredVisit) return;
-    enteredVisit = visit;
+    if (!shown) {
+      entered = false;
+      return;
+    }
+    if (entered || !projectId || !orgId) return;
+    entered = true;
     if (!inFlight) void launch(projectId, orgId, false);
   };
 

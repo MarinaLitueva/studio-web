@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { StudioEventsApiService, type StudioEvent } from './StudioEventsApiService';
+import { StudioEventsApiService, pageThrough, type StudioEvent } from './StudioEventsApiService';
 
 const SHARED_AUTH_SESSION_SYMBOL = Symbol.for('frontx:auth:shared-session');
 
@@ -83,6 +83,22 @@ describe('StudioEventsApiService', () => {
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
       headers: expect.objectContaining({ Authorization: 'Bearer session-token' }),
     });
+  });
+
+  it('pages through a catch-up longer than one page, and stops at the first short page', async () => {
+    const seen: number[] = [];
+    const read = vi.fn(async (afterSeq: number, limit: number) => {
+      seen.push(afterSeq);
+      const events = Array.from({ length: afterSeq === 0 ? limit : 3 }, (_, i) => event(afterSeq + i + 1));
+      return { events, latest_seq: 503 };
+    });
+
+    const replayed = await pageThrough(read, 0);
+
+    expect(seen).toEqual([0, 500]);
+    expect(replayed).toHaveLength(503);
+    expect(replayed[replayed.length - 1]?.seq).toBe(503);
+    expect(await pageThrough(async () => ({ events: [], latest_seq: 0 }), 7)).toEqual([]);
   });
 
   // The cursor mechanics themselves — replaying the gap, dropping the overlap

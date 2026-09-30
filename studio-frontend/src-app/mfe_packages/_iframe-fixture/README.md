@@ -12,9 +12,10 @@ Its extension is `placement: hidden` (#318): registered and mountable, but in
 no level's rail.
 
 Its frame reads the same address property as the editor's,
-`…space.mfe.frame_url.v1~`, which the shell publishes only once a project's
-session is ready (#322). So this fixture's frame shows that session when one is
-open, and the frame handler's waiting state otherwise. That proves the same
-path; the page's content is not what the fixture is for.
+`…space.mfe.frame_url.v1~`, which the shell publishes only while a project's
+editor is open (#322) and clears when the project leaves scope. This fixture
+is organization-level, so its frame only ever shows the frame handler's
+waiting state. That proves the same path; the page's content is not what the
+fixture is for.
 
 See `docs/adr/0021-an-mfe-entry-may-be-a-frame.md`.

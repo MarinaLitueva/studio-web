@@ -13,9 +13,9 @@ import {
   type EditorSessionState,
 } from '@/app/slices/editorSessionSlice';
 
-/** The backend's own words where it gave some. */
-function reason(failure: EditorSessionFailure | null, t: ScreenText): string {
-  switch (failure?.kind) {
+/** The backend's own words where it gave some. Exhaustive: a new kind without a line here does not compile. */
+function reason(failure: EditorSessionFailure, t: ScreenText): string {
+  switch (failure.kind) {
     case 'refused':
       return failure.detail ?? t('editor_session_reason_refused');
     case 'run':
@@ -30,7 +30,7 @@ function reason(failure: EditorSessionFailure | null, t: ScreenText): string {
       return t('editor_session_reason_read');
     case 'unexpected':
       return t('editor_session_reason_unexpected');
-    default:
+    case 'sources':
       return t('editor_session_reason_sources');
   }
 }
@@ -51,7 +51,7 @@ export function EditorSessionStatus() {
     );
   }
 
-  if (session.phase !== 'failed') return null;
+  if (session.phase !== 'failed' || !session.failure) return null;
   return (
     <div className="absolute inset-0 flex flex-col gap-2 bg-card p-6" role="alert" data-editor-session="failed">
       <div className="text-body font-medium text-foreground">{t('editor_session_failed')}</div>
