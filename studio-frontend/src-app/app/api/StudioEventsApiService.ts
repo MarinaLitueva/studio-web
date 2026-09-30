@@ -114,7 +114,9 @@ export class StudioEventsApiService extends BaseApiService {
   }
 
   /**
-   * The live stream, from now on.
+   * The live stream, from now on. A reconnect replays what it missed; one
+   * that cannot keeps the stream and loses the gap, logged (`streamFrom` ends
+   * instead).
    *
    * For a job you are about to start, use {@link streamFrom} with a cursor
    * read beforehand — a task can finish before this connection is even open.

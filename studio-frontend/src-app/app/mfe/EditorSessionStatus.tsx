@@ -26,6 +26,10 @@ function reason(failure: EditorSessionFailure | null, t: ScreenText): string {
       return t('editor_session_reason_stopped');
     case 'timeout':
       return t('editor_session_reason_timeout');
+    case 'read':
+      return t('editor_session_reason_read');
+    case 'unexpected':
+      return t('editor_session_reason_unexpected');
     default:
       return t('editor_session_reason_sources');
   }
@@ -40,7 +44,7 @@ export function EditorSessionStatus() {
 
   if (session.phase === 'launching') {
     return (
-      // TODO: ask for the right launching state — the gate's boot splash and Theia's preloader follow this one; hold it until the bridge's first `studio.*` reply (#323 handshake).
+      // TODO(#323): keep this state until the bridge's first studio.* reply.
       <div className="absolute inset-0 bg-card p-6 text-label text-muted-foreground" role="status" data-editor-session="launching">
         {t('editor_session_launching')}
       </div>

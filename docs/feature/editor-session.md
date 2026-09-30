@@ -401,8 +401,10 @@ The system **MUST** read the studio-events cursor past the shared fetch cache
 before the launch and follow `ready_run_id` from it until the run ends,
 **MUST** read that run once before it waits on the stream, **MUST** read the run
 every two seconds when the stream fails or cannot replay, **MUST** read the
-session record every two seconds only when there is no run, and **MUST NOT**
-set a deadline of its own while there is a run.
+session record every two seconds only when there is no run, **MUST NOT**
+set a deadline of its own while there is a run, and **MUST** end the wait as
+failed, with the first failure logged, when the run or the record cannot be
+read five times in a row for a reason other than 404.
 
 The run is the backend's wait: it probes the container, retries on its own
 and ends with the answer, whether or not a browser watches. A deadline in the
@@ -412,6 +414,9 @@ already ended and before the cursor, so the stream alone would say nothing;
 one read of the run tells. With no run there is nobody else waiting, so the
 portal waits for one attempt of the backend's probe, three minutes. The
 cursor is read past the cache because a cached `0` would replay nothing.
+Reads that keep failing — an expired session, a gateway down — are not the
+backend still working, and a wait spinning on them unseen could not be
+retried.
 
 **Implements**:
 - `cpt-studiofrontend-algo-editor-session-wait`
@@ -474,13 +479,17 @@ same launch. One connect to the port is what the next read would do anyway.
 
 The event client **MUST** replay the gap from a starting cursor it was given,
 `0` included, and **MUST** report a failed replay to its consumer instead of
-dropping it.
+dropping it; a stream opened without a starting cursor **MUST** keep running
+past a gap it cannot replay, logging it.
 
 Sequences start at 1, so a cursor of `0` read before a launch is a real
 starting point: the tenant's first events are the launch's own. Today
 `FetchEventSource.replayGap` treats `0` as "nothing seen" and skips the
 replay, and swallows a failed one, so a run can end unheard. A stream opened
-without a starting cursor keeps skipping the first replay, as now.
+without a starting cursor keeps skipping the first replay and losing a gap it
+cannot replay, as now: nobody waits on it for an answer, and a live view is
+better stale than dead. Its consumer's `onComplete` therefore means only
+"finished", while `streamFrom`'s also means "cut".
 
 **Implements**:
 - `cpt-studiofrontend-algo-editor-session-wait`
@@ -538,8 +547,9 @@ fixture reads the same property, so it shows the session's address too.
 
 The system **MUST** show over the editor's slot that the session is being
 launched, and when it failed, why — the problem's `detail` for a 503, "not
-available" for a 404, the run's error otherwise — with a way to try again. The
-frame's slot **MUST** stay mounted underneath.
+available" for a 404, the run's error when it gave up, and an unreadable state
+or the portal's own error each by name — with a way to try again. The frame's
+slot **MUST** stay mounted underneath.
 
 A 503 means either sessions are off in this deployment or there is no capacity,
 and only the `detail` text tells them apart; the text is shown rather than

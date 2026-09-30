@@ -240,4 +240,34 @@ describe('FetchEventSource', () => {
     expect(source.readyState).toBe(2); // CLOSED
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
+  it('keeps a stream given no starting cursor running past a replay it could not make, and says so', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(sseResponse([event(1)], { keepAlive: false }))
+      .mockResolvedValueOnce(sseResponse([event(3)]))
+      .mockImplementation(pending);
+
+    const seen: number[] = [];
+    let ended = false;
+    const source = new FetchEventSource('/stream', {
+      fetchImpl,
+      resume: {
+        cursorOf: (e) => (e as { seq: number }).seq,
+        gap: () => Promise.reject(new Error('catch-up unavailable')),
+      },
+    });
+    source.onmessage = (e) => seen.push(JSON.parse(e.data as string).seq);
+    source.addEventListener('done', () => {
+      ended = true;
+    });
+
+    await until(() => seen.length === 2, 'the frame after the hole');
+    source.close();
+
+    expect(seen).toEqual([1, 3]);
+    expect(ended).toBe(false);
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
 });

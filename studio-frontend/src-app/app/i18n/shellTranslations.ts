@@ -6,7 +6,7 @@
 import { i18nRegistry } from '@gears-frontx/react';
 import { createText, loadScreenTranslations, type TranslationModules } from '@constructor-studio/mfe-shared';
 
-export const SHELL_NAMESPACE = 'shell';
+const SHELL_NAMESPACE = 'shell';
 
 const modules = import.meta.glob('./*.json') as TranslationModules;
 

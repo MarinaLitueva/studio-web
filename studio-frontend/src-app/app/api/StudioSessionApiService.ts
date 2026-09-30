@@ -31,7 +31,7 @@ export interface LaunchStudioSessionBody {
   repos: SessionSource[];
 }
 
-export function sessionPath({ sessionId }: { sessionId: string }): string {
+function sessionPath({ sessionId }: { sessionId: string }): string {
   return `/sessions/${encodeURIComponent(sessionId)}`;
 }
 

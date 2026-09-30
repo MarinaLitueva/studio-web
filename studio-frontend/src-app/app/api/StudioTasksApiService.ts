@@ -34,7 +34,7 @@ export interface StudioRun {
   finished_at: string | null;
 }
 
-export function runPath({ runId }: { runId: string }): string {
+function runPath({ runId }: { runId: string }): string {
   return `/runs/${encodeURIComponent(runId)}`;
 }
 

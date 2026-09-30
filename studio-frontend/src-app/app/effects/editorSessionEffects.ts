@@ -42,6 +42,8 @@ import {
 
 const POLL_INTERVAL_MS = 2_000;
 const RECORD_DEADLINE_MS = 3 * 60_000;
+/** Consecutive reads of the run or the record that may fail (not 404) before the wait ends: ten seconds of 401, 403 or 5xx. */
+const MAX_READ_FAILURES = 5;
 
 export interface EditorScope {
   projectId: string | null;
@@ -60,11 +62,6 @@ type Launched = { ready: true; url: string } | { ready: false; failure: EditorSe
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-// @cpt-dod:cpt-studiofrontend-dod-editor-session-per-project:p1
-export function sessionWorkspaceId(projectId: string): string {
-  return projectId;
-}
-
 function runOutcome(state: StudioRunState, error: string | null | undefined): Outcome | null {
   if (state === 'succeeded') return { ready: true };
   if (state === 'failed' || state === 'cancelled') {
@@ -74,6 +71,7 @@ function runOutcome(state: StudioRunState, error: string | null | undefined): Ou
 }
 
 const RUN_GONE: Outcome = { ready: false, failure: { kind: 'run', error: null } };
+const UNREADABLE: Outcome = { ready: false, failure: { kind: 'read' } };
 
 function endOf(read: StudioRun | 'gone' | null): Outcome | null {
   if (read === 'gone') return RUN_GONE;
@@ -110,11 +108,15 @@ export function createEditorSession(app: FrontXApp): EditorSession {
     }
   };
 
+  /** `gone` for a 404; `null` for any other failure, its message kept for the one log line. */
+  let lastReadError: string | null = null;
   const readRun = async (runId: string): Promise<StudioRun | 'gone' | null> => {
     try {
       return await tasks().run({ runId }).fetch({ staleTime: 0 });
     } catch (error) {
-      return isNotFound(error) ? 'gone' : null;
+      if (isNotFound(error)) return 'gone';
+      lastReadError = errorMessage(error);
+      return null;
     }
   };
 
@@ -157,12 +159,21 @@ export function createEditorSession(app: FrontXApp): EditorSession {
       const poll = async (): Promise<void> => {
         if (polling) return;
         polling = true;
+        let failures = 0;
         while (!settled) {
           await sleep(POLL_INTERVAL_MS);
           if (settled) return;
           const run = await readRun(runId);
           if (run === 'gone') settle(RUN_GONE);
-          else if (run) answer(run.state, run.last_error);
+          else if (run) {
+            failures = 0;
+            answer(run.state, run.last_error);
+          } else {
+            // Not a deadline on the run: reads that keep failing would otherwise spin here unseen.
+            failures += 1;
+            if (failures === 1) console.warn('[editor-session] run unreadable:', lastReadError);
+            if (failures >= MAX_READ_FAILURES) settle(UNREADABLE);
+          }
         }
       };
 
@@ -183,16 +194,21 @@ export function createEditorSession(app: FrontXApp): EditorSession {
 
   const waitForRecord = async (sessionId: string, superseded: () => boolean): Promise<Outcome | null> => {
     const deadline = Date.now() + RECORD_DEADLINE_MS;
+    let failures = 0;
     while (Date.now() < deadline) {
       await sleep(POLL_INTERVAL_MS);
       if (superseded()) return null;
       try {
         // The read itself probes the container.
         const record = await sessions().session({ sessionId }).fetch({ staleTime: 0 });
+        failures = 0;
         if (record.state === 'running') return { ready: true };
         if (record.state === 'stopped') return { ready: false, failure: { kind: 'stopped' } };
       } catch (error) {
         if (isNotFound(error)) return { ready: false, failure: { kind: 'stopped' } };
+        failures += 1;
+        if (failures === 1) console.warn('[editor-session] session record unreadable:', errorMessage(error));
+        if (failures >= MAX_READ_FAILURES) return UNREADABLE;
       }
     }
     return { ready: false, failure: { kind: 'timeout' } };
@@ -243,7 +259,9 @@ export function createEditorSession(app: FrontXApp): EditorSession {
 
     let session: StudioSession;
     try {
-      session = await sessions().launch.fetch({ workspace_id: sessionWorkspaceId(projectId), repos });
+      // @cpt-dod:cpt-studiofrontend-dod-editor-session-per-project:p1
+      // The session is the project's (backend, 2026-09-29): its tenant id is the workspace id.
+      session = await sessions().launch.fetch({ workspace_id: projectId, repos });
     } catch (error) {
       return { ready: false, failure: launchRefusal(error) };
     }
@@ -278,8 +296,9 @@ export function createEditorSession(app: FrontXApp): EditorSession {
         dispatch(editorSessionFailed(outcome.failure));
       }
     } catch (error) {
-      console.warn('[editor-session] launch failed:', errorMessage(error));
-      if (!superseded()) dispatch(editorSessionFailed({ kind: 'run', error: null }));
+      // The portal's own fault — a bug, a malformed answer — not the backend giving up.
+      console.error('[editor-session] launch failed:', error);
+      if (!superseded()) dispatch(editorSessionFailed({ kind: 'unexpected' }));
     } finally {
       if (!superseded()) inFlight = false;
     }

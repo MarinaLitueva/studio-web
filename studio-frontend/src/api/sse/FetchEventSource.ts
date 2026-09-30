@@ -17,8 +17,10 @@
  *   live frames are held until that replay has been delivered, and the overlap
  *   between the two is dropped by cursor. A consumer — `useApiStream`, an MFE —
  *   sees one ordered sequence and nothing about any of this. A gap that cannot
- *   be replayed ends the stream (`done`, the consumer's `onComplete`) instead
- *   of leaving a hole in it.
+ *   be replayed ends a stream that was given a starting cursor (`done`, the
+ *   consumer's `onComplete` — which therefore means "cut" as well as
+ *   "finished"); a stream given none keeps running and loses the gap, said
+ *   once in the console.
  *
  * Only unnamed frames reach `onmessage`, which is what the protocol binds; a
  * named frame is dispatched to its `addEventListener` type (that is how the
@@ -52,7 +54,10 @@ export interface FetchEventSourceResume {
   gap: (cursor: number) => Promise<readonly unknown[]>;
   /**
    * Cursor to start from on the FIRST connect, `0` included: given, the first
-   * connect replays from it; omitted, it replays nothing. Read it before
+   * connect replays from it, and a replay that fails — then or on a reconnect —
+   * ends the stream with `done` rather than deliver past the hole; omitted, the
+   * first connect replays nothing and a failed replay costs the gap, not the
+   * stream. Read it before
    * triggering whatever you are about to watch — a job can finish before the stream is
    * even open, and this is what replays those events.
    */
@@ -215,10 +220,15 @@ export class FetchEventSource implements EventSourceLike {
     if (!resume || (this.cursor <= 0 && !this.fromGiven)) return;
 
     this.held = [];
+    let failure: unknown = null;
     const missed = await resume.gap(this.cursor).then(
       (events) => events,
-      () => null
+      (error: unknown) => {
+        failure = error;
+        return null;
+      }
     );
+    const deliver = missed !== null || !this.fromGiven;
     try {
       if (missed) for (const event of missed) this.deliverParsed(event);
     } catch {
@@ -226,10 +236,11 @@ export class FetchEventSource implements EventSourceLike {
     } finally {
       const queued = this.held ?? [];
       this.held = null;
-      if (missed) for (const event of queued) this.deliverMessage(event);
+      if (deliver) for (const event of queued) this.deliverMessage(event);
     }
-    // Delivering past a hole would let a run end unheard.
-    if (!missed) this.end();
+    if (missed !== null) return;
+    if (this.fromGiven) this.end();
+    else console.warn(`[sse] ${this.url}: could not replay after ${this.cursor}, events may be missing:`, failure);
   }
 
   /** One SSE frame. Comments (`: keepalive`) and empty frames carry nothing. */

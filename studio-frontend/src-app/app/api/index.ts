@@ -25,7 +25,6 @@ export {
 export {
   StudioSessionApiService,
   STUDIO_SESSION_API_BASE_URL,
-  type LaunchStudioSessionBody,
   type StudioSession,
   type StudioSessionState,
 } from './StudioSessionApiService';

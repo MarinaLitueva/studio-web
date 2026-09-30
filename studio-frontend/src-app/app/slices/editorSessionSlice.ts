@@ -20,7 +20,11 @@ export type EditorSessionFailure =
   | { kind: 'run'; error: string | null }
   | { kind: 'stopped' }
   /** No run, and the record did not say running within one probe attempt. */
-  | { kind: 'timeout' };
+  | { kind: 'timeout' }
+  /** The run or the record could not be read several times in a row (401, 403, 5xx); the console has the first. */
+  | { kind: 'read' }
+  /** The portal itself threw while launching; the console has the error. */
+  | { kind: 'unexpected' };
 
 export interface EditorSessionState {
   phase: EditorSessionPhase;

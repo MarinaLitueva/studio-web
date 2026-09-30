@@ -7,5 +7,7 @@
   "editor_session_reason_unavailable": "Этот проект недоступен.",
   "editor_session_reason_run": "Не удалось запустить сессию.",
   "editor_session_reason_stopped": "Сессия остановилась, не успев запуститься.",
-  "editor_session_reason_timeout": "Сессия не запустилась вовремя."
+  "editor_session_reason_timeout": "Сессия не запустилась вовремя.",
+  "editor_session_reason_read": "Не удалось прочитать состояние сессии.",
+  "editor_session_reason_unexpected": "В редакторе произошла непредвиденная ошибка."
 }

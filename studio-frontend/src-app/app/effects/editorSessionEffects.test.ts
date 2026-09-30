@@ -376,8 +376,8 @@ describe('createEditorSession', () => {
     expect(h.launch).not.toHaveBeenCalled();
   });
 
-  it('ends failed, not launching, when a dependency throws unexpectedly', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+  it("ends failed as the portal's own error, not the run's, when a dependency throws unexpectedly", async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const h = harness();
     h.launch.mockResolvedValue(session('starting', RUN));
     h.tasks.run.mockReturnValue({ fetch: vi.fn().mockResolvedValue(run('queued')) });
@@ -387,8 +387,8 @@ describe('createEditorSession', () => {
 
     h.open();
     await vi.waitFor(() => expect(h.state().phase).toBe('failed'));
-    expect(h.state().failure).toEqual({ kind: 'run', error: null });
-    expect(warn).toHaveBeenCalledWith('[editor-session] launch failed:', 'boom');
+    expect(h.state().failure).toEqual({ kind: 'unexpected' });
+    expect(error).toHaveBeenCalledWith('[editor-session] launch failed:', expect.objectContaining({ message: 'boom' }));
   });
 
   it('abandons the launch when the project changes: clears the address, drops the late answer', async () => {
@@ -409,7 +409,7 @@ describe('createEditorSession', () => {
     expect(h.state().phase).toBe('idle');
   });
 
-  // Review focus RF1 — `materialize` makes many passes per visit.
+  // `materialize` makes many passes per visit.
   it('asks once per visit, however many passes materialize makes, and never off the editor', async () => {
     const h = harness();
     h.launch.mockResolvedValue(session('running'));
@@ -425,7 +425,7 @@ describe('createEditorSession', () => {
     await vi.waitFor(() => expect(h.launch).toHaveBeenCalledTimes(2));
   });
 
-  // Review focus RF3 — the tenant stream carries every run of every gear.
+  // The tenant stream carries every run of every gear.
   it("is not answered by another run, or by an event that is not a run's", async () => {
     const h = harness();
     h.launch.mockResolvedValue(session('starting', RUN));
@@ -441,7 +441,7 @@ describe('createEditorSession', () => {
     expect(published()).toEqual([]);
   });
 
-  // Review focus RF4 — AC: a live IDE after a restart, and coming back, show no launching state.
+  // AC: a live IDE after a restart, and coming back, show no launching state.
   it('never draws launching for a session that answers, first time or coming back', async () => {
     const h = harness();
     h.launch.mockResolvedValue(session('running'));
@@ -455,7 +455,7 @@ describe('createEditorSession', () => {
     expect(h.phases).not.toContain('launching');
   });
 
-  // Review focus RF5 — the switch can land while the POST is still out.
+  // The switch can land while the POST is still out.
   it('publishes nothing from a launch answered after the project changed', async () => {
     const h = harness();
     const answer = deferred<ReturnType<typeof session>>();
@@ -469,5 +469,168 @@ describe('createEditorSession', () => {
 
     expect(published()).toEqual([null]);
     expect(h.state().phase).toBe('idle');
+  });
+  describe('the failure branches', () => {
+    it('ends failed when the launch answers a stopped session, and waits on nothing', async () => {
+      const h = harness();
+      h.launch.mockResolvedValue(session('stopped'));
+
+      h.open();
+      await vi.waitFor(() => expect(h.state().phase).toBe('failed'));
+
+      expect(h.state().failure).toEqual({ kind: 'stopped' });
+      expect(h.events.streamFrom).not.toHaveBeenCalled();
+      expect(h.sessions.session).not.toHaveBeenCalled();
+    });
+
+    it('ends failed when the run handed back is gone (404), before the wait', async () => {
+      const h = harness();
+      h.launch.mockResolvedValue(session('starting', RUN));
+      h.tasks.run.mockReturnValue({ fetch: vi.fn().mockRejectedValue(refusal(404)) });
+
+      h.open();
+      await vi.waitFor(() => expect(h.state().phase).toBe('failed'));
+
+      expect(h.state().failure).toEqual({ kind: 'run', error: null });
+      expect(h.events.streamFrom).not.toHaveBeenCalled();
+    });
+
+    it('ignores Try again while a launch is in flight', async () => {
+      const h = harness();
+      const answer = deferred<ReturnType<typeof session>>();
+      h.launch.mockReturnValue(answer.promise);
+      h.open();
+      await vi.waitFor(() => expect(h.launch).toHaveBeenCalledTimes(1));
+
+      h.editor.retry();
+      expect(h.launch).toHaveBeenCalledTimes(1);
+
+      answer.resolve(session('running'));
+      await vi.waitFor(() => expect(h.state().phase).toBe('ready'));
+    });
+
+    it('stays failed when the retry is refused and the run is still failed', async () => {
+      const h = harness();
+      h.launch.mockResolvedValue(session('starting', RUN));
+      h.tasks.run.mockReturnValue({ fetch: vi.fn().mockResolvedValue(run('failed', 'gave up')) });
+      h.tasks.retry.mockReturnValue({ fetch: vi.fn().mockRejectedValue(refusal(400, 'run run-1 has ended')) });
+      h.open();
+      await vi.waitFor(() => expect(h.state().phase).toBe('failed'));
+
+      h.editor.retry();
+      await vi.waitFor(() => expect(h.launch).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() => expect(h.phases.slice(-2)).toEqual(['launching', 'failed']));
+
+      expect(h.state().failure).toEqual({ kind: 'run', error: 'gave up' });
+      expect(h.events.streamFrom).not.toHaveBeenCalled();
+    });
+
+    describe('with the clock held', () => {
+      beforeEach(() => vi.useFakeTimers());
+      afterEach(() => vi.useRealTimers());
+
+      it('reads the run instead of streaming when the cursor cannot be read', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const h = harness();
+        h.events.cursor.fetch.mockRejectedValue(refusal(500));
+        h.launch.mockResolvedValue(session('starting', RUN));
+        const read = vi.fn().mockResolvedValueOnce(run('running')).mockResolvedValue(run('succeeded'));
+        h.tasks.run.mockReturnValue({ fetch: read });
+
+        h.open();
+        await vi.waitFor(() => expect(h.state().phase).toBe('launching'));
+        await vi.advanceTimersByTimeAsync(2_000);
+
+        expect(h.state().phase).toBe('ready');
+        expect(h.events.streamFrom).not.toHaveBeenCalled();
+        expect(warn).toHaveBeenCalledWith('[editor-session] no event cursor:', expect.any(String));
+      });
+
+      it('reads the run when the stream cannot connect', async () => {
+        const h = harness();
+        h.events.streamFrom.mockImplementation(() => ({
+          key: ['/cf/studio-events/v1', 'SSE', '/stream'],
+          connect: () => Promise.reject(new Error('no stream')),
+          disconnect: h.disconnect,
+        }));
+        h.launch.mockResolvedValue(session('starting', RUN));
+        const read = vi.fn().mockResolvedValueOnce(run('running')).mockResolvedValue(run('succeeded'));
+        h.tasks.run.mockReturnValue({ fetch: read });
+
+        h.open();
+        await vi.waitFor(() => expect(h.state().phase).toBe('launching'));
+        await vi.advanceTimersByTimeAsync(2_000);
+
+        expect(h.state().phase).toBe('ready');
+        expect(read).toHaveBeenCalledTimes(2);
+      });
+
+      it('ends failed when the run disappears while it is read', async () => {
+        const h = harness();
+        h.launch.mockResolvedValue(session('starting', RUN));
+        h.tasks.run.mockReturnValue({
+          fetch: vi.fn().mockResolvedValueOnce(run('running')).mockRejectedValue(refusal(404)),
+        });
+
+        h.open();
+        await vi.waitFor(() => expect(h.stream.onComplete).not.toBeNull());
+        h.stream.onComplete?.();
+        await vi.advanceTimersByTimeAsync(2_000);
+
+        expect(h.state().failure).toEqual({ kind: 'run', error: null });
+      });
+
+      it('gives up on a run it cannot read five times in a row, saying so once', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const h = harness();
+        h.launch.mockResolvedValue(session('starting', RUN));
+        const read = vi.fn().mockResolvedValueOnce(run('running')).mockRejectedValue(refusal(503));
+        h.tasks.run.mockReturnValue({ fetch: read });
+
+        h.open();
+        await vi.waitFor(() => expect(h.stream.onComplete).not.toBeNull());
+        h.stream.onComplete?.();
+        await vi.advanceTimersByTimeAsync(8_000);
+        expect(h.state().phase).toBe('launching');
+
+        await vi.advanceTimersByTimeAsync(2_000);
+        expect(h.state().failure).toEqual({ kind: 'read' });
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(warn).toHaveBeenCalledWith('[editor-session] run unreadable:', expect.any(String));
+
+        const reads = read.mock.calls.length;
+        await vi.advanceTimersByTimeAsync(10_000);
+        expect(read).toHaveBeenCalledTimes(reads);
+      });
+
+      it.each([
+        ['says stopped', vi.fn().mockResolvedValue(session('stopped'))],
+        ['is gone (404)', vi.fn().mockRejectedValue(refusal(404))],
+      ])('ends failed when the record, with no run to follow, %s', async (_case, read) => {
+        const h = harness();
+        h.launch.mockResolvedValue(session('starting'));
+        h.sessions.session.mockReturnValue({ fetch: read });
+
+        h.open();
+        await vi.waitFor(() => expect(h.state().phase).toBe('launching'));
+        await vi.advanceTimersByTimeAsync(2_000);
+
+        expect(h.state().failure).toEqual({ kind: 'stopped' });
+      });
+
+      it('gives up on a record it cannot read five times in a row, before the three minutes', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const h = harness();
+        h.launch.mockResolvedValue(session('starting'));
+        h.sessions.session.mockReturnValue({ fetch: vi.fn().mockRejectedValue(refusal(500)) });
+
+        h.open();
+        await vi.waitFor(() => expect(h.state().phase).toBe('launching'));
+        await vi.advanceTimersByTimeAsync(10_000);
+
+        expect(h.state().failure).toEqual({ kind: 'read' });
+        expect(warn).toHaveBeenCalledTimes(1);
+      });
+    });
   });
 });
