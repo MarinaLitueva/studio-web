@@ -636,7 +636,9 @@ impl SessionDriver for KubernetesDriver {
                     .as_ref()
                     .map(|t| t.0.as_second().max(0) as u64)
                     .unwrap_or(0),
-                launch_id: labels.get(LAUNCH_LABEL).and_then(|v| v.parse::<Uuid>().ok()),
+                launch_id: labels
+                    .get(LAUNCH_LABEL)
+                    .and_then(|v| v.parse::<Uuid>().ok()),
                 session_token,
                 control_token,
                 sources,

@@ -1606,11 +1606,14 @@ mod tests {
         );
     }
 
+    /// One launched container: its workspace, its environment, its launch id.
+    type Launched = (Uuid, Vec<String>, Option<Uuid>);
+
     /// A runtime that launches: it keeps the environment each container was
     /// started with, and lists the container afterwards the way Docker does.
     #[derive(Default)]
     struct LaunchingRuntime {
-        launched: Mutex<Vec<(Uuid, Vec<String>, Option<Uuid>)>>,
+        launched: Mutex<Vec<Launched>>,
     }
 
     #[async_trait]
@@ -1623,7 +1626,10 @@ mod tests {
         }
         async fn launch(&self, spec: &LaunchSpec) -> anyhow::Result<LaunchedSession> {
             let workspace = spec.labels[super::WS_LABEL].parse()?;
-            let launch = spec.labels.get(super::LAUNCH_LABEL).and_then(|v| v.parse().ok());
+            let launch = spec
+                .labels
+                .get(super::LAUNCH_LABEL)
+                .and_then(|v| v.parse().ok());
             self.launched
                 .lock()
                 .unwrap()
@@ -2128,7 +2134,10 @@ mod tests {
         let service = service(FakeRuntime::with(vec![running_session(ws, 41000), legacy])).await;
         let id = session_id_for(ws);
         let key_of = |sessions: &[super::Session], id: Uuid| {
-            sessions.iter().find(|s| s.id == id).map(|s| s.readiness_key())
+            sessions
+                .iter()
+                .find(|s| s.id == id)
+                .map(|s| s.readiness_key())
         };
 
         let first = service.list(&ctx()).await;
@@ -2137,7 +2146,10 @@ mod tests {
         assert_eq!(key_of(&first, id), Some(format!("{id}:{LISTED_LAUNCH}")));
         assert_eq!(key_of(&second, id), key_of(&first, id));
         let legacy_id = session_id_for(legacy_ws);
-        assert_eq!(key_of(&second, legacy_id), Some(format!("{legacy_id}:1700000000")));
+        assert_eq!(
+            key_of(&second, legacy_id),
+            Some(format!("{legacy_id}:1700000000"))
+        );
     }
 
     /// A LIVE IDE IS NOT MADE TO WAIT (#322). Listed `starting` after a restart
