@@ -16,7 +16,9 @@
  *   opened by a disconnect is replayed from the server's catch-up endpoint,
  *   live frames are held until that replay has been delivered, and the overlap
  *   between the two is dropped by cursor. A consumer — `useApiStream`, an MFE —
- *   sees one ordered sequence and nothing about any of this.
+ *   sees one ordered sequence and nothing about any of this. A gap that cannot
+ *   be replayed ends the stream (`done`, the consumer's `onComplete`) instead
+ *   of leaving a hole in it.
  *
  * Only unnamed frames reach `onmessage`, which is what the protocol binds; a
  * named frame is dispatched to its `addEventListener` type (that is how the
@@ -49,8 +51,9 @@ export interface FetchEventSourceResume {
   /** Everything published after `cursor`, oldest first. */
   gap: (cursor: number) => Promise<readonly unknown[]>;
   /**
-   * Cursor to start from on the FIRST connect. Read it before triggering
-   * whatever you are about to watch — a job can finish before the stream is
+   * Cursor to start from on the FIRST connect, `0` included: given, the first
+   * connect replays from it; omitted, it replays nothing. Read it before
+   * triggering whatever you are about to watch — a job can finish before the stream is
    * even open, and this is what replays those events.
    */
   from?: number;
@@ -87,6 +90,8 @@ export class FetchEventSource implements EventSourceLike {
 
   /** Highest cursor delivered. Resume point, and the replay deduplicator. */
   private cursor: number;
+  /** `resume.from` was given: `0` is then a starting point, not "nothing seen". */
+  private readonly fromGiven: boolean;
   /** Live frames parked while a gap replay is in flight; `null` = deliver now. */
   private held: MessageEvent[] | null = null;
   private attempt = 0;
@@ -96,6 +101,7 @@ export class FetchEventSource implements EventSourceLike {
     this.options = options;
     this.doFetch = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
     this.cursor = options.resume?.from ?? 0;
+    this.fromGiven = options.resume?.from !== undefined;
     // Yield first, like the native EventSource: `new` must return before any
     // event fires, or handlers assigned on the next line would miss `open`.
     void Promise.resolve().then(() => this.run());
@@ -120,6 +126,12 @@ export class FetchEventSource implements EventSourceLike {
     this.abort.abort();
   }
 
+  /** Nothing more will be delivered: `done` is what the protocol hands on as `onComplete`. */
+  private end(): void {
+    this.dispatch('done', new MessageEvent('done', { data: '' }));
+    this.close();
+  }
+
   /** Connect, read, reconnect — until `close()` or a fatal status. */
   private async run(): Promise<void> {
     while (!this.abort.signal.aborted) {
@@ -128,7 +140,7 @@ export class FetchEventSource implements EventSourceLike {
       } catch (error) {
         if (this.abort.signal.aborted) break;
         if (error instanceof FatalStreamError) {
-          this.readyState = CLOSED;
+          this.end();
           this.dispatch('error', new Event('error'));
           return;
         }
@@ -195,28 +207,34 @@ export class FetchEventSource implements EventSourceLike {
 
   /**
    * Fetch and deliver everything published after `cursor`, holding live frames
-   * until it is done. No resume policy, or nothing seen yet on a first
-   * connect: nothing to replay.
+   * until it is done. No resume policy, or nothing seen yet on a first connect
+   * that was given no starting cursor: nothing to replay.
    */
   private async replayGap(): Promise<void> {
     const resume = this.options.resume;
-    if (!resume || this.cursor <= 0) return;
+    if (!resume || (this.cursor <= 0 && !this.fromGiven)) return;
 
     this.held = [];
+    const missed = await resume.gap(this.cursor).then(
+      (events) => events,
+      () => null
+    );
     try {
-      const missed = await resume.gap(this.cursor);
-      for (const event of missed) this.deliverParsed(event);
+      if (missed) for (const event of missed) this.deliverParsed(event);
     } catch {
-      // The live stream is up; a failed catch-up costs the gap, not the stream.
+      // A consumer that threw is not the replay's to report.
     } finally {
       const queued = this.held ?? [];
       this.held = null;
-      for (const event of queued) this.deliverMessage(event);
+      if (missed) for (const event of queued) this.deliverMessage(event);
     }
+    // Delivering past a hole would let a run end unheard.
+    if (!missed) this.end();
   }
 
   /** One SSE frame. Comments (`: keepalive`) and empty frames carry nothing. */
   private handleFrame(frame: string): void {
+    if (this.readyState === CLOSED) return; // ended or closed: nothing more is delivered
     let eventName = '';
     const data: string[] = [];
     for (const line of frame.split('\n')) {

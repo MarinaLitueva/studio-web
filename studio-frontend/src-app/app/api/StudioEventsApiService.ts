@@ -142,9 +142,11 @@ export class StudioEventsApiService extends BaseApiService {
     '/events?after_seq=0&limit=1',
   );
 
+  // @cpt-dod:cpt-studiofrontend-dod-editor-session-replay:p1
   /**
    * The live stream, resuming at `cursor` — anything published after it is
-   * replayed first, in order, without duplicates.
+   * replayed first, in order, without duplicates, `0` included. A replay that
+   * fails, or a refused stream, ends it: the consumer's `onComplete`.
    *
    * A distinct descriptor key per cursor, so `useApiStream` opens a fresh
    * connection when the starting point changes rather than reusing the old one.

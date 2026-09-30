@@ -156,6 +156,11 @@ describe('FetchEventSource', () => {
     const source = new FetchEventSource('/stream', { fetchImpl });
     const errors: unknown[] = [];
     source.onerror = (e) => errors.push(e);
+    // SseProtocol swallows `onerror`; `done` is what a waiting consumer hears.
+    let ended = false;
+    source.addEventListener('done', () => {
+      ended = true;
+    });
 
     await until(() => errors.length === 1, 'the error to surface');
     // Give the loop a chance to retry if it were going to.
@@ -163,6 +168,7 @@ describe('FetchEventSource', () => {
 
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(source.readyState).toBe(2); // CLOSED
+    expect(ended).toBe(true);
   });
 
   it('routes named frames to listeners, not to onmessage', async () => {
@@ -182,5 +188,56 @@ describe('FetchEventSource', () => {
 
     // `done` is the protocol's completion signal, not an event for consumers.
     expect(messages).toEqual([]);
+  });
+
+  it('replays from a starting cursor of 0 on the first connect, before any live frame', async () => {
+    const gap = vi.fn(async (cursor: number) => (cursor === 0 ? [event(1), event(2)] : []));
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(sseResponse([event(2), event(3)]))
+      .mockImplementation(pending);
+
+    const seen: number[] = [];
+    const source = new FetchEventSource('/stream', {
+      fetchImpl,
+      resume: { cursorOf: (e) => (e as { seq: number }).seq, gap, from: 0 },
+    });
+    source.onmessage = (e) => seen.push(JSON.parse(e.data as string).seq);
+
+    // Sequences start at 1: a cursor of 0 read before a launch is a real starting point.
+    await until(() => seen.length === 3, 'the replayed events and the live one');
+    source.close();
+
+    expect(gap).toHaveBeenCalledWith(0);
+    expect(seen).toEqual([1, 2, 3]);
+  });
+
+  it('reports a replay it could not make, and delivers nothing past the hole', async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(sseResponse([event(5)]))
+      .mockImplementation(pending);
+
+    const seen: number[] = [];
+    const source = new FetchEventSource('/stream', {
+      fetchImpl,
+      resume: {
+        cursorOf: (e) => (e as { seq: number }).seq,
+        gap: () => Promise.reject(new Error('catch-up unavailable')),
+        from: 0,
+      },
+    });
+    source.onmessage = (e) => seen.push(JSON.parse(e.data as string).seq);
+    let ended = false;
+    // `done` is what SseProtocol hands the consumer as `onComplete`.
+    source.addEventListener('done', () => {
+      ended = true;
+    });
+
+    await until(() => ended, 'the consumer to be told');
+
+    expect(seen).toEqual([]);
+    expect(source.readyState).toBe(2); // CLOSED
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });

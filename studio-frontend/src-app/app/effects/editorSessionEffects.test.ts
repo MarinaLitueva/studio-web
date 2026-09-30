@@ -1,0 +1,473 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { FrontXApp } from '@gears-frontx/react';
+
+const { mockHas, mockGetService, publishFrameUrl } = vi.hoisted(() => ({
+  mockHas: vi.fn(),
+  mockGetService: vi.fn(),
+  publishFrameUrl: vi.fn(),
+}));
+
+vi.mock('@gears-frontx/react', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@gears-frontx/react')>()),
+  apiRegistry: { has: mockHas, getService: mockGetService },
+}));
+vi.mock('@/app/mfe/sharedContext', () => ({ publishFrameUrl }));
+
+import { AccountsApiService, ConnectorsApiService } from '@constructor-studio/mfe-shared';
+import {
+  StudioEventsApiService,
+  StudioSessionApiService,
+  StudioTasksApiService,
+  type StudioEvent,
+  type StudioRunState,
+  type StudioSessionState,
+} from '@/app/api';
+import reducer, {
+  EDITOR_SESSION_SLICE_KEY,
+  type EditorSessionPhase,
+  type EditorSessionState,
+} from '@/app/slices/editorSessionSlice';
+import { createEditorSession } from './editorSessionEffects';
+
+const PROJECT = 'p1';
+const ORG = 'o1';
+const RUN = 'run-1';
+const ADDRESS = 'https://ide.test/studio/s1/?token=gate';
+const REPOS = [{ name: 'web', kind: 'git', url: 'https://git.test/acme/web.git', token_ref: 'ref-1' }];
+
+function refusal(status: number, detail?: string): Error {
+  return Object.assign(new Error(`Request failed with status code ${status}`), {
+    response: { status, data: detail ? { detail } : {} },
+  });
+}
+
+function session(state: StudioSessionState, readyRunId?: string) {
+  return {
+    id: 's1',
+    workspace_id: PROJECT,
+    state,
+    url: ADDRESS,
+    created_at_epoch_secs: 1_700_000_000,
+    sources: [],
+    ...(readyRunId ? { ready_run_id: readyRunId } : {}),
+  };
+}
+
+function run(state: StudioRunState, lastError: string | null = null) {
+  return { id: RUN, state, last_error: lastError, attempts: 1 };
+}
+
+function taskEvent(seq: number, kind: string, subjectId = RUN, payload: Record<string, unknown> = {}): StudioEvent {
+  return {
+    seq,
+    at_ms: seq,
+    kind,
+    subject_type: 'task_run',
+    subject_id: subjectId,
+    source: 'studio-tasks',
+    payload: { run_id: subjectId, state: kind.slice('task.'.length), ...payload },
+  };
+}
+
+function deferred<T>() {
+  let resolve: (value: T) => void = () => undefined;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+function harness() {
+  let state: EditorSessionState = reducer(undefined, { type: '@@init' });
+  const phases: EditorSessionPhase[] = [];
+  const app = {
+    store: {
+      dispatch: (action: unknown) => {
+        state = reducer(state, action as never);
+        phases.push(state.phase);
+      },
+      getState: () => ({ [EDITOR_SESSION_SLICE_KEY]: state }),
+    },
+  } as unknown as FrontXApp;
+
+  const stream: { onEvent: ((event: StudioEvent) => void) | null; onComplete: (() => void) | null } = {
+    onEvent: null,
+    onComplete: null,
+  };
+  const disconnect = vi.fn();
+  const events = {
+    cursor: { fetch: vi.fn().mockResolvedValue({ events: [], latest_seq: 0 }) },
+    streamFrom: vi.fn((_cursor: number) => ({
+      key: ['/cf/studio-events/v1', 'SSE', '/stream'],
+      connect: (onEvent: (event: StudioEvent) => void, onComplete?: () => void) => {
+        stream.onEvent = onEvent;
+        stream.onComplete = onComplete ?? null;
+        return Promise.resolve('connection-1');
+      },
+      disconnect,
+    })),
+  };
+  const launch = vi.fn();
+  const sessions = { launch: { fetch: launch }, session: vi.fn() };
+  const tasks = { run: vi.fn(), retry: vi.fn() };
+  const accounts = {
+    getTenantMetadata: vi.fn(() => ({
+      fetch: () =>
+        Promise.resolve({
+          value: { sources: [{ connection_id: 'c1', full_path: 'acme/web', clone_url: 'https://git.test/acme/web.git' }] },
+        }),
+    })),
+  };
+  const connectors = {
+    connections: vi.fn(() => ({
+      fetch: () => Promise.resolve({ items: [{ id: 'c1', scope: 'organization', secret_ref: 'ref-1' }] }),
+    })),
+  };
+  const services = new Map<unknown, unknown>([
+    [StudioEventsApiService, events],
+    [StudioSessionApiService, sessions],
+    [StudioTasksApiService, tasks],
+    [AccountsApiService, accounts],
+    [ConnectorsApiService, connectors],
+  ]);
+  mockHas.mockReturnValue(true);
+  mockGetService.mockImplementation((service: unknown) => services.get(service));
+
+  const editor = createEditorSession(app);
+  const open = (visit = 1, projectId = PROJECT): void =>
+    editor.sync({ projectId, orgId: ORG, editor: true, visit });
+  return { editor, open, state: () => state, phases, events, stream, disconnect, launch, sessions, tasks, accounts };
+}
+
+const published = (): unknown[] => publishFrameUrl.mock.calls.map(([, url]) => url);
+const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+describe('createEditorSession', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    // The console spies; `vi.fn()` mocks are left alone.
+    vi.restoreAllMocks();
+  });
+
+  it('reuses a live session: reads the cursor first, launches once, publishes, follows nothing', async () => {
+    const h = harness();
+    h.launch.mockResolvedValue(session('running'));
+
+    h.open();
+    await vi.waitFor(() => expect(h.state().phase).toBe('ready'));
+
+    expect(h.events.cursor.fetch).toHaveBeenCalledWith({ staleTime: 0 });
+    expect(h.events.cursor.fetch.mock.invocationCallOrder[0]).toBeLessThan(h.launch.mock.invocationCallOrder[0] ?? 0);
+    expect(h.launch).toHaveBeenCalledWith({ workspace_id: PROJECT, repos: REPOS });
+    expect(published()).toEqual([ADDRESS]);
+    expect(h.events.streamFrom).not.toHaveBeenCalled();
+    expect(h.tasks.run).not.toHaveBeenCalled();
+  });
+
+  it('launches: follows the run from the cursor, stays launching until task.succeeded, then publishes', async () => {
+    const h = harness();
+    h.launch.mockResolvedValue(session('starting', RUN));
+    h.tasks.run.mockReturnValue({ fetch: vi.fn().mockResolvedValue(run('queued')) });
+
+    h.open();
+    await vi.waitFor(() => expect(h.stream.onEvent).not.toBeNull());
+    expect(h.state().phase).toBe('launching');
+    expect(h.events.streamFrom).toHaveBeenCalledWith(0);
+
+    h.stream.onEvent?.(taskEvent(1, 'task.running', RUN, { attempts: 2 }));
+    expect(h.state().phase).toBe('launching');
+    expect(published()).toEqual([]);
+
+    h.stream.onEvent?.(taskEvent(2, 'task.succeeded'));
+    await vi.waitFor(() => expect(h.state().phase).toBe('ready'));
+    expect(published()).toEqual([ADDRESS]);
+    await vi.waitFor(() => expect(h.disconnect).toHaveBeenCalledWith('connection-1'));
+  });
+
+  it('ends failed with the run error when the backend gives up, and stops listening', async () => {
+    const h = harness();
+    h.launch.mockResolvedValue(session('starting', RUN));
+    h.tasks.run.mockReturnValue({ fetch: vi.fn().mockResolvedValue(run('running')) });
+
+    h.open();
+    await vi.waitFor(() => expect(h.stream.onEvent).not.toBeNull());
+    h.stream.onEvent?.(taskEvent(9, 'task.failed', RUN, { error: 'session s1 still starting after 3 minutes' }));
+
+    await vi.waitFor(() => expect(h.state().phase).toBe('failed'));
+    expect(h.state().failure).toEqual({ kind: 'run', error: 'session s1 still starting after 3 minutes' });
+    expect(published()).toEqual([]);
+    await vi.waitFor(() => expect(h.disconnect).toHaveBeenCalled());
+  });
+
+  it('reads a run handed back once, and answers from it when it had already ended', async () => {
+    const h = harness();
+    const read = vi.fn().mockResolvedValue(run('succeeded'));
+    h.launch.mockResolvedValue(session('starting', RUN));
+    h.tasks.run.mockReturnValue({ fetch: read });
+
+    h.open();
+    await vi.waitFor(() => expect(h.state().phase).toBe('ready'));
+
+    expect(h.tasks.run).toHaveBeenCalledWith({ runId: RUN });
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(read).toHaveBeenCalledWith({ staleTime: 0 });
+    expect(h.events.streamFrom).not.toHaveBeenCalled();
+    expect(published()).toEqual([ADDRESS]);
+  });
+
+  describe('Try again', () => {
+    it('puts a run that gave up back on the queue and follows it from a fresh cursor', async () => {
+      const h = harness();
+      h.launch.mockResolvedValue(session('starting', RUN));
+      h.tasks.run.mockReturnValue({ fetch: vi.fn().mockResolvedValue(run('failed', 'gave up')) });
+      h.open();
+      await vi.waitFor(() => expect(h.state().phase).toBe('failed'));
+      expect(h.state().failure).toEqual({ kind: 'run', error: 'gave up' });
+      expect(h.tasks.retry).not.toHaveBeenCalled();
+
+      h.tasks.retry.mockReturnValue({ fetch: vi.fn().mockResolvedValue(run('queued')) });
+      h.events.cursor.fetch.mockResolvedValue({ events: [], latest_seq: 41 });
+      h.editor.retry();
+      await vi.waitFor(() => expect(h.stream.onEvent).not.toBeNull());
+
+      expect(h.launch).toHaveBeenCalledTimes(2);
+      expect(h.tasks.retry).toHaveBeenCalledWith(RUN);
+      expect(h.events.streamFrom).toHaveBeenLastCalledWith(41);
+      expect(h.state().phase).toBe('launching');
+
+      h.stream.onEvent?.(taskEvent(42, 'task.succeeded'));
+      await vi.waitFor(() => expect(h.state().phase).toBe('ready'));
+      expect(published()).toEqual([ADDRESS]);
+    });
+
+    it('follows the run as it is when somebody else already put it back', async () => {
+      const h = harness();
+      h.launch.mockResolvedValue(session('starting', RUN));
+      h.tasks.run.mockReturnValue({
+        fetch: vi
+          .fn()
+          .mockResolvedValueOnce(run('failed', 'gave up'))
+          .mockResolvedValueOnce(run('failed', 'gave up'))
+          .mockResolvedValue(run('queued')),
+      });
+      h.tasks.retry.mockReturnValue({ fetch: vi.fn().mockRejectedValue(refusal(400, 'run run-1 is still queued')) });
+      h.open();
+      await vi.waitFor(() => expect(h.state().phase).toBe('failed'));
+
+      h.editor.retry();
+      await vi.waitFor(() => expect(h.stream.onEvent).not.toBeNull());
+      expect(h.state().phase).toBe('launching');
+
+      h.stream.onEvent?.(taskEvent(3, 'task.succeeded'));
+      await vi.waitFor(() => expect(h.state().phase).toBe('ready'));
+    });
+  });
+
+  describe('the fallback reads', () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it('reads the run every two seconds once the stream cannot answer, and sets no deadline', async () => {
+      const h = harness();
+      const read = vi.fn().mockResolvedValue(run('running'));
+      h.launch.mockResolvedValue(session('starting', RUN));
+      h.tasks.run.mockReturnValue({ fetch: read });
+
+      h.open();
+      await vi.waitFor(() => expect(h.stream.onComplete).not.toBeNull());
+      await vi.advanceTimersByTimeAsync(10_000);
+      // While the stream answers, nothing is polled.
+      expect(read).toHaveBeenCalledTimes(1);
+
+      h.stream.onComplete?.();
+      await vi.advanceTimersByTimeAsync(4_000);
+      expect(read).toHaveBeenCalledTimes(3);
+      expect(read).toHaveBeenLastCalledWith({ staleTime: 0 });
+
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+      expect(h.state().phase).toBe('launching');
+
+      read.mockResolvedValue(run('succeeded'));
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(h.state().phase).toBe('ready');
+      expect(published()).toEqual([ADDRESS]);
+    });
+
+    it('reads the session record every two seconds where there is no run, three minutes at most', async () => {
+      const h = harness();
+      const read = vi.fn().mockResolvedValue(session('starting'));
+      h.launch.mockResolvedValue(session('starting'));
+      h.sessions.session.mockReturnValue({ fetch: read });
+
+      h.open();
+      await vi.waitFor(() => expect(h.state().phase).toBe('launching'));
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(h.sessions.session).toHaveBeenCalledWith({ sessionId: 's1' });
+      expect(read).toHaveBeenCalledWith({ staleTime: 0 });
+
+      await vi.advanceTimersByTimeAsync(3 * 60_000);
+      expect(h.state().failure).toEqual({ kind: 'timeout' });
+      const reads = read.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(read).toHaveBeenCalledTimes(reads);
+      expect(h.events.streamFrom).not.toHaveBeenCalled();
+    });
+
+    it('reads nothing once answered, however late the stream says it is over', async () => {
+      const h = harness();
+      const read = vi.fn().mockResolvedValue(run('queued'));
+      h.launch.mockResolvedValue(session('starting', RUN));
+      h.tasks.run.mockReturnValue({ fetch: read });
+
+      h.open();
+      await vi.waitFor(() => expect(h.stream.onEvent).not.toBeNull());
+      h.stream.onEvent?.(taskEvent(1, 'task.succeeded'));
+      await vi.waitFor(() => expect(h.state().phase).toBe('ready'));
+
+      h.stream.onComplete?.();
+      h.stream.onEvent?.(taskEvent(2, 'task.running', RUN, { attempts: 3 }));
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(read).toHaveBeenCalledTimes(1);
+      expect(h.state().phase).toBe('ready');
+    });
+
+    it('answers from the record once it says running', async () => {
+      const h = harness();
+      h.launch.mockResolvedValue(session('starting'));
+      h.sessions.session.mockReturnValue({
+        fetch: vi.fn().mockResolvedValueOnce(session('starting')).mockResolvedValue(session('running')),
+      });
+
+      h.open();
+      await vi.waitFor(() => expect(h.state().phase).toBe('launching'));
+      await vi.advanceTimersByTimeAsync(4_000);
+      expect(h.state().phase).toBe('ready');
+      expect(published()).toEqual([ADDRESS]);
+    });
+  });
+
+  it.each([
+    [
+      'sessions are off (503)',
+      refusal(503, 'IDE sessions are not available in this deployment'),
+      { kind: 'refused', detail: 'IDE sessions are not available in this deployment' },
+    ],
+    ['the project is out of reach (404)', refusal(404), { kind: 'unavailable' }],
+    // The transport's own message is never shown.
+    ['the launch fails with nothing said (500)', refusal(500), { kind: 'refused', detail: null }],
+  ])('says why when %s', async (_case, error, failure) => {
+    const h = harness();
+    h.launch.mockRejectedValue(error);
+
+    h.open();
+    await vi.waitFor(() => expect(h.state().phase).toBe('failed'));
+    expect(h.state().failure).toEqual(failure);
+    expect(published()).toEqual([]);
+  });
+
+  it('launches nothing when the sources cannot be read', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const h = harness();
+    h.accounts.getTenantMetadata.mockReturnValue({ fetch: () => Promise.reject(refusal(500)) });
+
+    h.open();
+    await vi.waitFor(() => expect(h.state().phase).toBe('failed'));
+    expect(h.state().failure).toEqual({ kind: 'sources' });
+    expect(h.launch).not.toHaveBeenCalled();
+  });
+
+  it('ends failed, not launching, when a dependency throws unexpectedly', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const h = harness();
+    h.launch.mockResolvedValue(session('starting', RUN));
+    h.tasks.run.mockReturnValue({ fetch: vi.fn().mockResolvedValue(run('queued')) });
+    h.events.streamFrom.mockImplementation(() => {
+      throw new Error('boom');
+    });
+
+    h.open();
+    await vi.waitFor(() => expect(h.state().phase).toBe('failed'));
+    expect(h.state().failure).toEqual({ kind: 'run', error: null });
+    expect(warn).toHaveBeenCalledWith('[editor-session] launch failed:', 'boom');
+  });
+
+  it('abandons the launch when the project changes: clears the address, drops the late answer', async () => {
+    const h = harness();
+    h.launch.mockResolvedValue(session('starting', RUN));
+    h.tasks.run.mockReturnValue({ fetch: vi.fn().mockResolvedValue(run('queued')) });
+    h.open();
+    await vi.waitFor(() => expect(h.stream.onEvent).not.toBeNull());
+
+    h.editor.sync({ projectId: 'p2', orgId: ORG, editor: false, visit: 2 });
+    expect(published()).toEqual([null]);
+    expect(h.state().phase).toBe('idle');
+    await vi.waitFor(() => expect(h.disconnect).toHaveBeenCalled());
+
+    h.stream.onEvent?.(taskEvent(5, 'task.succeeded'));
+    await settle();
+    expect(published()).toEqual([null]);
+    expect(h.state().phase).toBe('idle');
+  });
+
+  // Review focus RF1 — `materialize` makes many passes per visit.
+  it('asks once per visit, however many passes materialize makes, and never off the editor', async () => {
+    const h = harness();
+    h.launch.mockResolvedValue(session('running'));
+
+    h.open(1);
+    h.open(1);
+    await vi.waitFor(() => expect(h.state().phase).toBe('ready'));
+    h.open(1);
+    h.editor.sync({ projectId: PROJECT, orgId: ORG, editor: false, visit: 2 });
+    expect(h.launch).toHaveBeenCalledTimes(1);
+
+    h.open(3);
+    await vi.waitFor(() => expect(h.launch).toHaveBeenCalledTimes(2));
+  });
+
+  // Review focus RF3 — the tenant stream carries every run of every gear.
+  it("is not answered by another run, or by an event that is not a run's", async () => {
+    const h = harness();
+    h.launch.mockResolvedValue(session('starting', RUN));
+    h.tasks.run.mockReturnValue({ fetch: vi.fn().mockResolvedValue(run('queued')) });
+    h.open();
+    await vi.waitFor(() => expect(h.stream.onEvent).not.toBeNull());
+
+    h.stream.onEvent?.(taskEvent(1, 'task.succeeded', 'run-2'));
+    h.stream.onEvent?.({ ...taskEvent(2, 'workspace.updated'), subject_type: 'workspace' });
+    await settle();
+
+    expect(h.state().phase).toBe('launching');
+    expect(published()).toEqual([]);
+  });
+
+  // Review focus RF4 — AC: a live IDE after a restart, and coming back, show no launching state.
+  it('never draws launching for a session that answers, first time or coming back', async () => {
+    const h = harness();
+    h.launch.mockResolvedValue(session('running'));
+
+    h.open(1);
+    await vi.waitFor(() => expect(h.state().phase).toBe('ready'));
+    h.open(2);
+    await vi.waitFor(() => expect(published()).toEqual([ADDRESS, ADDRESS]));
+
+    expect(h.launch).toHaveBeenCalledTimes(2);
+    expect(h.phases).not.toContain('launching');
+  });
+
+  // Review focus RF5 — the switch can land while the POST is still out.
+  it('publishes nothing from a launch answered after the project changed', async () => {
+    const h = harness();
+    const answer = deferred<ReturnType<typeof session>>();
+    h.launch.mockReturnValue(answer.promise);
+    h.open();
+    await vi.waitFor(() => expect(h.launch).toHaveBeenCalled());
+
+    h.editor.sync({ projectId: 'p2', orgId: ORG, editor: false, visit: 2 });
+    answer.resolve(session('running'));
+    await settle();
+
+    expect(published()).toEqual([null]);
+    expect(h.state().phase).toBe('idle');
+  });
+});
