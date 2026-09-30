@@ -1,15 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
-const { mockEmit, slice } = vi.hoisted(() => ({
+const { mockEmit, store } = vi.hoisted(() => ({
   mockEmit: vi.fn(),
-  slice: { value: undefined as unknown },
+  store: { state: {} as Record<string, unknown> },
 }));
 
 vi.mock('@gears-frontx/react', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@gears-frontx/react')>()),
-  useAppSelector: (select: (root: Record<string, unknown>) => unknown) =>
-    select({ 'app/editor-session': slice.value }),
+  useAppSelector: (select: (root: Record<string, unknown>) => unknown) => select(store.state),
   eventBus: { on: vi.fn(), emit: mockEmit },
 }));
 
@@ -20,18 +19,16 @@ import { EDITOR_SESSION_SLICE_KEY, type EditorSessionState } from '@/app/slices/
 import { EditorSessionStatus } from './EditorSessionStatus';
 
 function show(state: Partial<EditorSessionState>): void {
-  slice.value = { phase: 'idle', failure: null, shown: true, ...state } satisfies EditorSessionState;
+  store.state = {
+    [EDITOR_SESSION_SLICE_KEY]: { phase: 'idle', failure: null, shown: true, ...state } satisfies EditorSessionState,
+  };
 }
 
 describe('EditorSessionStatus', () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
-    slice.value = undefined;
-  });
-
-  it('reads the slice the effects write to', () => {
-    expect(EDITOR_SESSION_SLICE_KEY).toBe('app/editor-session');
+    store.state = {};
   });
 
   it('draws nothing off the editor, before the slice exists, or while the session is idle or ready', () => {

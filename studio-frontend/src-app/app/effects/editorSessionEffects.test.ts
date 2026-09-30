@@ -470,6 +470,7 @@ describe('createEditorSession', () => {
     expect(published()).toEqual([null]);
     expect(h.state().phase).toBe('idle');
   });
+
   describe('the failure branches', () => {
     it('ends failed when the launch answers a stopped session, and waits on nothing', async () => {
       const h = harness();

@@ -240,6 +240,7 @@ describe('FetchEventSource', () => {
     expect(source.readyState).toBe(2); // CLOSED
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
+
   it('keeps a stream given no starting cursor running past a replay it could not make, and says so', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const fetchImpl = vi
