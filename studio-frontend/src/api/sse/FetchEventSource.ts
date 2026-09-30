@@ -57,9 +57,9 @@ export interface FetchEventSourceResume {
    * connect replays from it, and a replay that fails — then or on a reconnect —
    * ends the stream with `done` rather than deliver past the hole; omitted, the
    * first connect replays nothing and a failed replay costs the gap, not the
-   * stream. Read it before
-   * triggering whatever you are about to watch — a job can finish before the stream is
-   * even open, and this is what replays those events.
+   * stream. Read it before triggering whatever you are about to watch — a job
+   * can finish before the stream is even open, and this is what replays those
+   * events.
    */
   from?: number;
 }
