@@ -85,11 +85,13 @@ export async function pageThrough(
 ): Promise<StudioEvent[]> {
   const events: StudioEvent[] = [];
   let after = cursor;
+  let mark: number | null = null;
   for (;;) {
     const page = await read(after, GAP_PAGE);
+    mark ??= page.latest_seq;
     events.push(...page.events);
     const last = page.events[page.events.length - 1];
-    if (page.events.length < GAP_PAGE || !last) return events;
+    if (page.events.length < GAP_PAGE || !last || last.seq >= mark) return events;
     after = last.seq;
   }
 }

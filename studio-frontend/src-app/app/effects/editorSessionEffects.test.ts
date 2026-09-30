@@ -240,6 +240,29 @@ describe('createEditorSession', () => {
       expect(published()).toEqual([ADDRESS]);
     });
 
+    it('still puts the run back when the read before the wait fails once', async () => {
+      vi.useFakeTimers();
+      vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const h = harness();
+      h.launch.mockResolvedValue(session('starting', RUN));
+      h.tasks.run.mockReturnValue({
+        fetch: vi
+          .fn()
+          .mockResolvedValueOnce(run('failed', 'gave up'))
+          .mockRejectedValueOnce(refusal(502))
+          .mockResolvedValue(run('failed', 'gave up')),
+      });
+      h.tasks.retry.mockReturnValue({ fetch: vi.fn().mockResolvedValue(run('queued')) });
+      h.open();
+      await vi.waitFor(() => expect(h.state().phase).toBe('failed'));
+
+      h.editor.retry();
+      await vi.advanceTimersByTimeAsync(2_000);
+      await vi.waitFor(() => expect(h.tasks.retry).toHaveBeenCalledWith(RUN));
+      expect(h.state().phase).toBe('launching');
+      vi.useRealTimers();
+    });
+
     it('follows the run as it is when somebody else already put it back', async () => {
       const h = harness();
       h.launch.mockResolvedValue(session('starting', RUN));

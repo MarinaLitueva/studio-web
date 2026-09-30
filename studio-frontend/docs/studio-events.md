@@ -161,9 +161,10 @@ A cursor of `0` is a real starting point — sequences start at 1 — so a tenan
 whose first events are the job's own gets them replayed too. And `streamFrom`
 does not deliver past a hole: a catch-up it cannot make, or a stream refused
 with 401/403, ends it, and `onComplete` fires. For `streamFrom`, then,
-`onComplete` means "cut" as well as "finished"; answer it by reading the job
-once, as the editor's session does. `events`, opened without a cursor, keeps
-running through a failed catch-up and logs the gap it lost.
+`onComplete` means "cut" as well as "finished"; answer it by reading the job,
+and keep reading until it ends, as the editor's session does. `events`, opened
+without a cursor, keeps running through a failed catch-up and logs the gap it
+lost.
 
 ## Refresh a list without polling
 

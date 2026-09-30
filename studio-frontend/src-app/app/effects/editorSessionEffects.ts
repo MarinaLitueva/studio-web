@@ -220,12 +220,17 @@ export function createEditorSession(app: FrontXApp): EditorSession {
     retrying: boolean,
     superseded: () => boolean
   ): Promise<Outcome | null> => {
-    const read = await readRun(runId);
-    if (superseded()) return null;
-    if (read === null) {
-      console.warn('[editor-session] run unreadable before the wait, polling instead:', lastReadError);
-      return waitForRun(runId, null, superseded);
+    let read = await readRun(runId);
+    if (read === null) console.warn('[editor-session] run unreadable before the wait:', lastReadError);
+    // Try again needs this read: a run that ended is put back on the queue here, and the poll below would only report it.
+    for (let failures = 1; read === null && retrying && failures < MAX_READ_FAILURES; failures += 1) {
+      await sleep(POLL_INTERVAL_MS);
+      if (superseded()) return null;
+      read = await readRun(runId);
     }
+    if (superseded()) return null;
+    // Unreadable is not "not ended yet": the run may have ended before the cursor, and the stream would never say. Poll.
+    if (read === null) return waitForRun(runId, null, superseded);
     const ended = endOf(read);
     if (!ended) return waitForRun(runId, cursor, superseded);
     if (ended.ready || !retrying || ended === RUN_GONE) return ended;

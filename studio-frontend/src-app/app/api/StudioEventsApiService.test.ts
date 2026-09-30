@@ -101,6 +101,23 @@ describe('StudioEventsApiService', () => {
     expect(await pageThrough(async () => ({ events: [], latest_seq: 0 }), 7)).toEqual([]);
   });
 
+  it('stops at the high-water mark of the first page, however full the pages stay', async () => {
+    // A tenant publishing faster than the pages are read: every page full, and
+    // `latest_seq` moving on. The replay ends at the mark it started with; the
+    // rest is on the live stream.
+    let published = 700;
+    const read = vi.fn(async (afterSeq: number, limit: number) => {
+      published += 500;
+      return { events: Array.from({ length: limit }, (_, i) => event(afterSeq + i + 1)), latest_seq: published };
+    });
+
+    const replayed = await pageThrough(read, 0);
+
+    expect(read).toHaveBeenCalledTimes(3);
+    expect(replayed).toHaveLength(1500);
+    expect(replayed[replayed.length - 1]?.seq).toBe(1500);
+  });
+
   // The cursor mechanics themselves — replaying the gap, dropping the overlap
   // — are the transport's, and are covered in
   // src/api/sse/__tests__/FetchEventSource.test.ts. Exercising them here would
