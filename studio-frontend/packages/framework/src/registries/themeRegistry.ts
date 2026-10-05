@@ -55,7 +55,10 @@ export function createThemeRegistry(): ThemeRegistry {
       parts.push(`${key}: ${value}`);
     }
     if (parts.length === 0) return;
-    sheet.insertRule(`:root { ${parts.join('; ')} }`, 0);
+    // `:root:root` (0,2,0) outranks the kit's `[data-theme='dark']` (0,1,0)
+    // whatever the order of the sheets. Ported from @gears-frontx/framework
+    // 0.2.0-alpha.4 (ADR-0034).
+    sheet.insertRule(`:root:root { ${parts.join('; ')} }`, 0);
   }
 
   return {
@@ -90,6 +93,9 @@ export function createThemeRegistry(): ThemeRegistry {
       }
 
       applyCSSVariables(config.variables);
+      if (typeof document !== 'undefined') {
+        document.documentElement.setAttribute('data-theme', config.appearance ?? 'light');
+      }
       currentThemeId = id;
       notifySubscribers();
     },

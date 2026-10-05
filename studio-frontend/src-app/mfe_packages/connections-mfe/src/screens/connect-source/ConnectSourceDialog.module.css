@@ -12,6 +12,10 @@
   color: var(--foreground);
 }
 
+.dialog[data-theme] {
+  background: var(--card);
+}
+
 .title {
   margin: 0 0 var(--space-5);
   font-size: 1.6rem;

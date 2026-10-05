@@ -189,8 +189,16 @@ const Slot: React.FC<{ slot: ChainSlot; isCurrent: boolean }> = ({ slot, isCurre
       >
         <DropdownMenuRadioGroup value={slot.current.id} onValueChange={onPick}>
           {slot.options.map((option) => (
-            <DropdownMenuRadioItem key={option.id} value={option.id} closeOnClick>
-              <ItemMedia variant="icon" className="text-muted-foreground">
+            <DropdownMenuRadioItem
+              key={option.id}
+              value={option.id}
+              closeOnClick
+              className="group"
+            >
+              <ItemMedia
+                variant="icon"
+                className="text-muted-foreground group-focus:text-current group-data-[highlighted]:text-current"
+              >
                 <slot.Icon strokeWidth={1.5} aria-hidden="true" />
               </ItemMedia>
               {/* The popup's --space-1 remap inherits down to this gap. */}

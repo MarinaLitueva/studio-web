@@ -314,6 +314,8 @@ export interface ThemeConfig {
   variables: Record<string, string>;
   /** Whether this is the default theme */
   default?: boolean;
+  /** Base appearance of the theme */
+  appearance?: 'light' | 'dark';
 }
 
 /**
