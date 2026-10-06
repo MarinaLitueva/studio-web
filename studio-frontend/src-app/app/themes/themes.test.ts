@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { toKitTheme } from '@constructor-studio/mfe-shared';
 import { frontxThemes } from './index';
 
 /**
@@ -14,9 +15,9 @@ describe('frontxThemes', () => {
   });
 
   it.each(frontxThemes.map((theme) => [theme.id, theme] as const))(
-    'theme %s declares its appearance, so data-theme picks the kit palette',
-    (_id, theme) => {
-      expect(theme.appearance).toMatch(/^(light|dark)$/);
+    'theme %s declares the appearance the MFEs map its id to',
+    (id, theme) => {
+      expect(theme.appearance).toBe(toKitTheme(id));
     }
   );
 
@@ -64,7 +65,7 @@ describe('frontxThemes', () => {
     const theme = frontxThemes.find((entry) => entry.id === 'dracula-large');
     expect(theme).toBeDefined();
     for (const [name, kit] of [
-      ['--text-body-size', 0.9375],
+      ['--text-body-size', 0.875],
       ['--text-body-line-height', 1.25],
     ] as const) {
       const value = theme!.variables[name];

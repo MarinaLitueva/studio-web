@@ -207,7 +207,9 @@ const Slot: React.FC<{ slot: ChainSlot; isCurrent: boolean }> = ({ slot, isCurre
                     never truncates; block + auto width makes its own rule apply. */}
                 <ItemTitle className="!block !w-auto text-label">{option.name}</ItemTitle>
                 {slot.countNoun !== undefined && option.count !== undefined && (
-                  <ItemDescription>{pluralize(option.count, slot.countNoun)}</ItemDescription>
+                  <ItemDescription className="group-focus:text-current group-data-[highlighted]:text-current">
+                    {pluralize(option.count, slot.countNoun)}
+                  </ItemDescription>
                 )}
               </ItemContent>
             </DropdownMenuRadioItem>

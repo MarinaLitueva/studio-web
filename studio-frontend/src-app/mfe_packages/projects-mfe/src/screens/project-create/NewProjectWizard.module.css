@@ -15,6 +15,9 @@
   color: var(--foreground);
 }
 
+/* The kit's theme.css paints `body, [data-theme]` with --background, and this
+ * root carries data-theme. Two classes deep to keep the card surface wherever
+ * the sheets land. */
 .wizard[data-theme] {
   background: var(--card);
 }

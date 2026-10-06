@@ -75,18 +75,15 @@ export const draculaLargeTheme: ThemeConfig = {
     // 'Inter Variable' is the registered family; the kit's token says 'Inter'.
     '--font-sans': "'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif",
 
-    // 1.5x the kit ramp: Body 15/20 becomes 22.5/30.
-    '--text-body-size': '1.40625rem',
+    // 1.5x the kit ramp: Body 14/20 becomes 21/30.
+    '--text-body-size': '1.3125rem',
     '--text-body-line-height': '1.875rem',
     '--text-heading-1-size': '1.875rem',
     '--text-heading-1-line-height': '2.625rem',
-    '--text-label-size': '1.21875rem',
+    '--text-label-size': '1.125rem',
     '--text-label-line-height': '1.5rem',
 
-    // Border radius (slightly larger)
-    '--radius-sm': '0.1875rem',
-    '--radius-md': '0.375rem',
-    '--radius-lg': '0.75rem',
-    '--radius-xl': '1.5rem',
+    // 1.5x the kit's base radius; the kit derives the other steps from it.
+    '--radius': '0.9375rem',
   },
 };

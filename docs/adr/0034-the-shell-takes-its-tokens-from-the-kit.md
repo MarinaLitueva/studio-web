@@ -8,7 +8,7 @@ date: 2026-10-05
 
 **ID**: `cpt-studio-adr-the-shell-takes-its-tokens-from-the-kit`
 
-Status: proposed · 2026-10-05 · Amends ADR-0007 (§4 and the radius exception) · Relates to ADR-0006 · Issue: to be filed
+Status: proposed · 2026-10-05 · Amends ADR-0007 (§3, §4 and the radius exception) and ADR-0008 (the avatar's colour-by-name) · Relates to ADR-0006 · PR [#622](https://github.com/constructorfabric/studio-web/pull/622)
 
 ## Table of Contents
 
@@ -196,4 +196,5 @@ This decision directly addresses the following requirements or design elements:
 
 * `cpt-studio-component-portal-shell` — the shell paints from the kit's tokens and selects the kit palette by the theme's appearance
 * `cpt-studio-actor-mfe` — the MFEs' theming is unchanged; the record states why Dracula does not reach their screens
-* `cpt-studio-adr-shell-tokens-as-whole-colours` — ADR-0007 §4 and its radius exception are amended; its notation decision stands
+* `cpt-studio-adr-shell-tokens-as-whole-colours` — ADR-0007 §3, §4 and its radius exception are amended; its notation decision stands
+* `cpt-studio-adr-simplified-navigation-shell` — ADR-0008's avatar colour-by-name is withdrawn; the kit's `Avatar` has none

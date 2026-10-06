@@ -55,8 +55,10 @@ export function createThemeRegistry(): ThemeRegistry {
       parts.push(`${key}: ${value}`);
     }
     if (parts.length === 0) return;
-    // `:root:root` (0,2,0) outranks the kit's `[data-theme='dark']` (0,1,0)
-    // whatever the order of the sheets. Ported from @gears-frontx/framework
+    // `:root:root` (0,2,0) beats the kit's `[data-theme='dark']` (0,1,0) on
+    // specificity and ties with its OS-dark fallback
+    // `:root:not([data-theme='light'])`; it wins the tie because this sheet is
+    // appended after theme.css. Ported from @gears-frontx/framework
     // 0.2.0-alpha.4 (ADR-0034).
     sheet.insertRule(`:root:root { ${parts.join('; ')} }`, 0);
   }
