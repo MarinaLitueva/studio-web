@@ -38,4 +38,22 @@ describe('frontxThemes', () => {
       expect(kitNames).toEqual([]);
     }
   });
+
+  // The kit's dark block fixes these to blue/slate literals; without them a
+  // Dracula button turns blue on hover and focus.
+  it.each(['dracula', 'dracula-large'])(
+    'theme %s restates the kit tokens derived from the palette',
+    (id) => {
+      const theme = frontxThemes.find((entry) => entry.id === id);
+      const missing = [
+        '--primary-hover',
+        '--primary-ring',
+        '--destructive-ring',
+        '--link-foreground',
+        '--border-strong',
+        '--surface-elevated',
+      ].filter((name) => theme?.variables[name] === undefined);
+      expect(missing).toEqual([]);
+    }
+  );
 });

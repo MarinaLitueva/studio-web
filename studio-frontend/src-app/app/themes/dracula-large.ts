@@ -1,6 +1,6 @@
 /**
  * Dracula Large theme for FrontX
- * Based on Dracula theme with larger spacing and typography
+ * Based on Dracula theme with larger typography and radii
  * CSS custom properties map following shadcn/ui variable naming convention.
  */
 // @cpt-algo:cpt-frontx-algo-ui-libraries-choice-theme-propagation:p1
@@ -64,10 +64,18 @@ export const draculaLargeTheme: ThemeConfig = {
     '--chart-4': 'oklch(0.71 0.191 349.76)',
     '--chart-5': 'oklch(0.822 0.131 194.77)',
 
+    // The kit's dark block sets these as literals (blue/slate); derive them from Dracula's palette.
+    '--primary-hover': 'color-mix(in oklab, var(--primary) 88%, black)',
+    '--primary-ring': 'var(--ring)',
+    '--destructive-ring': 'var(--destructive)',
+    '--link-foreground': 'var(--primary)',
+    '--border-strong': 'var(--input)',
+    '--surface-elevated': 'var(--card)',
 
-    // 15/20 becomes 22.5/30.
     // 'Inter Variable' is the registered family; the kit's token says 'Inter'.
     '--font-sans': "'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif",
+
+    // 1.5x the kit ramp: Body 15/20 becomes 22.5/30.
     '--text-body-size': '1.40625rem',
     '--text-body-line-height': '1.875rem',
     '--text-heading-1-size': '1.875rem',

@@ -63,6 +63,14 @@ export const draculaTheme: ThemeConfig = {
     '--chart-4': 'oklch(0.71 0.191 349.76)',
     '--chart-5': 'oklch(0.822 0.131 194.77)',
 
+    // The kit's dark block sets these as literals (blue/slate); derive them from Dracula's palette.
+    '--primary-hover': 'color-mix(in oklab, var(--primary) 88%, black)',
+    '--primary-ring': 'var(--ring)',
+    '--destructive-ring': 'var(--destructive)',
+    '--link-foreground': 'var(--primary)',
+    '--border-strong': 'var(--input)',
+    '--surface-elevated': 'var(--card)',
+
     // 'Inter Variable' is the registered family; the kit's token says 'Inter'.
     '--font-sans': "'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif",
   },
