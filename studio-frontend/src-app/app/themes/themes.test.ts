@@ -32,7 +32,8 @@ describe('frontxThemes', () => {
   it('leaves the kit palette alone on the light and dark themes', () => {
     for (const id of ['default', 'light', 'dark']) {
       const theme = frontxThemes.find((entry) => entry.id === id);
-      const kitNames = Object.keys(theme?.variables ?? {}).filter(
+      expect(theme, id).toBeDefined();
+      const kitNames = Object.keys(theme!.variables).filter(
         (name) => name !== '--font-sans'
       );
       expect(kitNames).toEqual([]);
@@ -42,18 +43,33 @@ describe('frontxThemes', () => {
   // The kit's dark block fixes these to blue/slate literals; without them a
   // Dracula button turns blue on hover and focus.
   it.each(['dracula', 'dracula-large'])(
-    'theme %s restates the kit tokens derived from the palette',
+    'theme %s derives the kit tokens that follow the palette from its own tokens',
     (id) => {
       const theme = frontxThemes.find((entry) => entry.id === id);
-      const missing = [
+      expect(theme, id).toBeDefined();
+      for (const name of [
         '--primary-hover',
         '--primary-ring',
         '--destructive-ring',
         '--link-foreground',
         '--border-strong',
         '--surface-elevated',
-      ].filter((name) => theme?.variables[name] === undefined);
-      expect(missing).toEqual([]);
+      ]) {
+        expect(theme!.variables[name], name).toMatch(/var\(--/);
+      }
     }
   );
+
+  it('dracula-large scales the body role above the kit ramp', () => {
+    const theme = frontxThemes.find((entry) => entry.id === 'dracula-large');
+    expect(theme).toBeDefined();
+    for (const [name, kit] of [
+      ['--text-body-size', 0.9375],
+      ['--text-body-line-height', 1.25],
+    ] as const) {
+      const value = theme!.variables[name];
+      expect(value, name).toMatch(/^\d+(\.\d+)?rem$/);
+      expect(parseFloat(value!), name).toBeGreaterThan(kit);
+    }
+  });
 });
