@@ -163,7 +163,7 @@ Hooks such as `useMountedExtensions`, `useTheme`, `useTranslation`, and
 
 Tailwind CSS with CSS-variable theme tokens. Their values come from
 `@gears-frontx/ui-kit/theme.css`; a theme's `appearance` picks the light or
-dark palette (see `docs/adr/0034`):
+dark palette (see [ADR-0034](../docs/adr/0034-the-shell-takes-its-tokens-from-the-kit.md)):
 
 ```tsx
 <div className="bg-background text-foreground">
