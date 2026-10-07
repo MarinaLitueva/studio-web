@@ -63,25 +63,25 @@ export interface ArtifactsView {
   refetch: () => void;
 }
 
-// @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-6
-// @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-7
+// @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-11
+/** Re-reads when a run starts, since the gear writes its repository's node then, when one settles, and when the stored count grows. */
 function useImportRefresh(projectId: string, refetch: () => void): void {
   const importState = useProjectImport(projectId);
   const stored = importState.repos.reduce((sum, repo) => sum + repo.stored, 0);
+  const statuses = importState.repos.map((repo) => repo.status).join();
   const watching = importState.phase === 'running';
   const seen = useRef<string | null>(null);
 
   useEffect(() => {
-    const mark = `${stored}|${watching}`;
+    const mark = `${stored}|${statuses}`;
     if (seen.current === mark) return;
     const first = seen.current === null;
     seen.current = mark;
     if (first && stored === 0 && !watching) return;
     refetch();
-  }, [stored, watching, refetch]);
+  }, [stored, statuses, watching, refetch]);
 }
-// @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-6
-// @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-7
+// @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-11
 
 // @cpt-dod:cpt-studiofrontend-dod-project-artifacts-counters:p1
 // @cpt-dod:cpt-studiofrontend-dod-project-artifacts-page:p1

@@ -125,3 +125,32 @@ export {
   type ProjectStatus,
 } from './project/projectConfig';
 export { checkoutDirectory, sessionSources, type SessionSource } from './project/sessionSources';
+export {
+  StudioEventsApiService,
+  STUDIO_EVENTS_API_BASE_URL,
+  pageThrough,
+  type StudioEvent,
+  type StudioEventPage,
+  type StudioRunEvent,
+} from './tasks/StudioEventsApiService';
+export {
+  StudioTasksApiService,
+  STUDIO_TASKS_API_BASE_URL,
+  type StudioRun,
+  type StudioRunState,
+} from './tasks/StudioTasksApiService';
+export {
+  isRunSettled,
+  runCount,
+  runMessage,
+  runUpdateFromEvent,
+  runUpdateFromRun,
+  type RunUpdate,
+} from './tasks/runs';
+export {
+  createRunFollower,
+  RUN_MAX_READ_FAILURES,
+  RUN_POLL_INTERVAL_MS,
+  type RunFollower,
+  type RunFollowerOptions,
+} from './tasks/followRuns';

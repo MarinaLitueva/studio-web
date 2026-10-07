@@ -18,10 +18,8 @@ import {
   SseProtocol,
   SseStreamProtocol,
 } from '@gears-frontx/react';
-// The shell's own transport, imported by path rather than by package name:
-// this is the same package, and a relative import keeps the app runnable and
-// testable without the `dist-lib` build step in between.
-import { SseAuthPlugin } from '../../../src/api/plugins/SseAuthPlugin';
+// TODO: the authenticated SSE transport belongs in FrontX; import it from there once it lands.
+import { SseAuthPlugin } from '@gears-frontx/frontx-template-shell';
 
 export const STUDIO_EVENTS_API_BASE_URL = '/cf/studio-events/v1';
 

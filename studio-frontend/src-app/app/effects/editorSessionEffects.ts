@@ -20,7 +20,10 @@ import {
   AccountsApiService,
   ConnectorsApiService,
   PROJECT_CONFIG_TYPE,
+  StudioEventsApiService,
+  StudioTasksApiService,
   checkoutDirectory,
+  createRunFollower,
   errorMessage,
   isNotFound,
   parseProblemDetails,
@@ -29,16 +32,10 @@ import {
   type ProjectSource,
   type SessionSource,
   type StudioArtifact,
-} from '@constructor-studio/mfe-shared';
-import {
-  StudioEventsApiService,
-  StudioSessionApiService,
-  StudioTasksApiService,
   type StudioRun,
-  type StudioRunEvent,
   type StudioRunState,
-  type StudioSession,
-} from '@/app/api';
+} from '@constructor-studio/mfe-shared';
+import { StudioSessionApiService, type StudioSession } from '@/app/api';
 import { connectEditorBridge, type EditorMessage, type EditorTheme } from '@/app/mfe/editorBridge';
 import type { FrameHook } from '@/app/mfe/MfeHandlerIframe';
 import { publishFrameUrl } from '@/app/mfe/sharedContext';
@@ -181,15 +178,22 @@ export function createEditorSession(app: FrontXApp): EditorSession {
   /** The run on the stream from `cursor`; read every two seconds when the stream cannot answer */
   const waitForRun = (runId: string, cursor: number | null, superseded: () => boolean): Promise<Outcome | null> =>
     new Promise((resolve) => {
-      const stream = cursor === null ? null : events().streamFrom(cursor);
-      let connection: Promise<string> | null = null;
       let settled = false;
-      let polling = false;
+      const follower = createRunFollower({
+        events: events(),
+        tasks: tasks(),
+        onRun: ({ state, error }) => answer(state, error),
+        onLost: (_runId, error) => settle(isNotFound(error) ? RUN_GONE : UNREADABLE),
+        onReadFailed: (_runId, error, failures) => {
+          // Not a deadline on the run: reads that keep failing would otherwise spin here unseen.
+          if (failures === 1) console.warn('[editor-session] run unreadable:', errorMessage(error));
+        },
+      });
       const settle = (outcome: Outcome | null): void => {
         if (settled) return;
         settled = true;
         if (stopWait === stop) stopWait = null;
-        if (stream && connection) void connection.then((id) => stream.disconnect(id), () => undefined);
+        follower.stop();
         resolve(outcome);
       };
       const stop = (): void => settle(null);
@@ -203,40 +207,7 @@ export function createEditorSession(app: FrontXApp): EditorSession {
         if (outcome) settle(outcome);
       };
 
-      const poll = async (): Promise<void> => {
-        if (polling) return;
-        polling = true;
-        let failures = 0;
-        while (!settled) {
-          await sleep(POLL_INTERVAL_MS);
-          if (settled) return;
-          const run = await readRun(runId);
-          if (run === 'gone') settle(RUN_GONE);
-          else if (run) {
-            failures = 0;
-            answer(run.state, run.last_error);
-          } else {
-            // Not a deadline on the run: reads that keep failing would otherwise spin here unseen.
-            failures += 1;
-            if (failures === 1) console.warn('[editor-session] run unreadable:', lastReadError);
-            if (failures >= MAX_READ_FAILURES) settle(UNREADABLE);
-          }
-        }
-      };
-
-      if (!stream) {
-        void poll();
-        return;
-      }
-      connection = stream.connect(
-        (event) => {
-          if (!event.kind.startsWith('task.') || event.subject_id !== runId) return;
-          const run = event.payload as StudioRunEvent;
-          answer(run.state, run.error);
-        },
-        () => void poll()
-      );
-      connection.catch(() => void poll());
+      follower.follow([runId], cursor);
     });
 
   const waitForRecord = async (sessionId: string, superseded: () => boolean): Promise<Outcome | null> => {
