@@ -101,6 +101,7 @@ export function createRunFollower(options: RunFollowerOptions): RunFollower {
   };
 
   const poll = async (): Promise<void> => {
+    if (polling) return;
     polling = true;
     close();
     while (followed.size > 0) {

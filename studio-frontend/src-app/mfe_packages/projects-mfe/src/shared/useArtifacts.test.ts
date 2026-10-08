@@ -171,4 +171,46 @@ describe('the re-read while an import runs', () => {
     vi.advanceTimersByTime(2_000);
     expect(invalidate).toHaveBeenCalledTimes(READS_PER_REFETCH);
   });
+
+  it('keeps happening every two seconds while the stored count keeps growing', () => {
+    imported.mockReturnValue(importing(['running', 0]));
+    const { rerender } = renderHook(() => useArtifacts('p1', QUERY));
+    invalidate.mockClear();
+
+    for (let second = 1; second <= 5; second += 1) {
+      imported.mockReturnValue(importing(['running', second * 1_000]));
+      rerender();
+      vi.advanceTimersByTime(1_000);
+      if (second === 2) expect(invalidate).toHaveBeenCalledTimes(READS_PER_REFETCH);
+    }
+
+    expect(invalidate).toHaveBeenCalledTimes(2 * READS_PER_REFETCH);
+  });
+
+  it('drops the pending one when a status change re-reads at once', () => {
+    imported.mockReturnValue(importing(['running', 0], ['queued', 0]));
+    const { rerender } = renderHook(() => useArtifacts('p1', QUERY));
+    invalidate.mockClear();
+
+    imported.mockReturnValue(importing(['running', 1_000], ['queued', 0]));
+    rerender();
+    imported.mockReturnValue(importing(['running', 1_000], ['running', 0]));
+    rerender();
+    vi.advanceTimersByTime(2_000);
+
+    expect(invalidate).toHaveBeenCalledTimes(READS_PER_REFETCH);
+  });
+
+  it('does not happen once the hook is gone', () => {
+    imported.mockReturnValue(importing(['running', 0]));
+    const { rerender, unmount } = renderHook(() => useArtifacts('p1', QUERY));
+    invalidate.mockClear();
+
+    imported.mockReturnValue(importing(['running', 1_000]));
+    rerender();
+    unmount();
+    vi.advanceTimersByTime(2_000);
+
+    expect(invalidate).not.toHaveBeenCalled();
+  });
 });

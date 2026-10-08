@@ -3,6 +3,8 @@ import type { RunUpdate } from '@constructor-studio/mfe-shared';
 import reducer, {
   importStarted,
   projectImport,
+  repoCancelling,
+  repoControlRefused,
   repoEnqueued,
   repoProgressed,
   repoRetried,
@@ -65,5 +67,35 @@ describe('a sync as its run reports', () => {
     state = updated(state, 'acme/api', { state: 'running' });
 
     expect(imported(state).repos[0]).toMatchObject({ status: 'running', phase: 'pulling issues…' });
+  });
+
+  it.each([
+    ['cancelling', repoCancelling({ projectId: PROJECT, repo: 'acme/api' })],
+    [
+      'a refusal',
+      repoControlRefused({
+        projectId: PROJECT,
+        repo: 'acme/api',
+        refusal: { kind: 'i18n', key: 'artifacts_reason_cancel_refused' },
+      }),
+    ],
+  ])('forgets what it said last time, %s included, when it is retried', (_what, control) => {
+    let state = started('acme/api');
+    state = updated(state, 'acme/api', { state: 'running', phase: 'pulling issues…', result: { stored: 40 } });
+    state = updated(state, 'acme/api', { state: 'succeeded', summary: 'acme/api: done' });
+    state = updated(state, 'acme/api', { state: 'failed', error: 'rate limited' });
+    state = reducer(state, control);
+
+    state = reducer(state, repoRetried({ projectId: PROJECT, repo: 'acme/api' }));
+
+    expect(imported(state).repos[0]).toMatchObject({
+      status: 'queued',
+      phase: null,
+      summary: null,
+      reason: null,
+      stored: 0,
+      cancelling: false,
+      refusal: null,
+    });
   });
 });

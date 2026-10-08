@@ -145,6 +145,29 @@ describe('createRunFollower', () => {
     expect(h.updates).toContainEqual(expect.objectContaining({ runId: 'r-2', state: 'succeeded' }));
   });
 
+  it('reads on one interval when the stream ends while a joining run is read, and that read fails', async () => {
+    const h = harness();
+    let failJoin: (error: unknown) => void = () => undefined;
+    let joinReads = 0;
+    h.read.mockImplementation((runId) => {
+      if (runId === 'r-2' && (joinReads += 1) === 1) {
+        return new Promise<StudioRun>((_resolve, reject) => {
+          failJoin = reject;
+        });
+      }
+      return Promise.resolve(run(runId, 'running'));
+    });
+    h.follower.follow(['r-1'], 7);
+    await vi.advanceTimersByTimeAsync(0);
+    h.follower.follow(['r-2'], 9);
+
+    h.streams[0]?.onComplete?.();
+    failJoin(unavailable);
+    await vi.advanceTimersByTimeAsync(RUN_POLL_INTERVAL_MS);
+
+    expect(h.read.mock.calls.map(([runId]) => runId)).toEqual(['r-2', 'r-1', 'r-2']);
+  });
+
   it('keeps a newer stream when an older one completes late', async () => {
     const h = harness();
     h.follower.follow(['r-1'], 7);

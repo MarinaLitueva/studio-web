@@ -156,11 +156,11 @@ have and the choice changes the code:
   the cursor is read before the first sync is requested (D3), so the stream
   replays whatever a run did before it opened. A run that joins a stream
   already open is read once with `GET /runs/{id}`, and runs are read on an
-  interval only once the stream cannot be opened or cannot replay what it
-  missed. There is no watch window: the gear runs one
-  repository's sync at a time (`INGEST_SLOT`, studio-web#563), so a project's
-  last repository can start long after its first, and a window measured from
-  the request would stop watching it before it begins.
+  interval only once the stream cannot be opened, cannot replay what it
+  missed, or ends, or that one read fails. There is no watch window: the gear
+  runs one repository's sync at a time (`INGEST_SLOT`, studio-web#563), so a
+  project's last repository can start long after its first, and a window
+  measured from the request would stop watching it before it begins.
 - **The run client is shared.** The `studio-tasks` and `studio-events`
   services and the run follower live in `@constructor-studio/mfe-shared`, and
   the shell's editor session follows its runs through the same follower. The
@@ -314,7 +314,7 @@ Definitions of Done, which are traced.
 4. [x] - `p1` - `API: POST /cf/studio-artifact-ingest/v1/sync (provider, base_url, secret_ref, repo_full_path, project, workspace)` for each source, a bounded number at a time - `inst-5`
 5. [x] - `p1` - `API: GET /cf/studio-events/v1/stream` from the cursor, keeping the `task.*` events whose subject is one of the runs - `inst-6`
 6. [x] - `p1` - `API: GET /cf/studio-tasks/v1/runs/{id}` once for a run that joins the stream after it opened; the stream's replay from the cursor covers the rest - `inst-7`
-7. [x] - `p1` - **IF** the stream cannot be opened, cannot replay what it missed, or ends - `inst-8`
+7. [x] - `p1` - **IF** the stream cannot be opened, cannot replay what it missed, or ends, or the read of a run joining it fails - `inst-8`
    1. [x] - `p1` - `API: GET /cf/studio-tasks/v1/runs/{id}` for the runs not yet settled, on an interval, for the rest of the import - `inst-9`
 8. [x] - `p1` - Report each run's state, phase and counts onward; a run waiting for another repository's sync is reported as queued - `inst-10`
    1. [x] - `p1` - **IF** a run starts or settles, the read of the project's repositories re-issues itself; **IF** its stored count has grown, the reads of the artifacts do, at most once every two seconds. The import does not reach into their cache - `inst-11`
