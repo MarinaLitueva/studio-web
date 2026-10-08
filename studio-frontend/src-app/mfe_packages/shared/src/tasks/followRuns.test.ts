@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createRunFollower, RUN_MAX_READ_FAILURES, RUN_POLL_INTERVAL_MS } from './followRuns';
+import { createRunFollower, readCursor, RUN_MAX_READ_FAILURES, RUN_POLL_INTERVAL_MS } from './followRuns';
 import type { RunUpdate } from './runs';
 import type { StudioEvent } from './StudioEventsApiService';
 import type { StudioRun, StudioRunState } from './StudioTasksApiService';
@@ -286,5 +286,23 @@ describe('createRunFollower', () => {
     await vi.advanceTimersByTimeAsync(10 * RUN_POLL_INTERVAL_MS);
 
     expect(h.read).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('readCursor', () => {
+  it("is the tenant's latest seq, read past the cache", async () => {
+    const fetch = vi.fn().mockResolvedValue({ events: [], latest_seq: 42 });
+
+    expect(await readCursor({ cursor: { fetch } } as never, 'test')).toBe(42);
+    expect(fetch).toHaveBeenCalledWith({ staleTime: 0 });
+  });
+
+  it('is null when the cursor cannot be read, and says so under the label', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const fetch = vi.fn().mockRejectedValue(new Error('down'));
+
+    expect(await readCursor({ cursor: { fetch } } as never, 'test')).toBeNull();
+    expect(warn).toHaveBeenCalledWith('[test] no event cursor:', expect.any(String));
+    warn.mockRestore();
   });
 });

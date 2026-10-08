@@ -356,6 +356,23 @@ describe('a repository sync, followed on the event stream', () => {
 
       expect(h.rows()[0]).toMatchObject({ cancelling: true, refusal: null });
     });
+
+    it('sends nothing for a row it cannot cancel', async () => {
+      const h = harness(['acme/api', 'acme/web']);
+      h.syncFetch.mockRejectedValueOnce(refusal(500));
+      h.requestSync();
+      await vi.advanceTimersByTimeAsync(0);
+      h.stream.onEvent?.(taskEvent(8, 'r-1', 'task.succeeded'));
+      await vi.advanceTimersByTimeAsync(0);
+
+      h.cancel('acme/api');
+      h.cancel('acme/web');
+      h.cancel('acme/other');
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(h.tasks.cancel).not.toHaveBeenCalled();
+      expect(actions(h, repoCancelling.type)).toHaveLength(0);
+    });
   });
 
   describe('retry', () => {
@@ -395,6 +412,24 @@ describe('a repository sync, followed on the event stream', () => {
         status: 'cancelled',
         refusal: { kind: 'i18n', key: 'artifacts_reason_retry_refused' },
       });
+    });
+
+    it('sends nothing for a row it cannot retry', async () => {
+      const h = harness(['acme/api', 'acme/web', 'acme/docs']);
+      h.syncFetch.mockRejectedValueOnce(refusal(500));
+      h.requestSync();
+      await vi.advanceTimersByTimeAsync(0);
+      h.stream.onEvent?.(taskEvent(8, 'r-1', 'task.running'));
+      h.dispatch(repoProgressed({ projectId: PROJECT, repo: 'acme/docs', status: 'lost', reason: null }));
+
+      h.retry('acme/api');
+      h.retry('acme/web');
+      h.retry('acme/docs');
+      h.retry('acme/other');
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(h.tasks.retry).not.toHaveBeenCalled();
+      expect(actions(h, repoRetried.type)).toHaveLength(0);
     });
   });
 });

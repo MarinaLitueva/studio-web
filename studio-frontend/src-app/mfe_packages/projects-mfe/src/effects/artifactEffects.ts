@@ -243,6 +243,7 @@ export function initArtifactEffects(dispatch: AppDispatch, app: FrontXApp): void
     mine.repos.set(runId, repo);
     void (async () => {
       const cursor = await readCursor(events(), 'artifacts');
+      if (mine.ended) return;
       try {
         // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-run-control:p2:inst-6
         await tasks().retry(runId).fetch(undefined);
