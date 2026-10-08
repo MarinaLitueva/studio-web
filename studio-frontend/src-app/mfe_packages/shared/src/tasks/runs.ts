@@ -13,7 +13,6 @@ export interface RunUpdate {
   error?: string | null;
   /** The handler's counts; its shape belongs to the task type. */
   result?: Record<string, unknown> | null;
-  attempts?: number | null;
 }
 
 const SETTLED: ReadonlySet<StudioRunState> = new Set(['succeeded', 'failed', 'cancelled']);
@@ -31,7 +30,6 @@ export function runUpdateFromEvent(event: StudioEvent): RunUpdate | null {
   if ('summary' in payload) update.summary = payload.summary;
   if ('error' in payload) update.error = payload.error;
   if ('result' in payload) update.result = payload.result;
-  if ('attempts' in payload) update.attempts = payload.attempts;
   return update;
 }
 
@@ -44,7 +42,6 @@ export function runUpdateFromRun(run: StudioRun): RunUpdate {
     summary: run.summary,
     error: run.last_error,
     result: run.result,
-    attempts: run.attempts,
   };
 }
 
@@ -52,9 +49,4 @@ export function runUpdateFromRun(run: StudioRun): RunUpdate {
 export function runCount(result: Record<string, unknown> | null | undefined, key: string): number {
   const value = result?.[key];
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
-}
-
-/** What the run says about itself: what it did, why it stopped, or where it is. */
-export function runMessage(run: Pick<RunUpdate, 'summary' | 'error' | 'phase'>): string | null {
-  return run.summary ?? run.error ?? run.phase ?? null;
 }

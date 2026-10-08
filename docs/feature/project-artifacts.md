@@ -152,7 +152,7 @@ have and the choice changes the code:
   tab, which a later change adds.
 - **A run is watched on the event stream, not polled.** Every `studio-tasks`
   run publishes its transitions as `task.*` events on the tenant's
-  `studio-events` stream (D2 in `studio-backend/docs/api-conventions.md`), and
+  `studio-events` stream ([D2](../api-conventions.md#d-long-running-work)), and
   the cursor is read before the first sync is requested (D3), so the stream
   replays whatever a run did before it opened. A run that joins a stream
   already open is read once with `GET /runs/{id}`, and runs are read on an
@@ -317,7 +317,7 @@ Definitions of Done, which are traced.
 7. [x] - `p1` - **IF** the stream cannot be opened, cannot replay what it missed, or ends - `inst-8`
    1. [x] - `p1` - `API: GET /cf/studio-tasks/v1/runs/{id}` for the runs not yet settled, on an interval, for the rest of the import - `inst-9`
 8. [x] - `p1` - Report each run's state, phase and counts onward; a run waiting for another repository's sync is reported as queued - `inst-10`
-   1. [x] - `p1` - **IF** a run starts or settles, the read of the project's repositories re-issues itself; **IF** its stored count has grown, the reads of the artifacts do. The import does not reach into their cache - `inst-11`
+   1. [x] - `p1` - **IF** a run starts or settles, the read of the project's repositories re-issues itself; **IF** its stored count has grown, the reads of the artifacts do, at most once every two seconds. The import does not reach into their cache - `inst-11`
 9. [x] - `p1` - **IF** the gear no longer knows a run, or five reads in a row go unanswered - `inst-12`
    1. [x] - `p1` - Treat it as lost rather than pending, and stop asking about it - `inst-13`
 10. [x] - `p1` - **IF** a run failed or was cancelled - `inst-14`
@@ -337,7 +337,7 @@ Definitions of Done, which are traced.
    1. [x] - `p1` - `API: POST /cf/studio-tasks/v1/runs/{id}/cancel` - `inst-2`
    2. [x] - `p1` - Record the repository as cancelling until the run's terminal event; the gear finishes the work it started before it records the cancel - `inst-3`
    3. [x] - `p1` - **IF** the gear refuses because the run has already ended, wait for that event; it is not an error - `inst-4`
-2. [x] - `p1` - **IF** the member retries a failed or cancelled sync - `inst-5`
+2. [x] - `p1` - **IF** the member retries a failed or cancelled sync that has a run - `inst-5`
    1. [x] - `p1` - `API: POST /cf/studio-tasks/v1/runs/{id}/retry` - `inst-6`
    2. [x] - `p1` - Record the repository as queued and keep watching the same run; a retry puts the run back on the queue rather than starting another - `inst-7`
 3. [x] - `p1` - **IF** the gear refuses either, keep the repository's state and record the refusal against it - `inst-8`
@@ -685,8 +685,9 @@ The system **MUST** show each repository's sync as its own line — queued,
 importing with its phase and counts, cancelling, succeeded with the gear's
 summary, failed or cancelled with its reason — whether or not the project
 already has artifacts, **MUST** offer Cancel on a queued or importing sync and
-Retry on a failed or cancelled one, and **MUST NOT** show a cancelled sync as
-failed.
+Retry on a failed or cancelled one that has a run, and **MUST NOT** show a
+cancelled sync's line as failed. A repository whose sync request was refused
+has no run to retry; Sync repositories is the way back for it.
 
 Cancel is a request, not an outcome: the gear records it when the handler
 returns, and the ingest handler does not stop early. So the line says

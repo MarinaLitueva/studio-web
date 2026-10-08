@@ -63,6 +63,9 @@ export interface ArtifactsView {
   refetch: () => void;
 }
 
+/** The stored count grows once per flushed chunk; it re-reads the artifacts at most this often. */
+const STORED_REFRESH_MS = 2_000;
+
 // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-11
 /** Re-reads when a run starts, since the gear writes its repository's node then, when one settles, and when the stored count grows. */
 function useImportRefresh(projectId: string, refetch: () => void): void {
@@ -70,14 +73,36 @@ function useImportRefresh(projectId: string, refetch: () => void): void {
   const stored = importState.repos.reduce((sum, repo) => sum + repo.stored, 0);
   const statuses = importState.repos.map((repo) => repo.status).join();
   const watching = importState.phase === 'running';
-  const seen = useRef<string | null>(null);
+  const seen = useRef<{ stored: number; statuses: string } | null>(null);
+  const pending = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latest = useRef(refetch);
 
   useEffect(() => {
-    const mark = `${stored}|${statuses}`;
-    if (seen.current === mark) return;
-    const first = seen.current === null;
-    seen.current = mark;
-    if (first && stored === 0 && !watching) return;
+    latest.current = refetch;
+  }, [refetch]);
+
+  useEffect(
+    () => () => {
+      if (pending.current) clearTimeout(pending.current);
+      pending.current = null;
+    },
+    []
+  );
+
+  useEffect(() => {
+    const last = seen.current;
+    if (last?.stored === stored && last.statuses === statuses) return;
+    seen.current = { stored, statuses };
+    if (!last && stored === 0 && !watching) return;
+    if (last?.statuses === statuses) {
+      pending.current ??= setTimeout(() => {
+        pending.current = null;
+        latest.current();
+      }, STORED_REFRESH_MS);
+      return;
+    }
+    if (pending.current) clearTimeout(pending.current);
+    pending.current = null;
     refetch();
   }, [stored, statuses, watching, refetch]);
 }

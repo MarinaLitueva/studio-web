@@ -12,7 +12,7 @@ import {
   StudioEventsApiService,
   StudioTasksApiService,
   createRunFollower,
-  errorMessage,
+  readCursor,
   refusalFrom,
   violationOfType,
   type RunFollower,
@@ -31,6 +31,7 @@ import {
   repoUpdated,
 } from '../slices/artifactSyncSlice';
 import { NAV_SLICE_KEY } from '../slices/navSlice';
+import { canCancel, canRetry } from '../model/repoImport';
 import { recordAttempt } from '../shared/importAttempts';
 import type { RepoRef, SyncRequest } from '../events/artifactEvents';
 import '../events/artifactEvents';
@@ -71,20 +72,10 @@ export function initArtifactEffects(dispatch: AppDispatch, app: FrontXApp): void
   const openProjectId = (): string | null =>
     (app.store.getState() as RootState)[NAV_SLICE_KEY].projectId;
 
-  const runOf = (projectId: string, repo: string): string | null =>
+  const rowOf = (projectId: string, repo: string) =>
     projectImport((app.store.getState() as RootState)[ARTIFACT_SYNC_SLICE_KEY], projectId).repos.find(
       (row) => row.repo === repo
-    )?.runId ?? null;
-
-  /** `null` when it cannot be read: the runs are then read on an interval. */
-  const readCursor = async (): Promise<number | null> => {
-    try {
-      return (await events().cursor.fetch({ staleTime: 0 })).latest_seq;
-    } catch (error) {
-      console.warn('[artifacts] no event cursor:', errorMessage(error));
-      return null;
-    }
-  };
+    );
 
   const watch = (projectId: string): Watch => {
     const current = watches.get(projectId);
@@ -164,7 +155,7 @@ export function initArtifactEffects(dispatch: AppDispatch, app: FrontXApp): void
 
     void (async () => {
       // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-4
-      const cursor = await readCursor();
+      const cursor = await readCursor(events(), 'artifacts');
       // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-4
 
       await bounded(repos, CONCURRENCY, async (entry) => {
@@ -213,8 +204,9 @@ export function initArtifactEffects(dispatch: AppDispatch, app: FrontXApp): void
 
   // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-run-control:p2:inst-1
   eventBus.on('mfe/artifacts/cancel-requested', ({ projectId, repo }: RepoRef) => {
-    const runId = runOf(projectId, repo);
-    if (!runId) return;
+    const row = rowOf(projectId, repo);
+    if (!row?.runId || !canCancel(row)) return;
+    const runId = row.runId;
     // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-run-control:p2:inst-3
     dispatch(repoCancelling({ projectId, repo }));
     // @cpt-end:cpt-studiofrontend-algo-project-artifacts-run-control:p2:inst-3
@@ -244,12 +236,13 @@ export function initArtifactEffects(dispatch: AppDispatch, app: FrontXApp): void
 
   // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-run-control:p2:inst-5
   eventBus.on('mfe/artifacts/retry-requested', ({ projectId, repo }: RepoRef) => {
-    const runId = runOf(projectId, repo);
-    if (!runId) return;
+    const row = rowOf(projectId, repo);
+    if (!row?.runId || !canRetry(row)) return;
+    const runId = row.runId;
     const mine = watch(projectId);
     mine.repos.set(runId, repo);
     void (async () => {
-      const cursor = await readCursor();
+      const cursor = await readCursor(events(), 'artifacts');
       try {
         // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-run-control:p2:inst-6
         await tasks().retry(runId).fetch(undefined);

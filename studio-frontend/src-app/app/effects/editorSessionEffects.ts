@@ -27,6 +27,7 @@ import {
   errorMessage,
   isNotFound,
   parseProblemDetails,
+  readCursor,
   sessionSources,
   type ProjectConfig,
   type ProjectSource,
@@ -139,15 +140,6 @@ export function createEditorSession(app: FrontXApp): EditorSession {
   let answerTimer: ReturnType<typeof setTimeout> | undefined;
   let token: string | undefined;
 
-  const readCursor = async (): Promise<number | null> => {
-    try {
-      return (await events().cursor.fetch({ staleTime: 0 })).latest_seq;
-    } catch (error) {
-      console.warn('[editor-session] no event cursor:', errorMessage(error));
-      return null;
-    }
-  };
-
   /** `gone` for a 404; `null` for any other failure, its message kept for the one log line. */
   let lastReadError: string | null = null;
   const readRun = async (runId: string): Promise<StudioRun | 'gone' | null> => {
@@ -253,7 +245,7 @@ export function createEditorSession(app: FrontXApp): EditorSession {
     if (!ended) return waitForRun(runId, cursor, superseded);
     if (ended.ready || !retrying || ended === RUN_GONE) return ended;
 
-    const from = await readCursor();
+    const from = await readCursor(events(), 'editor-session');
     if (superseded()) return null;
     try {
       await tasks().retry(runId).fetch(undefined);
@@ -274,7 +266,7 @@ export function createEditorSession(app: FrontXApp): EditorSession {
     retrying: boolean,
     superseded: () => boolean
   ): Promise<Launched | null> => {
-    const cursor = await readCursor();
+    const cursor = await readCursor(events(), 'editor-session');
     let read: Awaited<ReturnType<typeof readSources>>;
     try {
       read = await readSources(projectId, orgId);

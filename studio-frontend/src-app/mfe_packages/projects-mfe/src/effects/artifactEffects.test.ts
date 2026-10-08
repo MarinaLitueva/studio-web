@@ -274,6 +274,35 @@ describe('a repository sync, followed on the event stream', () => {
     expect(progressed[progressed.length - 1]?.payload).toMatchObject({ repo: 'acme/api', status: 'lost' });
   });
 
+  it('calls a repository whose sync request was refused failed, and follows no run for it', async () => {
+    const h = harness(['acme/api']);
+    h.syncFetch.mockRejectedValueOnce(refusal(500));
+    h.requestSync();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(h.rows()[0]).toMatchObject({
+      status: 'failed',
+      runId: null,
+      reason: { kind: 'i18n', key: 'artifacts_reason_request_failed' },
+    });
+    expect(h.phase()).toBe('failed');
+    expect(h.events.streamFrom).not.toHaveBeenCalled();
+  });
+
+  it("ends the first import's stream when a sync is asked for again, and its late events change nothing", async () => {
+    const h = harness(['acme/api']);
+    h.requestSync();
+    await vi.advanceTimersByTimeAsync(0);
+    const first = { ...h.stream };
+
+    h.requestSync();
+    await vi.advanceTimersByTimeAsync(0);
+    first.onEvent?.(taskEvent(8, 'r-1', 'task.succeeded', { summary: 'acme/api: done' }));
+
+    expect(h.disconnect).toHaveBeenCalledWith('connection-1');
+    expect(h.rows()[0]).toMatchObject({ runId: 'r-2', status: 'queued', summary: null });
+  });
+
   it('stops watching when the project in scope changes; the runs go on', async () => {
     const h = harness();
     h.requestSync();

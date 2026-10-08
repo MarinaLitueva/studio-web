@@ -163,10 +163,14 @@ starting point opens a fresh connection rather than reusing the old one.
 A cursor of `0` is a real starting point — sequences start at 1 — so a tenant
 whose first events are the job's own gets them replayed too. And `streamFrom`
 does not deliver past a hole: a catch-up it cannot make, or a stream refused
-with 401/403, ends it, and `onComplete` fires. For `streamFrom`, then,
-`onComplete` means "cut" as well as "finished"; answer it by reading the job,
-and keep reading until it ends. `events`, opened without a cursor, keeps
-running through a failed catch-up and logs the gap it lost.
+with 401/403, ends it, and `onComplete` fires. A catch-up whose first event is
+not the one right after the cursor counts as one it cannot make: the server
+keeps a tenant's last 500 events by default, and what was pruned is gone.
+`seq` is not dense (a failed write skips a number), so a hole right at the
+cursor ends the stream too — rarely, and the answer is the same. For
+`streamFrom`, then, `onComplete` means "cut" as well as "finished"; answer it
+by reading the job, and keep reading until it ends. `events`, opened without
+a cursor, keeps running through a failed catch-up and logs the gap it lost.
 
 ## Follow runs from an effect
 
@@ -175,11 +179,11 @@ asked — use `createRunFollower` from `@constructor-studio/mfe-shared`. It is
 what the editor's session and the project import both use: one stream for
 every run it follows, opened at the cursor you read before starting them; a
 run that joins an open stream is read once with `GET /runs/{id}`; once the
-stream ends or cannot open, the runs are read every two seconds until each
-settles. The stream closes when nothing is left to follow.
+stream ends or cannot open, or that one read fails, the runs are read every two
+seconds until each settles. The stream closes when nothing is left to follow.
 
 ```ts
-const cursor = (await events.cursor.fetch({ staleTime: 0 })).latest_seq;
+const cursor = await readCursor(events, 'my-effect'); // null: the runs are read on the interval
 const follower = createRunFollower({
   events,
   tasks,
