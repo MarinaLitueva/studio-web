@@ -209,9 +209,7 @@ export const ArtifactsSection: React.FC<ArtifactsSectionProps> = ({ projectId })
       <header className={styles.strip}>
         <p className={styles.totals}>
           {chosen === null ? (
-            t(projectTotal === 1 ? 'artifacts_count_one' : 'artifacts_count_many', {
-              count: projectTotal,
-            })
+            t.count('artifacts_count', projectTotal)
           ) : repositoryTotalFailed ? (
             chosen.name
           ) : repositoryTotal === null ? (
@@ -316,11 +314,7 @@ export const ArtifactsSection: React.FC<ArtifactsSectionProps> = ({ projectId })
           next: t('artifacts_next_page'),
           sortedNewest: t('artifacts_sorted_newest'),
           range: (from: number, to: number, count: number) =>
-            t(count === 1 ? 'artifacts_range_one' : 'artifacts_range', {
-              from,
-              to,
-              total: count,
-            }),
+            t.count('artifacts_range', count, { from, to, total: count }),
           page: (index: number) => t('artifacts_page', { index }),
         }}
       />

@@ -27,20 +27,13 @@ const { mockAuth, mockDispatch, mockEventBus, headerState } = vi.hoisted(() => (
 vi.mock('@gears-frontx/react', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@gears-frontx/react')>()),
   useFrontX: () => ({ auth: mockAuth }),
-  useTranslation: () => ({ t: (key: string) => key, language: 'en' }),
   useAppDispatch: () => mockDispatch,
   useAppSelector: (selector: (state: Record<string, unknown>) => unknown) =>
     selector({ 'layout/header': headerState }),
   eventBus: mockEventBus,
 }));
 
-vi.mock('@/app/i18n/shellTranslations', async () => {
-  const en = (await import('@/app/i18n/en.json')).default as Record<string, string>;
-  return {
-    useShellText: () => (key: string, params?: Record<string, unknown>) =>
-      (en[key] ?? key).replace(/\{(\w+)\}/g, (_, name: string) => String(params?.[name] ?? '')),
-  };
-});
+vi.mock('@/app/i18n/shellTranslations', () => import('@frontx-test-utils/shellText'));
 
 import { UserMenu } from './UserMenu';
 

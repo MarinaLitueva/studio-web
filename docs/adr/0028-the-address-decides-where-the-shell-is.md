@@ -72,7 +72,7 @@ without the leading `/`, and it must match `[a-z][a-z0-9-]*`. A route that
 does not is silently not routable. Of the nineteen routes declared under
 `src-app/mfe_packages/`, five qualify (`/search`, `/connections`,
 `/projects`, `/people`, `/kits`); every section of a project or of the
-organization (`/projects/artifacts`, `/organization/overview`, …) and the
+organization (`/projects/artifacts`, `/organization/workspaces`, …) and the
 frame fixture (`/fixture/frame`) do not. The library keeps foreign query
 segments — an OAuth `state`, a `utm_*` — across its own writes.
 
@@ -140,7 +140,7 @@ order of those tie-breakers matters: `/projects/overview` has the lowest
 `order` in its group but declares the project level, and mounting it with no
 project open would make `useScreenLevel` report a project level and the rail
 draw project sections over an empty project. So `projects` mounts `/projects`
-(workspace level) and `organization` mounts `/organization/overview`. Which
+(workspace level) and `organization` mounts `/organization/workspaces`. Which
 same-entry extension is mounted never changes what the address says: the
 group's token is written, and the section comes from the context, not from
 the mounted id.

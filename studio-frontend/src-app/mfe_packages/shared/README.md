@@ -28,6 +28,14 @@ MFE needs to diverge, move that piece back into it. Do not add a flag or an
 option to the shared version — that is how this folder turns into a dumping
 ground whose every change can break every MFE at once.
 
+**Counts in translations.** FrontX's `t` fills `{param}` and picks no plural
+form, so a count goes through `t.count(key, n)` from `createText`: it reads
+`key_one`, `key_few` or `key_many` by the plural rule of the language in use,
+with `{count}` filled. `_one` carries `{count}`, never a literal `1` — Russian
+21 is "one" too. `_few` is written only where the language has the form and the
+locale is translated (ru, uk, pl); without it `_many` is read, and English never
+has one, so a locale missing `_few` does not fall through to English.
+
 The build scripts skip this directory on purpose: `EXCLUDED_PACKAGES` in
 `scripts/lib/mfe-tools.ts` holds the name `shared`, so `build:mfes` and
 `dev:all` never mistake it for an MFE. `scripts/run-mfe-type-checks.mjs` does

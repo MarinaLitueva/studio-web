@@ -22,13 +22,7 @@ vi.mock('@gears-frontx/react', async (importOriginal) => ({
   eventBus: mockEventBus,
 }));
 
-vi.mock('@/app/i18n/shellTranslations', async () => {
-  const en = (await import('@/app/i18n/en.json')).default as Record<string, string>;
-  return {
-    useShellText: () => (key: string, params?: Record<string, unknown>) =>
-      (en[key] ?? key).replace(/\{(\w+)\}/g, (_, name: string) => String(params?.[name] ?? '')),
-  };
-});
+vi.mock('@/app/i18n/shellTranslations', () => import('@frontx-test-utils/shellText'));
 
 vi.mock('./useScreenLevel', () => ({ useScreenLevel: () => level.value }));
 

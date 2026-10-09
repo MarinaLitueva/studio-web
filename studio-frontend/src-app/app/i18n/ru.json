@@ -16,6 +16,7 @@
   "level_switch_organization": "Сменить организацию",
   "level_back_to_projects": "К проектам",
   "level_workspaces_one": "{count} воркспейс",
+  "level_workspaces_few": "{count} воркспейса",
   "level_workspaces_many": "{count} воркспейсов",
   "chain_workspace": "Воркспейс",
   "chain_project": "Проект",

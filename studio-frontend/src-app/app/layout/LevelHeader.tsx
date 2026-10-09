@@ -54,9 +54,7 @@ const OrganizationSwitch: React.FC<{ context: AppContextState }> = ({ context })
                 <ItemTitle className="!block !w-auto text-label">{org.name}</ItemTitle>
                 {org.count !== undefined && (
                   <ItemDescription className="group-focus:text-current group-data-[highlighted]:text-current">
-                    {t(org.count === 1 ? 'level_workspaces_one' : 'level_workspaces_many', {
-                      count: org.count,
-                    })}
+                    {t.count('level_workspaces', org.count)}
                   </ItemDescription>
                 )}
               </ItemContent>

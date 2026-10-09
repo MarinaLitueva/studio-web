@@ -115,7 +115,13 @@ export {
   type TranslationModule,
   type TranslationModules,
 } from './i18n/screenTranslations';
-export { createScreenTranslations, createText, type ScreenText } from './i18n/screenText';
+export {
+  createScreenTranslations,
+  createText,
+  pluralForm,
+  screenText,
+  type ScreenText,
+} from './i18n/screenText';
 export { errorMessage } from './errors/message';
 export {
   PROJECT_CONFIG_TYPE,

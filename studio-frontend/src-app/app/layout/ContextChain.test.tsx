@@ -22,17 +22,10 @@ vi.mock('@gears-frontx/react', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@gears-frontx/react')>()),
   useAppSelector: (selector: (state: Record<string, unknown>) => unknown) =>
     selector({ 'app/context': context.value }),
-  useTranslation: () => ({ t: (key: string) => key, language: 'en' }),
   eventBus: mockEventBus,
 }));
 
-vi.mock('@/app/i18n/shellTranslations', async () => {
-  const en = (await import('@/app/i18n/en.json')).default as Record<string, string>;
-  return {
-    useShellText: () => (key: string, params?: Record<string, unknown>) =>
-      (en[key] ?? key).replace(/\{(\w+)\}/g, (_, name: string) => String(params?.[name] ?? '')),
-  };
-});
+vi.mock('@/app/i18n/shellTranslations', () => import('@frontx-test-utils/shellText'));
 
 vi.mock('./useScreenLevel', () => ({ useScreenLevel: () => level.value }));
 
@@ -114,6 +107,14 @@ describe('ContextChain (the path in the top bar)', () => {
       expect(screen.getByTestId('context-slot-pending')).toBeTruthy();
     });
 
+    it('opens no empty menu from the placeholder', () => {
+      context.value.workspaces = [];
+      context.value.workspacesStatus = 'pending';
+      render(<ContextChain />);
+      fireEvent.click(screen.getByRole('button', { name: 'Workspace: …' }));
+      expect(screen.queryByRole('menu')).toBeNull();
+    });
+
     it('draws no slot for an organization that has no workspace', () => {
       context.value.workspaces = [];
       const { container } = render(<ContextChain />);
@@ -140,6 +141,13 @@ describe('ContextChain (the path in the top bar)', () => {
       render(<ContextChain />);
       expect(screen.getByText('Platform Workspace')).toBeTruthy();
       expect(screen.queryByText('Agent Platform')).toBeNull();
+    });
+
+    it('draws no path below the organization while no workspace is selected', () => {
+      level.value = 'workspace';
+      context.value.workspace = null;
+      const { container } = render(<ContextChain />);
+      expect(container.firstChild).toBeNull();
     });
 
     it('renders nothing at all before an organization resolves', () => {
@@ -251,6 +259,29 @@ describe('ContextChain (the path in the top bar)', () => {
       fireEvent.click(screen.getByText('Agent Platform'));
       const search = await screen.findByRole('searchbox', { name: 'Search projects…' });
       await vi.waitFor(() => expect(document.activeElement).toBe(search));
+    });
+
+    it('announces nothing when the open project is picked, and closes', async () => {
+      level.value = 'project';
+      render(<ContextChain />);
+      fireEvent.click(screen.getByText('Agent Platform'));
+      fireEvent.click(await screen.findByRole('option', { name: 'Agent Platform' }));
+      expect(mockEventBus.emit).not.toHaveBeenCalledWith(
+        'app/context/project/changed',
+        expect.anything()
+      );
+      await vi.waitFor(() => expect(screen.queryByRole('searchbox')).toBeNull());
+    });
+
+    it('opens again with an empty search', async () => {
+      level.value = 'project';
+      render(<ContextChain />);
+      fireEvent.click(screen.getByText('Agent Platform'));
+      fireEvent.change(await screen.findByRole('searchbox'), { target: { value: 'portal' } });
+      fireEvent.click(await screen.findByRole('option', { name: 'Developer Portal' }));
+      await vi.waitFor(() => expect(screen.queryByRole('searchbox')).toBeNull());
+      fireEvent.click(screen.getByText('Agent Platform'));
+      expect((await screen.findByRole('searchbox') as HTMLInputElement).value).toBe('');
     });
 
     it('opens the first project found on Enter', async () => {

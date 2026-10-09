@@ -17,14 +17,7 @@ interface WorkspacesToolbarProps {
 }
 
 function totalsLine(t: ScreenText, total: number, projectTotal: number): string {
-  const workspaces = t(total === 1 ? "totals_workspaces_one" : "totals_workspaces_many", {
-    count: total,
-  });
-  const projects = t(
-    projectTotal === 1 ? "totals_projects_one" : "totals_projects_many",
-    { count: projectTotal },
-  );
-  return `${workspaces} · ${projects}`;
+  return `${t.count("totals_workspaces", total)} · ${t.count("totals_projects", projectTotal)}`;
 }
 
 export const WorkspacesToolbar: React.FC<WorkspacesToolbarProps> = ({

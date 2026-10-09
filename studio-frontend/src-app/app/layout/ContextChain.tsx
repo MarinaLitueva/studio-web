@@ -172,7 +172,10 @@ const MenuSlot: React.FC<{ slot: ChainSlot; isCurrent: boolean }> = ({ slot, isC
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<SlotFace chainSlot={slot} isCurrent={isCurrent} />} />
+      <DropdownMenuTrigger
+        disabled={slot.options.length === 0 && !slot.up}
+        render={<SlotFace chainSlot={slot} isCurrent={isCurrent} />}
+      />
       <DropdownMenuContent align="start" className="!w-auto">
         {slot.up && (
           <>
