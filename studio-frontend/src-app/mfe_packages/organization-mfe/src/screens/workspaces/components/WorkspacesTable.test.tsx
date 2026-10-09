@@ -9,17 +9,8 @@ vi.mock('@gears-frontx/react', async (importOriginal) => ({
 }));
 
 vi.mock('../../../i18n', async () => {
-  const { screenText } = await import('@constructor-studio/mfe-shared');
-  return {
-    useWorkspacesText: () =>
-      screenText(
-        (key, params) =>
-          String((en as Record<string, string>)[key] ?? key).replace(/\{(\w+)\}/g, (_match, name) =>
-            String(params?.[name] ?? `{${name}}`)
-          ),
-        'en'
-      ),
-  };
+  const { dictionaryText } = await import('@frontx-test-utils/dictionaryText');
+  return { useWorkspacesText: () => dictionaryText(en) };
 });
 
 import { WorkspacesTable } from './WorkspacesTable';

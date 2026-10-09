@@ -1,11 +1,31 @@
-import { describe, expect, it } from 'vitest';
-import { pluralForm, screenText } from './screenText';
+import { renderHook } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createText, pluralForm, screenText } from './screenText';
 
-/** A translator the way FrontX's answers: `<namespace>:<key>` for a missing key. */
+const { registry } = vi.hoisted(() => ({
+  registry: { language: 'en', words: {} as Record<string, string> },
+}));
+
+vi.mock('@gears-frontx/react', async (importOriginal) => {
+  // One `t` for every render, as the registry's: only the language moves.
+  const t = (key: string) => registry.words[key] ?? key;
+  return {
+    ...(await importOriginal<typeof import('@gears-frontx/react')>()),
+    useTranslation: () => ({ t, language: registry.language }),
+  };
+});
+
+/**
+ * A translator the way FrontX's answers, down to `<namespace>:<key>` for a
+ * missing key: the `_few` fallback reads that answer, which a dictionary
+ * helper answering with the bare key would not exercise.
+ */
 const translator =
   (dictionary: Record<string, string>) => (key: string, params?: Record<string, unknown>) =>
     key in dictionary
-      ? dictionary[key]!.replace(/\{(\w+)\}/g, (_, name: string) => String(params?.[name] ?? ''))
+      ? dictionary[key]!.replace(/\{(\w+)\}/g, (match, name: string) =>
+          params?.[name] !== undefined ? String(params[name]) : match
+        )
       : `screen.test:${key}`;
 
 const ru = {
@@ -58,5 +78,27 @@ describe('screenText', () => {
   it('fills the other parameters next to the count', () => {
     const t = screenText(translator({ r_one: '{from}–{to} of {count}', r_many: '{from}–{to} of {count}' }), 'en');
     expect(t.count('r', 40, { from: 1, to: 10 })).toBe('1–10 of 40');
+  });
+});
+
+describe('createText', () => {
+  const useText = createText('ns');
+
+  beforeEach(() => {
+    registry.language = 'en';
+    registry.words = { 'ns:title': 'Workspaces', 'ns:n_one': 'one', 'ns:n_few': 'few', 'ns:n_many': 'many' };
+  });
+
+  it('asks for the key under its namespace', () => {
+    const { result } = renderHook(() => useText());
+    expect(result.current('title')).toBe('Workspaces');
+  });
+
+  it('counts by the language in use, and by the new one after a switch', () => {
+    const { result, rerender } = renderHook(() => useText());
+    expect(result.current.count('n', 2)).toBe('many');
+    registry.language = 'ru';
+    rerender();
+    expect(result.current.count('n', 2)).toBe('few');
   });
 });
