@@ -1,6 +1,6 @@
 ---
 type: feature
-status: draft
+status: superseded
 owner: studio-team
 ---
 
@@ -9,6 +9,16 @@ owner: studio-team
 - [ ] `p1` - **ID**: `cpt-studiofrontend-featstatus-organization-overview`
 
 - [ ] `p1` - `cpt-studio-feature-organization-overview`
+
+**Superseded on 2026-10-08.** The design no longer has an organization
+overview: the organization opens on its Workspaces
+(`cpt-studiofrontend-dod-shell-levels-entry-point`,
+`cpt-studiofrontend-dod-workspaces-screen-level`). The Overview screen, its
+placeholder and its strings are removed from organization-mfe, so none of this
+file's Definitions of Done is in force and none carries a code marker. The file
+stays for what it measured — which tiles the design wanted and which answers
+have no endpoint — should a summary of the organization come back with an
+endpoint of its own.
 
 ## Table of Contents
 

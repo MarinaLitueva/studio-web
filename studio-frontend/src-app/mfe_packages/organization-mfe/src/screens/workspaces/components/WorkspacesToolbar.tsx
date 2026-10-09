@@ -45,9 +45,9 @@ export const WorkspacesToolbar: React.FC<WorkspacesToolbarProps> = ({
       aria-label={t("toolbar_label")}
     >
       <div className={styles.heading}>
-        <h1 className={styles.title}>
+        <h2 className={styles.title}>
           {busy ? <Skeleton className={styles.titleSkeleton} /> : t("title")}
-        </h1>
+        </h2>
         {!busy && total !== undefined && projectTotal !== undefined && (
           <p className={styles.totals}>{totalsLine(t, total, projectTotal)}</p>
         )}

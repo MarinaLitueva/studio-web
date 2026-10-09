@@ -162,9 +162,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ bridge }) => {
 
   return (
     <div ref={containerRef} className="p-8">
-      <h1 className="text-3xl font-bold mb-4">
+      <h2 className="text-3xl font-bold mb-4">
         {t('title')}
-      </h1>
+      </h2>
       <p className="text-muted-foreground mb-6">
         {t('description')}
       </p>

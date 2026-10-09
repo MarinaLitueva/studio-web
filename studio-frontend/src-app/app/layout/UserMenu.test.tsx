@@ -14,8 +14,9 @@ interface TestUser {
   avatarUrl?: string;
 }
 
-const { mockAuth, mockDispatch, headerState } = vi.hoisted(() => ({
+const { mockAuth, mockDispatch, mockEventBus, headerState } = vi.hoisted(() => ({
   mockAuth: { logout: vi.fn() },
+  mockEventBus: { emit: vi.fn() },
   mockDispatch: vi.fn(),
   headerState: {
     user: { displayName: 'Alexander Johanson', email: 'alex@studio' } as TestUser | null,
@@ -26,10 +27,20 @@ const { mockAuth, mockDispatch, headerState } = vi.hoisted(() => ({
 vi.mock('@gears-frontx/react', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@gears-frontx/react')>()),
   useFrontX: () => ({ auth: mockAuth }),
+  useTranslation: () => ({ t: (key: string) => key, language: 'en' }),
   useAppDispatch: () => mockDispatch,
   useAppSelector: (selector: (state: Record<string, unknown>) => unknown) =>
     selector({ 'layout/header': headerState }),
+  eventBus: mockEventBus,
 }));
+
+vi.mock('@/app/i18n/shellTranslations', async () => {
+  const en = (await import('@/app/i18n/en.json')).default as Record<string, string>;
+  return {
+    useShellText: () => (key: string, params?: Record<string, unknown>) =>
+      (en[key] ?? key).replace(/\{(\w+)\}/g, (_, name: string) => String(params?.[name] ?? '')),
+  };
+});
 
 import { UserMenu } from './UserMenu';
 
@@ -83,6 +94,17 @@ describe('UserMenu', () => {
     render(<UserMenu />);
     openMenu();
     await waitFor(() => expect(screen.getByText('alex@studio')).toBeTruthy());
+  });
+
+  // The path has no organization slot; this is the way back from any depth.
+  it('leads to the organization by asking the shell for that level', async () => {
+    render(<UserMenu />);
+    openMenu();
+    fireEvent.click(await screen.findByText('Organization'));
+
+    expect(mockEventBus.emit).toHaveBeenCalledWith('app/context/level/requested', {
+      level: 'organization',
+    });
   });
 
   it('sign-out clears the user and logs out via the auth runtime', async () => {
