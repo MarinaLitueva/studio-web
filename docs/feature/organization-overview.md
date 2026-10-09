@@ -166,7 +166,7 @@ Unchecked on purpose, for the reason stated in `project-create.md`.
 
 ### The item exists from the first day
 
-- [x] `p1` - **ID**: `cpt-studiofrontend-dod-organization-overview-item`
+- [ ] `p1` - **ID**: `cpt-studiofrontend-dod-organization-overview-item`
 
 The system **MUST** register the overview as the first item of the organization
 level, as a section of organization-mfe's entry, and **MUST** be what a session

@@ -215,7 +215,7 @@ export const ArtifactsSection: React.FC<ArtifactsSectionProps> = ({ projectId })
           ) : repositoryTotal === null ? (
             <Skeleton className={styles.rangeSkeleton} />
           ) : (
-            t('artifacts_in_repository', { total: repositoryTotal, repo: chosen.name })
+            t.count('artifacts_in_repository', repositoryTotal, { repo: chosen.name })
           )}
           {importState.phase === 'running' && (
             <>

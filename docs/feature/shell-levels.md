@@ -295,8 +295,8 @@ other answers the MFE, and both go through the address.
 
 **Steps**:
 1. [x] - `p1` - Take the levels from the workspace down to the level in scope; the organization has no slot, its header names it and switches it - `inst-1`
-2. [x] - `p1` - **IF** the level in scope is the organization, take the workspace slot alone, naming no workspace ("All workspaces"); a pick in it enters the workspace - `inst-4`
-3. [x] - `p1` - **IF** nothing is selected at one of them, leave that slot out rather than naming an empty level - `inst-2`
+2. [x] - `p1` - **IF** the level in scope is the organization, take the workspace slot alone, naming no workspace ("All workspaces"); a pick in it enters the workspace. With no workspace in the organization there is no slot, and while the list is being read the slot holds a placeholder - `inst-4`
+3. [x] - `p1` - **IF** the level in scope is the workspace or the project and nothing is selected at one of those levels, leave that slot out rather than naming an empty level - `inst-2`
 4. [x] - `p1` - **RETURN** the slots, outermost first, each with its siblings behind it and an entry for the level above it: "All workspaces" in the workspace slot, "Projects in <workspace>" in the project slot - `inst-3`
 
 There is no narrow layout for the path: it is drawn at one width and every slot
@@ -425,8 +425,11 @@ title to the MFE, as an `h2`.
 - **Organization:** its name, and "Switch organization". The button opens the
   organization list the shell already holds (`app/context.orgs`, with the
   `child_count` of each, `cpt-studiofrontend-dod-shell-levels-counts`); a pick
-  emits the existing `app/context/org/changed`.
-- **Workspace:** its name, with the organization's name above it.
+  emits the existing `app/context/org/changed`. It is drawn only for a person
+  in two or more organizations: with one there is nothing to switch to.
+- **Workspace:** its name, with the organization's name above it. While the
+  workspace list is being read, a placeholder stands where the name goes, not
+  the organization's header; when the read fails, the header is empty.
 - **Project:** "Back to projects", which emits `app/context/level/requested` for
   the workspace level and so lands on the workspace's projects list, and the
   project's name. No type badge: a project carries no type
@@ -444,8 +447,9 @@ has no organization, and then there is no level to name.
 
 The header, the tabs and the MFE's section row start on one vertical line: the
 shell's rows use `var(--space-6)` as their side gutter, the value most screens
-already pad with, and the People, Kits and organization-settings screens move
-from `2rem` to it.
+already pad with, and the People, Kits and organization-settings screens and the
+`_blank-mfe` template move from `2rem` to it. The template's card titles are
+`h3`, under its section's `h2`.
 
 **Implements**:
 - `cpt-studiofrontend-flow-shell-levels-descend`
@@ -495,8 +499,8 @@ moves back up as `kind: 'section'`. Neither direction is an event: an MFE's
 - [x] `p1` - **ID**: `cpt-studiofrontend-dod-shell-levels-chain`
 
 The system **MUST** show the path to the level in scope as a breadcrumb in the
-top bar — a slot for the workspace and, from the workspace level down, one for
-the project, each with its own menu of siblings — and **MUST** build it on the
+top bar — a slot for the workspace and, at the project level, one for the
+project, each with its own menu of siblings — and **MUST** build it on the
 kit's `Breadcrumb`. The organization **MUST NOT** have a slot.
 
 The organization is named and switched in its own header
@@ -722,7 +726,7 @@ the artifact reaches the frame in #323.
 - [ ] Choosing the sibling already in scope makes no request and changes nothing.
 - [ ] Switching the workspace while a project is open leaves the project and lands at the chosen workspace.
 - [ ] Switching the organization from its header clears the workspace and the project, and the session is at the organization level.
-- [ ] The organization switch shows how many workspaces each organization has, without a request per row; the path's menus show names only.
+- [ ] For a person in two or more organizations, the organization switch shows how many workspaces each has, without a request per row; with one organization the header has no switch. The path's menus show names only.
 - [ ] The project slot's menu shows names with no artifact count under them.
 - [ ] Each slot of the path reads as the design's ghost button — icon, name, chevron — a long name truncates inside its slot, and the top bar never wraps to a second line.
 - [ ] A screen reader announces each slot as the level and the entity.

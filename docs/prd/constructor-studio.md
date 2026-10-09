@@ -265,7 +265,7 @@ The system **MUST** create and list workspaces as account-management tenants of 
 
 - [x] `p1` - **ID**: `cpt-studio-fr-portal-levels`
 
-The portal **MUST** navigate three levels — organization, workspace, project — with a top bar, an overlay drawer and one context slot, draw the menu of the level it is on, and mount a microfrontend entry that is a Module Federation remote or an iframe whose address arrives at runtime.
+The portal **MUST** navigate three levels — organization, workspace, project — with a top bar holding the path to the level, a header naming the level and a row of that level's tabs, and mount a microfrontend entry that is a Module Federation remote or an iframe whose address arrives at runtime.
 
 - **Rationale**: ADR-0008 fixes the shell's structure; ADR-0021 adds frame entries.
 - **Actors**: `cpt-studio-actor-member`, `cpt-studio-actor-shell`, `cpt-studio-actor-mfe`

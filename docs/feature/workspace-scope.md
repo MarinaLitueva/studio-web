@@ -431,8 +431,8 @@ only button is already refused.
 
 ## 6. Acceptance Criteria
 
-- [ ] With no workspace in the organization, the top bar shows the organization alone, "New project" is disabled and "New workspace" is not; with no organization at all, both are disabled.
-- [ ] The workspace slot is in the top bar on the Projects screen and absent on Connections and People.
+- [ ] With no workspace in the organization, the path in the top bar is empty, "New project" is disabled and "New workspace" is not; with no organization at all, both are disabled.
+- [ ] The workspace slot is in the top bar at every level: it names the current workspace from the workspace level down, and reads "All workspaces" at the organization level.
 - [ ] Leaving Projects for another screen and coming back shows the same workspace still current, and the Projects list unchanged.
 - [ ] Activating "New workspace" opens an overlay with a single name field; Escape, the scrim and Cancel all close it and write nothing.
 - [ ] Confirming a name creates a tenant of the workspace type whose parent is the organization in scope.
@@ -443,7 +443,7 @@ only button is already refused.
 - [ ] Switching workspaces replaces the Projects list with the chosen workspace's projects, and an open project is left.
 - [ ] Switching organizations re-reads the workspaces and selects one of the new organization's, never one of the previous organization's.
 - [ ] Choosing the organization already in scope changes nothing: the workspace stays current, an open project stays open, and no request is made.
-- [ ] On a workspace-scoped screen the slot holds a placeholder while the list is being read, rather than disappearing and coming back.
+- [ ] While the workspace list is being read, the slot holds a placeholder rather than disappearing and coming back.
 - [ ] Switching organizations while the previous organization's workspaces are still being read leaves the slot showing the new organization's, whatever order the two reads answer in.
 - [ ] A workspace picked on a screen of an organization since switched away from is not made current, and does not move the session to the workspace level either.
 - [ ] A project opened, or a sibling list published, from a workspace since left changes neither the top bar nor the project switcher.

@@ -33,7 +33,7 @@ Status: accepted · 2026-09-24 · Amends ADR-0008 and the `shell-levels` feature
 
 ## Context and Problem Statement
 
-The portal has levels — organization, workspace, project — and a rail per
+The portal has levels — organization, workspace, project — and a row of tabs per
 level (ADR-0008, `docs/feature/shell-levels.md`). It has
 no address. `presentation.route` is a string nothing reads, and the feature
 that introduced the levels said so on purpose:
@@ -138,8 +138,8 @@ The extension the group mounts — its route owner — is chosen by the lowest
 level first, then the item without a section, then the lowest `order`. The
 order of those tie-breakers matters: `/projects/overview` has the lowest
 `order` in its group but declares the project level, and mounting it with no
-project open would make `useScreenLevel` report a project level and the rail
-draw project sections over an empty project. So `projects` mounts `/projects`
+project open would make `useScreenLevel` report a project level and the tabs
+show project sections over an empty project. So `projects` mounts `/projects`
 (workspace level) and `organization` mounts `/organization/workspaces`. Which
 same-entry extension is mounted never changes what the address says: the
 group's token is written, and the section comes from the context, not from
@@ -175,20 +175,20 @@ either a section or an artifact, never both.
 ### The URL is where navigation is decided
 
 Every navigation is a write to the address, and nothing else moves the shell.
-A click in the rail, a pick or a level change in the context chain, a project
+A click on a level's tab, a pick or a level change in the context chain, a project
 opened or closed inside `projects-mfe`, a workspace chosen on a screen — each
 computes the route it means and calls `navigate(route, verb)`, which is
 `backProjectEntries` on the `screen` key. The library reports the transition,
 and one function, `materialize`, brings the shell to what the address now
 says. The handlers in `appContextEffects.ts` no longer touch the context
-slice; they translate an event into a route. The event names stay, so `Rail`
-and `ContextChain` are unchanged.
+slice; they translate an event into a route. The event names stay, so the level's
+navigation and `ContextChain` are unchanged.
 
 The verb is decided by who navigated:
 
 | Origin | Verb |
 |---|---|
-| a person: rail, chain, a project opened or closed in the MFE, a workspace picked on a screen | `push` |
+| a person: tabs, chain, a project opened or closed in the MFE, a workspace picked on a screen | `push` |
 | the MFE moving to a section by itself (`announceSection`) | `replace` |
 | a default filled or an unknown id dropped by `materialize` | `replace` |
 | the first screen when the address is empty | `replace` |

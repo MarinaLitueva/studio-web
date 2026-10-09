@@ -52,12 +52,12 @@ workspaces**. The chain in the top bar names the one in scope and switches
 between them, but a switcher is not a list: it shows no counts, offers no
 creation, and answers nothing about a workspace one is not in.
 
-Until this screen exists, the workspace slot doubles as the entry to the level
-even at the organization level, which is a deviation from the design recorded in
-`cpt-studiofrontend-dod-shell-levels-workspace-level`. This feature is what lets
-that be tightened back. Since 2026-10-08 the slot is drawn at the organization
-level again, as the design's own switcher, and a pick in it enters the
-workspace; this screen stays the way in that shows counts and creates.
+Until this screen existed, the workspace slot doubled as the entry to the level
+even at the organization level, which was a deviation from the design. Since
+2026-10-08 the design itself has the slot at the organization level ("All
+workspaces"), and a pick in it enters the workspace
+(`cpt-studiofrontend-dod-shell-levels-workspace-level`); this screen stays the
+way in that shows counts and creates.
 
 **Assumptions fixed here**, because the design is silent and each changes the
 code:
@@ -255,8 +255,10 @@ the projects list is a screen of one workspace already.
 The system **MUST** show each workspace's project count from the `child_count`
 of the row it already read, and **MUST NOT** issue a request per row.
 
-The same rule the chain's menus follow: account-management counts the direct
-children visible to the caller, which is exactly what the column should claim.
+The same rule the organization switch follows
+(`cpt-studiofrontend-dod-shell-levels-counts`): account-management counts the
+direct children visible to the caller, which is exactly what the column should
+claim.
 
 **Implements**:
 - `cpt-studiofrontend-algo-workspaces-screen-list`

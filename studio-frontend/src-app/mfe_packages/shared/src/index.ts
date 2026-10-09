@@ -118,7 +118,6 @@ export {
 export {
   createScreenTranslations,
   createText,
-  pluralForm,
   screenText,
   type ScreenText,
 } from './i18n/screenText';

@@ -141,7 +141,7 @@ describe('generated MFE manifest', () => {
     const screenExtensions = extensions.filter((ext) => ext.domain === screenDomain.id);
 
     it('declares a level on every screen extension', () => {
-      // A screen with no level still shows up, in the organization rail — but
+      // A screen with no level still shows up, in the organization's tabs — but
       // that fallback exists for a manifest nobody has migrated yet, not for
       // ours. Anything registered here that forgot the field would silently
       // appear one level up.

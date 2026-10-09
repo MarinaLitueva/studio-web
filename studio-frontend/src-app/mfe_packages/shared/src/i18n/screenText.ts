@@ -15,9 +15,12 @@ export type ScreenText = ((key: string, params?: TextParams) => string) & {
   count: (key: string, count: number, params?: TextParams) => string;
 };
 
+const TRANSLATED_LANGUAGES: ReadonlySet<string> = new Set(['en', 'ru']);
+
 /** The form a count takes: CLDR's categories, folded onto the three keys a dictionary writes. */
 export function pluralForm(count: number, language: string | null | undefined): 'one' | 'few' | 'many' {
-  const category = new Intl.PluralRules(language || undefined).select(count);
+  const rule = language && TRANSLATED_LANGUAGES.has(language) ? language : 'en';
+  const category = new Intl.PluralRules(rule).select(count);
   return category === 'one' || category === 'few' ? category : 'many';
 }
 

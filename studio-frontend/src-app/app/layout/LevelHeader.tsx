@@ -106,7 +106,14 @@ export const LevelHeader: React.FC = () => {
     );
   }
 
-  if (level !== 'organization' && context.workspace) {
+  if (level !== 'organization') {
+    if (!context.workspace) {
+      return context.workspacesStatus === 'pending' ? (
+        <div className={styles.header} aria-hidden="true" data-testid="level-header-pending">
+          <Skeleton className={styles.pending} />
+        </div>
+      ) : null;
+    }
     return (
       <div className={styles.header}>
         <div className={styles.stack}>

@@ -275,7 +275,7 @@ requirements are planned (`cpt-studio-fr-authz-row-roles`,
 - **Depends On**: `cpt-studio-feature-shell-levels`
 
 - **Scope**:
-  - the workspace slot next to the organization
+  - the workspace slot of the path
   - the New workspace overlay
 
 - **Out of scope**:
@@ -499,7 +499,7 @@ requirements are planned (`cpt-studio-fr-authz-row-roles`,
 
 - [ ] `p1` - **ID**: `cpt-studio-feature-project-artifacts`
 
-- **Purpose**: A project's rail and its artifacts table, synced per repository into the knowledge graph. Two of its Definitions of Done are open.
+- **Purpose**: A project's sections and its artifacts table, synced per repository into the knowledge graph. Two of its Definitions of Done are open.
 
 - **Depends On**: `cpt-studio-feature-project-create`, `cpt-studio-feature-knowledge-graph`
 

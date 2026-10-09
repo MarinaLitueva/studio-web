@@ -47,10 +47,6 @@ export function levelOf(extension: ScreenExtension): ScreenLevel {
 // @cpt-end:cpt-studiofrontend-algo-shell-levels-menu:p1:inst-3
 // @cpt-end:cpt-studiofrontend-algo-shell-levels-menu:p1:inst-2
 
-export function levelAtLeast(level: ScreenLevel, minimum: ScreenLevel): boolean {
-  return SCREEN_LEVELS.indexOf(level) >= SCREEN_LEVELS.indexOf(minimum);
-}
-
 // The MFE's own token for this item, when the item is a section of a screen.
 export function sectionOf(extension: ScreenExtension): string | undefined {
   return (extension as LeveledScreenExtension).presentation.section;

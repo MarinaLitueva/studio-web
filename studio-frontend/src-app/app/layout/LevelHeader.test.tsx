@@ -6,6 +6,7 @@ interface TestContext {
   orgs: { id: string; name: string; count?: number }[];
   workspace: { id: string; name: string } | null;
   project: { id: string; name: string } | null;
+  workspacesStatus: 'pending' | 'ready' | 'failed';
   loading: boolean;
 }
 
@@ -41,6 +42,7 @@ describe('LevelHeader (names the level in scope)', () => {
       ],
       workspace: { id: 'ws-1', name: 'Platform Workspace' },
       project: { id: 'p-1', name: 'Agent Platform' },
+      workspacesStatus: 'ready',
       loading: false,
     };
   });
@@ -85,6 +87,27 @@ describe('LevelHeader (names the level in scope)', () => {
     expect(heading().textContent).toBe('Platform Workspace');
     expect(screen.getByText('Acme Corporation')).toBeTruthy();
     expect(screen.queryByText('Switch organization')).toBeNull();
+  });
+
+  describe('the workspace before its list is read', () => {
+    beforeEach(() => {
+      level.value = 'workspace';
+      context.value.workspace = null;
+    });
+
+    it('holds a placeholder, not the organization', () => {
+      context.value.workspacesStatus = 'pending';
+      render(<LevelHeader />);
+      expect(screen.getByTestId('level-header-pending')).toBeTruthy();
+      expect(screen.queryByRole('heading')).toBeNull();
+      expect(screen.queryByText('Switch organization')).toBeNull();
+    });
+
+    it('stays empty when the read failed', () => {
+      context.value.workspacesStatus = 'failed';
+      const { container } = render(<LevelHeader />);
+      expect(container.firstChild).toBeNull();
+    });
   });
 
   describe('the project', () => {

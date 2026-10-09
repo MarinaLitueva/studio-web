@@ -51,7 +51,7 @@ declare module '@gears-frontx/react' {
     };
     /** A workspace was created by an MFE and must become the current one. `organizationId` is the parent it was created under. */
     'app/context/workspace/created': { id: string; name: string; organizationId?: string };
-    /** The mounted screen works inside a workspace, so the slot naming it belongs in the bar. */
+    /** The mounted screen works inside a workspace; the shell reads the workspace list again if its last read failed. */
     'app/context/workspace/scoped': void;
     /** The workspace read failed; the shell retries once so the chain regains its slot. */
     'app/context/workspaces/failed': void;

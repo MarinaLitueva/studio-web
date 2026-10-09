@@ -51,7 +51,15 @@ describe('pluralForm', () => {
   });
 
   it('reads a category the keys do not name as "many"', () => {
-    expect(pluralForm(2, 'ar')).toBe('many');
+    expect(pluralForm(1.5, 'ru')).toBe('many');
+  });
+
+  // Their dictionaries are English copies: "0 workspaces", not "0 workspace".
+  it('reads an untranslated language by the English rule', () => {
+    expect(pluralForm(0, 'fr')).toBe('many');
+    expect(pluralForm(21, 'uk')).toBe('many');
+    expect(pluralForm(5, 'tl')).toBe('many');
+    expect(pluralForm(2, 'pl')).toBe('many');
   });
 });
 
