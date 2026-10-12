@@ -55,7 +55,7 @@ runs. Findings goes. The review queue it stood for is out of #643's scope.
 code:
 
 - The filter is **a slice, not the section's own state**, because a second
-  section writes it: Sources opens the list narrowed to one repository (#686).
+  section writes it: Sources opens the list searched by one repository's path (#686).
 - Opening a repository's specs **searches by its `full_path`**, not by its name.
   A name like `web` also matches the paths of other repositories' files, and two
   organizations can each have a repository by that name. A repository whose path
@@ -103,7 +103,7 @@ sections and the shell.
 **Actor**: Member
 
 **Success Scenarios**:
-- The member opens a repository's specs from its Sources row. Specs shows that repository's documents with a confirmed type, and the search box reads the repository's path.
+- The member opens a repository's specs from its Sources row. Specs shows the documents matching the repository's path with a confirmed type, and the search box reads that path.
 
 **Steps**:
 1. [ ] - `p1` - Member asks for a repository's specs on its Sources row - `inst-1`
