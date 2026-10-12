@@ -545,13 +545,13 @@ requirements are planned (`cpt-studio-fr-authz-row-roles`,
 
 - [x] `p1` - **ID**: `cpt-studio-feature-reserved-areas`
 
-- **Purpose**: People, Kits, Search, Organization settings and five project sections are present in the FrontX navigation and say they have no source yet. No feature spec is written for them.
+- **Purpose**: People, Kits, Search, Organization settings and six project sections are present in the FrontX navigation and say they have no source yet. No feature spec is written for them.
 
 - **Depends On**: `cpt-studio-feature-shell-levels`
 
 - **Scope**:
   - `people-mfe`, `kits-mfe`, `search-mfe`, the Organization settings screen
-  - the project sections of `projects-mfe` that render `PlaceholderSection`: Overview, Activity, Timeline, Team, Project settings
+  - the project sections of `projects-mfe` that render `PlaceholderSection`: Overview, Sources (until its feature spec, #685), Activity, Timeline, Team, Project settings
 
 - **Out of scope**:
   - the content of those areas
