@@ -42,6 +42,7 @@ owner: studio-team
   - [2.25 The organization's people](#225-the-organizations-people)
   - [2.26 The editor's session](#226-the-editors-session)
   - [2.27 The editor's bridge](#227-the-editors-bridge)
+  - [2.28 The project's specs](#228-the-projects-specs)
 - [3. Feature Dependencies](#3-feature-dependencies)
 
 <!-- /toc -->
@@ -544,13 +545,13 @@ requirements are planned (`cpt-studio-fr-authz-row-roles`,
 
 - [x] `p1` - **ID**: `cpt-studio-feature-reserved-areas`
 
-- **Purpose**: People, Kits, Search, Organization settings and six project sections are present in the FrontX navigation and say they have no source yet. No feature spec is written for them.
+- **Purpose**: People, Kits, Search, Organization settings and five project sections are present in the FrontX navigation and say they have no source yet. No feature spec is written for them.
 
 - **Depends On**: `cpt-studio-feature-shell-levels`
 
 - **Scope**:
   - `people-mfe`, `kits-mfe`, `search-mfe`, the Organization settings screen
-  - the project sections of `projects-mfe` that render `PlaceholderSection`: Overview, Findings, Activity, Timeline, Team, Project settings
+  - the project sections of `projects-mfe` that render `PlaceholderSection`: Overview, Activity, Timeline, Team, Project settings
 
 - **Out of scope**:
   - the content of those areas
@@ -1387,6 +1388,55 @@ requirements are planned (`cpt-studio-fr-authz-row-roles`,
 
   - None
 
+### 2.28 [The project's specs](../feature/project-specs.md)
+
+- [ ] `p1` - **ID**: `cpt-studio-feature-project-specs`
+
+- **Purpose**: A project's Specs section: every document the project holds, from its repositories and written in Studio, with its type and review state, and the actions the API has for them. Started by #683 with the section and the list's filter; the list and its actions follow in #689–#694.
+
+- **Depends On**: `cpt-studio-feature-project-artifacts`, `cpt-studio-feature-documents`
+
+- **Scope**:
+  - the Specs section of `projects-mfe`, and the filter state the Sources section sets
+  - confirming, changing or rejecting a document's type, checking with Spec Quality, uploading documents
+
+- **Out of scope**:
+  - the review queue, proposed changes, the vocabulary and the details drawer (#643 "Out of scope")
+  - changing a Studio document's type
+
+- **Requirements Covered**:
+
+  - [ ] `p1` - `cpt-studio-fr-documents`
+  - [ ] `p1` - `cpt-studio-fr-repository-documents`
+  - [ ] `p1` - `cpt-studio-fr-spec-quality`
+
+- **Design Principles Covered**:
+
+  - [ ] `p1` - `cpt-studio-principle-prove-before-show`
+
+- **Design Constraints Covered**:
+
+  - None
+
+- **Domain Model Entities**:
+  - Document, Binding
+
+- **Design Components**:
+
+  - [ ] `p1` - `cpt-studio-component-projects-mfe`
+  - [ ] `p1` - `cpt-studio-component-documents`
+
+- **API**:
+  - `/studio-documents/v1`, `/studio-spec-quality/v1`
+
+- **Sequences**:
+
+  - None
+
+- **Data**:
+
+  - None
+
 ## 3. Feature Dependencies
 
 ```text
@@ -1403,6 +1453,7 @@ cpt-studio-feature-tenancy
     │       │       │       └─→ cpt-studio-feature-organization-overview
     │       │       └─→ cpt-studio-feature-project-create
     │       │               ├─→ cpt-studio-feature-project-artifacts
+    │       │               │       └─→ cpt-studio-feature-project-specs
     │       │               └─→ cpt-studio-feature-editor-session
     │       │                       └─→ cpt-studio-feature-editor-bridge
     │       ├─→ cpt-studio-feature-connection-create
@@ -1412,6 +1463,7 @@ cpt-studio-feature-tenancy
     │       ├─→ cpt-studio-feature-connection-create
     │       ├─→ cpt-studio-feature-knowledge-graph
     │       │       ├─→ cpt-studio-feature-documents
+    │       │       │       └─→ cpt-studio-feature-project-specs
     │       │       ├─→ cpt-studio-feature-project-artifacts
     │       │       └─→ cpt-studio-feature-gears-products
     │       └─→ cpt-studio-feature-ide-sessions
@@ -1431,6 +1483,7 @@ cpt-studio-feature-tenancy
 - `cpt-studio-feature-tenancy` requires `cpt-studio-feature-organizations-access`: workspaces are created under an organization.
 - `cpt-studio-feature-project-create` requires `cpt-studio-feature-workspace-scope` and `cpt-studio-feature-connection-create`: a project is created in the current workspace, and its repositories step reads connections.
 - `cpt-studio-feature-project-artifacts` requires `cpt-studio-feature-project-create` and `cpt-studio-feature-knowledge-graph`: it syncs the sources the wizard wrote into the graph.
+- `cpt-studio-feature-project-specs` requires `cpt-studio-feature-project-artifacts` and `cpt-studio-feature-documents`: it lists the files the import brought in, with the types the documents gear gave them.
 - `cpt-studio-feature-ide-sessions` requires `cpt-studio-feature-connections`: sessions clone sources with connection credentials.
 - `cpt-studio-feature-editor-session` requires `cpt-studio-feature-project-create` and `cpt-studio-feature-ide-sessions`: it launches the session with the sources the wizard wrote.
 - `cpt-studio-feature-editor-bridge` requires `cpt-studio-feature-editor-session`: it talks to the IDE in the frame the session's address fills, and ends the session's launching state.
