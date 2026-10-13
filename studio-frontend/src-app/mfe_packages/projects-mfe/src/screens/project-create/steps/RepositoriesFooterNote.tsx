@@ -1,17 +1,14 @@
 // @cpt-dod:cpt-studiofrontend-dod-project-create-many-sources:p1
 import React from 'react';
 import { useAppSelector } from '@gears-frontx/react';
-import { useProjectCreateText } from '../../../i18n';
+import { SelectionNote } from '../../../components/SelectionNote';
 import { MAX_SOURCES } from '../../../model/projectDraft';
 import { CREATE_SLICE_KEY } from '../../../slices/createSlice';
 
 export const RepositoriesFooterNote: React.FC = () => {
-  const t = useProjectCreateText();
   const count = useAppSelector((state) => state[CREATE_SLICE_KEY].draft.sources.length);
 
-  if (count === 0) return <>{t('selected_none')}</>;
-  if (count >= MAX_SOURCES) return <>{t('selected_max', { n: count })}</>;
-  return <>{t.count('selected', count)}</>;
+  return <SelectionNote count={count} atCap={count >= MAX_SOURCES} />;
 };
 
 RepositoriesFooterNote.displayName = 'RepositoriesFooterNote';

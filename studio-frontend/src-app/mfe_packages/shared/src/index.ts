@@ -20,6 +20,7 @@ export {
   STUDIO_ACTION_ARTIFACT_OPEN,
   STUDIO_ARTIFACT_KINDS,
   STUDIO_EXTENSION_WORKSPACE_CREATE,
+  STUDIO_EXTENSION_CONNECTION_CREATE,
   isStudioArtifactKind,
   sendToHost,
   sendAndForget,
@@ -142,10 +143,12 @@ export {
 export {
   StudioTasksApiService,
   STUDIO_TASKS_API_BASE_URL,
+  type RunsParams,
   type StudioRun,
+  type StudioRunList,
   type StudioRunState,
 } from './tasks/StudioTasksApiService';
-export { runCount, type RunUpdate } from './tasks/runs';
+export { runCount, runUpdateFromRun, type RunUpdate } from './tasks/runs';
 export {
   createRunFollower,
   readCursor,

@@ -1,6 +1,10 @@
 // @cpt-dod:cpt-studiofrontend-dod-project-artifacts-sync-unit:p1
 // @cpt-algo:cpt-studiofrontend-algo-project-artifacts-sync:p2
 // @cpt-algo:cpt-studiofrontend-algo-project-artifacts-run-control:p2
+// @cpt-algo:cpt-studiofrontend-algo-project-artifacts-sync-add:p2
+// @cpt-dod:cpt-studiofrontend-dod-project-artifacts-sync-join:p1
+// @cpt-dod:cpt-studiofrontend-dod-project-artifacts-sync-resume:p1
+// @cpt-algo:cpt-studiofrontend-algo-project-artifacts-sync-resume:p2
 import {
   apiRegistry,
   eventBus,
@@ -16,13 +20,16 @@ import {
   refusalFrom,
   violationOfType,
   type RunFollower,
+  type StudioRun,
 } from '@constructor-studio/mfe-shared';
 import { ArtifactIngestApiService } from '../api/ArtifactIngestApiService';
 import {
   ARTIFACT_SYNC_SLICE_KEY,
   importAbandoned,
+  importResumed,
   importStarted,
   projectImport,
+  reposAdded,
   repoCancelling,
   repoControlRefused,
   repoEnqueued,
@@ -31,12 +38,15 @@ import {
   repoUpdated,
 } from '../slices/artifactSyncSlice';
 import { NAV_SLICE_KEY } from '../slices/navSlice';
-import { canCancel, canRetry } from '../model/repoImport';
-import { recordAttempt } from '../shared/importAttempts';
-import type { RepoRef, SyncRequest } from '../events/artifactEvents';
+import { INGEST_TASK_TYPE, canCancel, canRetry, inFlight, projectRuns } from '../model/repoImport';
+import { recordAttempt, recordRequests } from '../shared/importAttempts';
+import type { RepoRef, SyncRepo, SyncRequest } from '../events/artifactEvents';
 import '../events/artifactEvents';
 
 const CONCURRENCY = 3;
+
+/** The gear's ceiling for one page of runs. */
+const RUNS_PAGE = 200;
 
 /** The gear's answer to a cancel of a run that has already ended. */
 const CANCEL_REFUSED = 'TASK_CANCEL_REFUSED';
@@ -136,23 +146,13 @@ export function initArtifactEffects(dispatch: AppDispatch, app: FrontXApp): void
     return next;
   };
 
-  eventBus.on('mfe/artifacts/sync-requested', (request: SyncRequest) => {
-    const { projectId, workspaceId, repos, unsyncable } = request;
+  const requestAndFollow = (
+    mine: Watch,
+    projectId: string,
+    workspaceId: string | null,
+    repos: readonly SyncRepo[]
+  ): void => {
     const ingest = apiRegistry.getService(ArtifactIngestApiService);
-    watches.get(projectId)?.end();
-
-    // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-1
-    // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-2
-    // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-3
-    recordAttempt(projectId);
-    dispatch(importStarted({ projectId, repos: repos.map((r) => r.repo), unsyncable }));
-    // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-1
-    // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-2
-    // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-3
-
-    if (repos.length === 0) return;
-    const mine = watch(projectId);
-
     void (async () => {
       // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-4
       const cursor = await readCursor(events(), 'artifacts');
@@ -200,6 +200,118 @@ export function initArtifactEffects(dispatch: AppDispatch, app: FrontXApp): void
         // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-9
       });
     })();
+  };
+
+  /** A sync the store has lost track of — after leaving the project, a reload, or another tab — is still the gear's. */
+  const resume = (projectId: string): void => {
+    // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync-resume:p2:inst-1
+    if (watches.has(projectId)) return;
+    // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync-resume:p2:inst-1
+    void (async () => {
+      // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync-resume:p2:inst-2
+      const cursor = await readCursor(events(), 'artifacts');
+      // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync-resume:p2:inst-2
+      let listed: StudioRun[];
+      try {
+        // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync-resume:p2:inst-3
+        const pages = await Promise.all(
+          (['running', 'queued'] as const).map((state) =>
+            tasks()
+              .runs({ taskType: INGEST_TASK_TYPE, state, limit: RUNS_PAGE })
+              .fetch({ staleTime: 0 })
+          )
+        );
+        // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync-resume:p2:inst-3
+        listed = pages.flatMap((page) => page.items);
+      } catch (error) {
+        console.warn('[artifacts] could not list the syncs in flight:', error);
+        return;
+      }
+      // A sync asked for meanwhile follows its own runs; a closed project needs none.
+      if (watches.has(projectId) || openProjectId() !== projectId) return;
+
+      // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync-resume:p2:inst-4
+      const runs = projectRuns(listed, projectId);
+      if (runs.length === 0) return;
+      // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync-resume:p2:inst-4
+
+      // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync-resume:p2:inst-5
+      recordAttempt(projectId);
+      recordRequests(projectId, runs.map((entry) => entry.repo));
+      dispatch(importResumed({ projectId, runs }));
+      // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync-resume:p2:inst-5
+
+      // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync-resume:p2:inst-6
+      // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync-resume:p2:inst-7
+      const mine = watch(projectId);
+      for (const { repo, update } of runs) mine.repos.set(update.runId, repo);
+      mine.follower.follow(
+        runs.map((entry) => entry.update.runId),
+        cursor
+      );
+      // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync-resume:p2:inst-6
+      // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync-resume:p2:inst-7
+    })();
+  };
+
+  let opened: string | null = null;
+  const onNavigation = (): void => {
+    const projectId = openProjectId();
+    if (projectId === opened) return;
+    opened = projectId;
+    if (projectId) resume(projectId);
+  };
+  app.store.subscribe(onNavigation);
+  onNavigation();
+
+  const requested = (request: Pick<SyncRequest, 'repos' | 'unsyncable'>): string[] => [
+    ...request.repos.map((entry) => entry.repo),
+    ...request.unsyncable.map((entry) => entry.repo),
+  ];
+
+  eventBus.on('mfe/artifacts/sync-requested', (request: SyncRequest) => {
+    const { projectId, workspaceId, repos, unsyncable } = request;
+
+    // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-3
+    recordAttempt(projectId);
+    recordRequests(projectId, requested(request));
+    // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-3
+    // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-2
+    watches.get(projectId)?.end();
+    dispatch(importStarted({ projectId, repos: repos.map((r) => r.repo), unsyncable }));
+    // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-2
+
+    if (repos.length === 0) return;
+    requestAndFollow(watch(projectId), projectId, workspaceId, repos);
+  });
+
+  eventBus.on('mfe/artifacts/repos-added', (request: SyncRequest) => {
+    const { projectId, workspaceId } = request;
+    // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync-add:p2:inst-1
+    const idle = (entry: { repo: string }): boolean => {
+      const line = rowOf(projectId, entry.repo);
+      return !line || !inFlight(line.status);
+    };
+    const repos = request.repos.filter(idle);
+    const unsyncable = request.unsyncable.filter(idle);
+    if (repos.length === 0 && unsyncable.length === 0) return;
+    // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync-add:p2:inst-1
+
+    // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync-add:p2:inst-3
+    recordAttempt(projectId);
+    recordRequests(projectId, requested({ repos, unsyncable }));
+    // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync-add:p2:inst-3
+    dispatch(reposAdded({ projectId, repos: repos.map((r) => r.repo), unsyncable }));
+
+    if (repos.length === 0) return;
+    // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync-add:p2:inst-4
+    const mine = watch(projectId);
+    // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync-add:p2:inst-4
+    // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync-add:p2:inst-5
+    // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync-add:p2:inst-6
+    requestAndFollow(mine, projectId, workspaceId, repos);
+    // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync-add:p2:inst-5
+    // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync-add:p2:inst-6
   });
 
   // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-run-control:p2:inst-1

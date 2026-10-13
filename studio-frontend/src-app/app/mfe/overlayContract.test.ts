@@ -221,6 +221,7 @@ describe('generated MFE manifest', () => {
       );
       expect(declaring.map((entry) => entry.id)).toEqual([
         expect.stringContaining('constructor_studio.projects.mfe.main'),
+        expect.stringContaining('constructor_studio.projects.mfe.sources_connect'),
       ]);
     });
 

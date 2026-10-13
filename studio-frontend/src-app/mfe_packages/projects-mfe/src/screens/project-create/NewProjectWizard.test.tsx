@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FrontXProvider, createFrontXApp } from '@gears-frontx/react';
 import {
@@ -49,7 +49,7 @@ async function mountWizard() {
     </FrontXProvider>
   );
   const view = render(tree());
-  return { rerender: () => view.rerender(tree()) };
+  return { app: mfeApp, rerender: () => view.rerender(tree()) };
 }
 
 beforeEach(() => {
@@ -78,6 +78,47 @@ describe('the wizard behind its first-load skeleton', () => {
     await mountWizard();
 
     expect(screen.getByRole('alert').textContent).toBe('Could not load this screen.');
+    expect(screen.getByText('details step')).toBeTruthy();
+  });
+});
+
+describe('the repositories step', () => {
+  async function onRepositories() {
+    const { app } = await mountWizard();
+    const { editDraft, goToStep } = await import('../../slices/createSlice');
+    act(() => {
+      app.store.dispatch(editDraft({ name: 'Billing', mode: 'modernize' }));
+      app.store.dispatch(goToStep('repositories'));
+    });
+    return app;
+  }
+
+  it('has Back alone until a provider is chosen', async () => {
+    const app = await onRepositories();
+    expect(screen.getByRole('heading', { name: 'repos_title' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'back' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'create' })).toBeNull();
+
+    const { selectProvider } = await import('../../slices/createSlice');
+    act(() => {
+      app.store.dispatch(selectProvider('github'));
+    });
+    expect(screen.getByRole('button', { name: 'create' })).toBeTruthy();
+  });
+
+  it('goes Back to the providers first, then to the details', async () => {
+    const app = await onRepositories();
+    const { selectProvider } = await import('../../slices/createSlice');
+    act(() => {
+      app.store.dispatch(selectProvider('github'));
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'back' }));
+    expect(screen.getByRole('heading', { name: 'repos_title' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'create' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'back' }));
+    expect(screen.getByRole('heading', { name: 'title' })).toBeTruthy();
     expect(screen.getByText('details step')).toBeTruthy();
   });
 });

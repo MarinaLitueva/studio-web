@@ -71,11 +71,29 @@ function repoOf(state: ArtifactSyncState, projectId: string, repo: string) {
   return entry && found ? { entry, row: found } : null;
 }
 
+function applyUpdate(target: RepoImport, update: RunUpdate): void {
+  if (update.phase !== undefined) target.phase = update.phase;
+  if (update.result) target.stored = runCount(update.result, 'stored');
+  target.status = repoStatusOf(update.state, target.phase);
+  if (target.status === 'succeeded') target.summary = update.summary ?? target.summary;
+  // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-14
+  // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-15
+  if (target.status === 'failed' || target.status === 'cancelled') {
+    const said = update.error ?? null;
+    target.reason = said ? { kind: 'provider', text: said } : null;
+  }
+  // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-14
+  // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-15
+  if (!UNSETTLED.includes(target.status)) target.cancelling = false;
+}
+
 const {
   slice,
   importStarted,
+  reposAdded,
   repoEnqueued,
   repoUpdated,
+  importResumed,
   repoProgressed,
   repoCancelling,
   repoRetried,
@@ -101,6 +119,31 @@ const {
       state.byProject[projectId] = { phase: settle(rows), attempted: true, repos: rows };
     },
 
+    // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync-add:p2:inst-2
+    reposAdded: (
+      state: ArtifactSyncState,
+      action: ReducerPayload<{
+        projectId: string;
+        repos: string[];
+        unsyncable: { repo: string; reason: Refusal }[];
+      }>
+    ) => {
+      const { projectId, repos, unsyncable } = action.payload;
+      const added = [
+        ...repos.map((repo) => row(repo, 'queued', null)),
+        ...unsyncable.map(({ repo, reason }) => row(repo, 'unsyncable', reason)),
+      ];
+      const kept = (state.byProject[projectId]?.repos ?? []).filter(
+        (line) => !added.some((next) => next.repo === line.repo) || UNSETTLED.includes(line.status)
+      );
+      const fresh = added.filter(
+        (next) => !kept.some((line) => line.repo === next.repo)
+      );
+      const rows = [...kept, ...fresh];
+      state.byProject[projectId] = { phase: settle(rows), attempted: true, repos: rows };
+    },
+    // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync-add:p2:inst-2
+
     repoEnqueued: (
       state: ArtifactSyncState,
       action: ReducerPayload<{ projectId: string; repo: string; runId: string }>
@@ -116,21 +159,27 @@ const {
       const { projectId, repo, update } = action.payload;
       const found = repoOf(state, projectId, repo);
       if (!found) return;
-      const target = found.row;
-      if (update.phase !== undefined) target.phase = update.phase;
-      if (update.result) target.stored = runCount(update.result, 'stored');
-      target.status = repoStatusOf(update.state, target.phase);
-      if (target.status === 'succeeded') target.summary = update.summary ?? target.summary;
-      // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-14
-      // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-15
-      if (target.status === 'failed' || target.status === 'cancelled') {
-        const said = update.error ?? null;
-        target.reason = said ? { kind: 'provider', text: said } : null;
-      }
-      // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-14
-      // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-15
-      if (!UNSETTLED.includes(target.status)) target.cancelling = false;
+      applyUpdate(found.row, update);
       found.entry.phase = settle(found.entry.repos);
+    },
+
+    /** The gear's syncs for the project, found again: each gets its line with its run; every other line is kept. */
+    importResumed: (
+      state: ArtifactSyncState,
+      action: ReducerPayload<{ projectId: string; runs: { repo: string; update: RunUpdate }[] }>
+    ) => {
+      const { projectId, runs } = action.payload;
+      const resumed = runs.map(({ repo, update }) => {
+        const line = row(repo, 'queued', null);
+        line.runId = update.runId;
+        applyUpdate(line, update);
+        return line;
+      });
+      const kept = (state.byProject[projectId]?.repos ?? []).filter(
+        (line) => !resumed.some((next) => next.repo === line.repo)
+      );
+      const rows = [...kept, ...resumed];
+      state.byProject[projectId] = { phase: settle(rows), attempted: true, repos: rows };
     },
 
     /** The portal's own verdict: the request was refused, or the run is gone. */
@@ -201,8 +250,10 @@ const {
 export const artifactSyncSlice = slice;
 export {
   importStarted,
+  reposAdded,
   repoEnqueued,
   repoUpdated,
+  importResumed,
   repoProgressed,
   repoCancelling,
   repoRetried,

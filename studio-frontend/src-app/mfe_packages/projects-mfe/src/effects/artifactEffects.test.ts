@@ -32,6 +32,7 @@ import {
   ARTIFACT_SYNC_SLICE_KEY,
   artifactSyncSlice,
   importAbandoned,
+  importResumed,
   projectImport,
   repoCancelling,
   repoEnqueued,
@@ -91,7 +92,11 @@ function refusal(status: number, violationType?: string): Error {
   });
 }
 
-function harness(repos = REPOS) {
+/** A sync the gear still has for a repository of a project. */
+const inFlightRun = (id: string, state: StudioRun['state'], repo: string, projectId = PROJECT) =>
+  run(id, state, { payload: { project_id: projectId, repo_full_path: repo } });
+
+function harness(repos = REPOS, inFlight: StudioRun[] = []) {
   let state: ArtifactSyncState = artifactSyncSlice.reducer(undefined, { type: '@@init' });
   let openProject: string | null = PROJECT;
   const subscribers = new Set<() => void>();
@@ -129,12 +134,19 @@ function harness(repos = REPOS) {
   let enqueued = 0;
   const syncFetch = vi.fn(() => Promise.resolve({ run_id: `r-${(enqueued += 1)}`, status: 'queued' }));
   const runRead = vi.fn(({ runId }: { runId: string }) => ({
-    fetch: vi.fn().mockResolvedValue(run(runId, 'queued')),
+    fetch: vi.fn().mockResolvedValue(inFlight.find((listed) => listed.id === runId) ?? run(runId, 'queued')),
+  }));
+  const runsList = vi.fn(({ state: listed }: { state: StudioRun['state'] }) => ({
+    fetch: vi.fn().mockResolvedValue({
+      items: inFlight.filter((entry) => entry.state === listed),
+      total: inFlight.length,
+    }),
   }));
   const cancelFetch = vi.fn().mockResolvedValue(run('r-1', 'running', { cancel_requested: true }));
   const retryFetch = vi.fn().mockResolvedValue(run('r-1', 'queued'));
   const tasks = {
     run: runRead,
+    runs: runsList,
     cancel: vi.fn(() => ({ fetch: cancelFetch })),
     retry: vi.fn(() => ({ fetch: retryFetch })),
   };
@@ -165,12 +177,23 @@ function harness(repos = REPOS) {
       openProject = 'p-2';
       dispatch({ type: 'test/nav-changed' });
     },
+    returnToProject: () => {
+      openProject = PROJECT;
+      dispatch({ type: 'test/nav-changed' });
+    },
     requestSync: () =>
       emit('mfe/artifacts/sync-requested', {
         projectId: PROJECT,
         workspaceId: 'ws-1',
         repos: repos.map((repo) => ({ repo, provider: 'github', secretRef: 's' })),
         unsyncable: [],
+      }),
+    addRepos: (added: string[], unsyncable: string[] = []) =>
+      emit('mfe/artifacts/repos-added', {
+        projectId: PROJECT,
+        workspaceId: 'ws-1',
+        repos: added.map((repo) => ({ repo, provider: 'github', secretRef: 's' })),
+        unsyncable: unsyncable.map((repo) => ({ repo, reason: { kind: 'i18n', key: 'k' } })),
       }),
     cancel: (repo: string) => emit('mfe/artifacts/cancel-requested', { projectId: PROJECT, repo }),
     retry: (repo: string) => emit('mfe/artifacts/retry-requested', { projectId: PROJECT, repo }),
@@ -431,5 +454,118 @@ describe('a repository sync, followed on the event stream', () => {
       expect(h.tasks.retry).not.toHaveBeenCalled();
       expect(actions(h, repoRetried.type)).toHaveLength(0);
     });
+  });
+});
+
+describe('repositories added to a running import', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    listeners.clear();
+    window.sessionStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  it('syncs only the added repository and keeps following the others', async () => {
+    const h = harness(['acme/api', 'acme/web']);
+    h.requestSync();
+    await vi.advanceTimersByTimeAsync(0);
+    h.addRepos(['acme/new']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(h.syncFetch).toHaveBeenCalledTimes(3);
+    expect(h.syncFetch).toHaveBeenLastCalledWith(
+      expect.objectContaining({ repo_full_path: 'acme/new', project_id: PROJECT })
+    );
+    expect(h.disconnect).not.toHaveBeenCalled();
+    expect(h.rows().map((row) => [row.repo, row.runId])).toEqual([
+      ['acme/api', 'r-1'],
+      ['acme/web', 'r-2'],
+      ['acme/new', 'r-3'],
+    ]);
+
+    h.stream.onEvent?.(taskEvent(8, 'r-1', 'task.running'));
+    expect(h.rows()[0]).toMatchObject({ status: 'running' });
+  });
+
+  it('does not ask again for a repository whose sync is queued or running', async () => {
+    const h = harness(['acme/api']);
+    h.requestSync();
+    await vi.advanceTimersByTimeAsync(0);
+    h.addRepos(['acme/api']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(h.syncFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives an unsyncable repository its line and asks the gear nothing for it', async () => {
+    const h = harness([]);
+    h.addRepos([], ['acme/lab']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(h.syncFetch).not.toHaveBeenCalled();
+    expect(h.rows()).toEqual([expect.objectContaining({ repo: 'acme/lab', status: 'unsyncable' })]);
+  });
+});
+
+describe('an import found again on the gear', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    listeners.clear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  it("gives the project's syncs in flight their lines, and follows them from a cursor read before the listing", async () => {
+    const h = harness(REPOS, [
+      inFlightRun('r-9', 'running', 'acme/api'),
+      inFlightRun('r-8', 'queued', 'acme/web'),
+      inFlightRun('r-10', 'queued', 'acme/api'),
+      inFlightRun('r-7', 'running', 'acme/other', 'p-2'),
+    ]);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(h.rows().map((row) => [row.repo, row.runId, row.status])).toEqual([
+      ['acme/api', 'r-9', 'running'],
+      ['acme/web', 'r-8', 'queued'],
+    ]);
+    expect(h.phase()).toBe('running');
+    expect(h.events.cursor.fetch.mock.invocationCallOrder[0]).toBeLessThan(
+      h.tasks.runs.mock.invocationCallOrder[0] ?? 0
+    );
+    expect(h.events.streamFrom).toHaveBeenCalledWith(7);
+    expect(h.syncFetch).not.toHaveBeenCalled();
+
+    h.stream.onEvent?.(taskEvent(8, 'r-9', 'task.succeeded', { summary: 'acme/api: done', result: { stored: 3 } }));
+    expect(h.rows()[0]).toMatchObject({ status: 'succeeded', stored: 3 });
+  });
+
+  it('shows the import again when the member comes back to the project', async () => {
+    const h = harness(REPOS, [inFlightRun('r-9', 'running', 'acme/api')]);
+    await vi.advanceTimersByTimeAsync(0);
+
+    h.leaveProject();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.phase()).toBe('idle');
+
+    h.returnToProject();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.phase()).toBe('running');
+    expect(h.rows().map((row) => row.runId)).toEqual(['r-9']);
+  });
+
+  it('leaves a sync asked for while the runs were being listed to its own runs', async () => {
+    const h = harness(REPOS, [inFlightRun('r-9', 'running', 'acme/api')]);
+    h.requestSync();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(actions(h, importResumed.type)).toHaveLength(0);
+    expect(h.rows().map((row) => row.runId)).toEqual(['r-1', 'r-2', 'r-3']);
   });
 });

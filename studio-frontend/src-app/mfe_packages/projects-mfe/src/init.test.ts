@@ -68,6 +68,10 @@ vi.mock('./slices/artifactSyncSlice', () => ({
   artifactSyncSlice: { name: 'projects/artifact-sync' },
 }));
 
+vi.mock('./slices/sourcesConnectSlice', () => ({
+  sourcesConnectSlice: { name: 'projects/sources-connect' },
+}));
+
 vi.mock('./effects/wizardEffects', () => ({
   initWizardEffects: vi.fn(),
 }));
@@ -78,6 +82,10 @@ vi.mock('./effects/workspaceEffects', () => ({
 
 vi.mock('./effects/artifactEffects', () => ({
   initArtifactEffects: vi.fn(),
+}));
+
+vi.mock('./effects/sourcesConnectEffects', () => ({
+  initSourcesConnectEffects: vi.fn(),
 }));
 
 describe('projects-mfe init', () => {
@@ -139,6 +147,11 @@ describe('projects-mfe init', () => {
     // dispatch — so this asserts the slice and the arity, not the identity.
     expect(registerSlice).toHaveBeenCalledWith(
       { name: 'projects/artifact-sync' },
+      expect.any(Function)
+    );
+    // Connect source's slice, for the fourth entry; its effect writes the config.
+    expect(registerSlice).toHaveBeenCalledWith(
+      { name: 'projects/sources-connect' },
       expect.any(Function)
     );
     expect(module.mfeApp).toBe(expectedApp);

@@ -35,6 +35,8 @@ export default defineConfig({
         // Third entry, same reasoning: the New workspace form is its own
         // overlay root, and the wizard's lifecycle singleton cannot hold it.
         './workspaceOverlayLifecycle': './src/workspaceOverlayLifecycle.tsx',
+        // Fourth entry: Connect source, over the project screen.
+        './sourcesConnectLifecycle': './src/sourcesConnectLifecycle.tsx',
       },
       // Empty shared config — MF 2.0's shared dep mechanism is bypassed.
       // Shared deps are externalized via rollupOptions.external and provided
@@ -43,6 +45,10 @@ export default defineConfig({
       // mf-manifest.json must be generated alongside remoteEntry.js so that
       // MfeHandlerMF can discover expose chunk paths without regex-parsing the bundle.
       manifest: true,
+      // The one stylesheet goes to every entry. Without this the plugin credits
+      // only an entry whose own chunk imports CSS, and Connect source, built
+      // from shared components alone, mounted with no styles at all.
+      bundleAllCSS: true,
     }),
     frontxMfGts(),
   ],

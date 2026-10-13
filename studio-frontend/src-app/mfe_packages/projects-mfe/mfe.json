@@ -52,6 +52,19 @@
       ],
       "manifest": "gts.frontx.mfes.mfe.mf_manifest.v1~constructor_studio.projects.mfe.manifest.v1",
       "exposedModule": "./workspaceOverlayLifecycle"
+    },
+    {
+      "id": "gts.frontx.mfes.mfe.entry.v1~frontx.mfes.mfe.entry_mf.v1~constructor_studio.projects.mfe.sources_connect.v1",
+      "requiredProperties": [
+        "gts.frontx.mfes.comm.shared_property.v1~frontx.mfes.comm.theme.v1~",
+        "gts.frontx.mfes.comm.shared_property.v1~frontx.mfes.comm.language.v1~",
+        "gts.frontx.mfes.comm.shared_property.v1~constructor_studio.context.project.selected.v1~",
+        "gts.frontx.mfes.comm.shared_property.v1~constructor_studio.context.organization.selected.v1~"
+      ],
+      "actions": [],
+      "domainActions": [],
+      "manifest": "gts.frontx.mfes.mfe.mf_manifest.v1~constructor_studio.projects.mfe.manifest.v1",
+      "exposedModule": "./sourcesConnectLifecycle"
     }
   ],
   "extensions": [
@@ -85,6 +98,16 @@
         "label": "New workspace",
         "icon": "material-symbols:workspaces-outline",
         "route": "/workspaces/new"
+      }
+    },
+    {
+      "id": "gts.frontx.mfes.ext.extension.v1~frontx.screensets.layout.overlay.v1~constructor_studio.overlays.project_sources_connect.main.v1",
+      "domain": "gts.frontx.mfes.ext.domain.v1~frontx.screensets.layout.overlay.v1",
+      "entry": "gts.frontx.mfes.mfe.entry.v1~frontx.mfes.mfe.entry_mf.v1~constructor_studio.projects.mfe.sources_connect.v1",
+      "presentation": {
+        "label": "Connect source",
+        "icon": "lucide:plug",
+        "route": "/projects/sources/connect"
       }
     },
     {

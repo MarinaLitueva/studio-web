@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RunUpdate } from '@constructor-studio/mfe-shared';
 import reducer, {
+  importResumed,
   importStarted,
   projectImport,
   repoCancelling,
@@ -9,6 +10,7 @@ import reducer, {
   repoProgressed,
   repoRetried,
   repoUpdated,
+  reposAdded,
   type ArtifactSyncState,
 } from './artifactSyncSlice';
 
@@ -97,5 +99,66 @@ describe('a sync as its run reports', () => {
       cancelling: false,
       refusal: null,
     });
+  });
+});
+
+describe('repositories added to the import', () => {
+  const added = (state: ArtifactSyncState | undefined, repos: string[], unsyncable: string[] = []) =>
+    reducer(
+      state,
+      reposAdded({
+        projectId: PROJECT,
+        repos,
+        unsyncable: unsyncable.map((repo) => ({ repo, reason: { kind: 'i18n' as const, key: 'k' } })),
+      })
+    );
+
+  it('gets lines beside the existing ones, which keep their runs', () => {
+    const state = added(started('acme/api', 'acme/web'), ['acme/new'], ['acme/lab']);
+
+    expect(imported(state).repos.map((row) => [row.repo, row.status, row.runId])).toEqual([
+      ['acme/api', 'queued', 'r-1'],
+      ['acme/web', 'queued', 'r-2'],
+      ['acme/new', 'queued', null],
+      ['acme/lab', 'unsyncable', null],
+    ]);
+    expect(imported(state)).toMatchObject({ phase: 'running', attempted: true });
+  });
+
+  it('replaces a settled line of the same repository, and leaves one that is still syncing', () => {
+    let state = started('acme/api', 'acme/web');
+    state = updated(state, 'acme/api', { state: 'failed', error: 'rate limited' });
+    state = added(state, ['acme/api', 'acme/web']);
+
+    const rows = imported(state).repos;
+    expect(rows).toHaveLength(2);
+    expect(rows.find((row) => row.repo === 'acme/web')).toMatchObject({ status: 'queued', runId: 'r-2' });
+    expect(rows.find((row) => row.repo === 'acme/api')).toMatchObject({ status: 'queued', runId: null, reason: null });
+  });
+
+  it('starts an import of its own on a project that had none', () => {
+    const state = added(undefined, ['acme/new']);
+
+    expect(imported(state)).toMatchObject({ phase: 'running', attempted: true });
+    expect(imported(state).repos.map((row) => row.repo)).toEqual(['acme/new']);
+  });
+});
+
+describe('syncs found again on the gear', () => {
+  it('get their lines with their runs, and every other line is kept', () => {
+    let state = updated(started('acme/api', 'acme/web'), 'acme/api', { state: 'succeeded' });
+    state = reducer(
+      state,
+      importResumed({
+        projectId: PROJECT,
+        runs: [{ repo: 'acme/web', update: { runId: 'r-9', state: 'running', phase: 'pulling issues…' } }],
+      })
+    );
+
+    expect(imported(state).repos.map((line) => [line.repo, line.runId, line.status])).toEqual([
+      ['acme/api', 'r-1', 'succeeded'],
+      ['acme/web', 'r-9', 'running'],
+    ]);
+    expect(imported(state)).toMatchObject({ phase: 'running', attempted: true });
   });
 });

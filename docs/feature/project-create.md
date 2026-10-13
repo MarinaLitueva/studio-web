@@ -85,6 +85,20 @@ changes the code:
   GitLab one. ADR-0010 lists "modernize carries exactly one source" among the
   invariants that became advisory when the `studio-project` gear was retired;
   this feature widens it and the ADR records the change.
+- The repositories step starts from the **source-code providers**, as the
+  prototype's source flow does: a chip per source-code provider the
+  organization has a connection to, and nothing listed until one is chosen. The provider's connections sit under it, because an
+  organization may hold several connections to one provider: one connection is
+  named in a line, several get a tab each. Connect source in a project's Sources
+  section draws the same picker ([The project's sources](project-sources.md)).
+  The step's card is small with the chips, the hint and Back alone (no count, no
+  Create project), then keeps one height for every connection, the one the
+  tallest empty state needs whole, so only a longer list scrolls. The details
+  step keeps its own height. Back from the repositories returns to the
+  provider choice and keeps the picks; Back from there returns to the details
+  step. While the connections load, a skeleton as tall as
+  the chips stands in for them and the hint already shows, so the card does not
+  grow when they come.
 
 **Requirements**: `cpt-studio-fr-workspace-project-tenants`, `cpt-studio-fr-connections`
 
@@ -156,17 +170,18 @@ are traced.
 - A project appears in the list with status Draft and records every chosen repository as a source.
 
 **Error Scenarios**:
-- No connection is configured; the step offers "Manage connections" and nothing to pick.
+- The organization has no source connection; the step says so and offers nothing to pick.
 - The provider rejects the catalogue read; the step reports it and the member can go Back.
 
 **Steps**:
 1. [ ] - `p1` - Member fills the details step and picks "Import existing work" - `inst-1`
 2. [ ] - `p1` - Advance to the repositories step, now applicable - `inst-2`
-3. [ ] - `p1` - `API: GET /studio-connector/v1/connections (one tab per connection)` - `inst-3`
-4. [ ] - `p1` - `API: GET /studio-connector/v1/connections/{id}/repositories?search=&limit= (rows for the active tab)` - `inst-4`
-5. [ ] - `p1` - Member picks one or more repositories, across tabs if needed, up to the cap - `inst-5`
-6. [ ] - `p1` - Run `cpt-studiofrontend-algo-project-create-write` - `inst-6`
-7. [ ] - `p1` - **RETURN** unmount the overlay extension and announce the created project - `inst-7`
+3. [ ] - `p1` - `API: GET /studio-connector/v1/connections (a chip per source-code provider, its connections under it)` - `inst-3`
+4. [ ] - `p1` - Member picks a provider; its connections show, one in a line or several as tabs - `inst-3a`
+5. [ ] - `p1` - `API: GET /studio-connector/v1/connections/{id}/repositories?search=&limit= (rows for the active connection)` - `inst-4`
+6. [ ] - `p1` - Member picks one or more repositories, across providers and connections if needed, up to the cap - `inst-5`
+7. [ ] - `p1` - Run `cpt-studiofrontend-algo-project-create-write` - `inst-6`
+8. [ ] - `p1` - **RETURN** unmount the overlay extension and announce the created project - `inst-7`
 
 ### Abandon the wizard
 
@@ -238,18 +253,23 @@ blamed for them:
   client, because one page is clamped to 100 rows and a local filter would hide
   repositories that exist beyond it.
 - **`@cpt-gap`** — no repository carries a timestamp anywhere in the connector
-  API, so the design's UPDATED column has no data source.
+  API, so the design's UPDATED column has no data source, and the step does not
+  show it.
 
 - [x] `p2` - **ID**: `cpt-studiofrontend-algo-project-create-repos`
 
-**Input**: the active connection and the search text
+**Input**: the chosen provider, the active connection and the search text
 
-**Output**: the rows to show
+**Output**: the providers, the chosen provider's connections, and the rows to show
 
 **Steps**:
-1. [x] - `p1` - `API: GET /studio-connector/v1/connections?tenant= and GET /studio-connector/v1/providers (source-code drivers only, one tab each, captioned provider and label)` - `inst-1`
+1. [x] - `p1` - `API: GET /studio-connector/v1/connections?tenant= and GET /studio-connector/v1/providers (source-code drivers only)` - `inst-1`
+   1. [x] - `p1` - **IF** the organization has no source connection, **RETURN** the empty state that says so - `inst-1c`
+   2. [x] - `p1` - Offer a chip per source-code provider the organization has a connection to, in catalogue order - `inst-1a`
+   3. [x] - `p1` - **IF** no provider is chosen yet, list nothing and say what to do - `inst-1b`
+   4. [x] - `p1` - Name the provider's one connection in a line, or give each of several a tab captioned with the provider and its label - `inst-1d`
 2. [x] - `p1` - Pass the search text to the endpoint rather than filtering a page, since it narrows server-side where the provider supports it - `inst-2`
-3. [x] - `p1` - Render Updated empty: the connector API carries no timestamp for a repository - `inst-3`
+3. [x] - `p1` - Show each repository's name and visibility, and no Updated column: the connector API carries no timestamp for a repository - `inst-3`
 4. [x] - `p1` - **RETURN** the rows - `inst-4`
 
 ## 4. States (CDSL)
@@ -264,7 +284,7 @@ blamed for them:
 
 **Transitions**:
 1. [ ] - `p1` - **FROM** Details **TO** Repositories **WHEN** the primary action is used and the mode is modernize - `inst-1`
-2. [ ] - `p1` - **FROM** Repositories **TO** Details **WHEN** Back is used - `inst-2`
+2. [ ] - `p1` - **FROM** Repositories **TO** Details **WHEN** Back is used before a provider is chosen; with one chosen, Back returns the step to the provider choice and keeps the picks - `inst-2`
 3. [ ] - `p1` - **FROM** Repositories **TO** Details **WHEN** the mode is changed to greenfield, which strands the current step - `inst-3`
 
 ### Project Status State Machine
@@ -370,7 +390,7 @@ The system **MUST** create the tenant first and write its attributes second, and
 
 The system **MUST** add each picked repository to the selection rather than
 replacing what is already there, **MUST** keep the selection across connection
-tabs, **MUST** let a picked row be removed by activating it again, and **MUST
+tabs and providers, **MUST** let a picked row be removed by activating it again, and **MUST
 NOT** let the selection exceed 100 repositories in total — at the cap the
 unpicked rows are inert and the footer says so.
 
@@ -442,14 +462,22 @@ row.
 - [ ] Switching back to "Start from scratch" while on the repositories step returns to the details step.
 - [ ] The primary action is disabled until the current step is complete: a non-empty name and a chosen starting point on the details step, at least one chosen repository on the repositories step.
 - [ ] Picking a second repository keeps the first; picking a selected one removes it; the footer counts what is selected.
-- [ ] The selection survives switching connection tabs, and a created project records every picked repository.
+- [ ] The selection survives switching providers and connection tabs, and a created project records every picked repository.
 - [ ] Each recorded repository carries its default branch as `branch` and `share_mode: branch`.
 - [ ] At 100 selected the unpicked checkboxes are inert and the footer states the maximum.
-- [ ] A connection to a model provider (an API key) is not offered as a tab on the repositories step.
+- [ ] The repositories step opens on a chip per source-code provider the organization has a connection to, with nothing listed, and says to choose one; a provider with no connection has no chip.
+- [ ] Back with a provider chosen returns the repositories step to the provider choice and keeps the picks; Back from the provider choice returns to the details step.
+- [ ] The repositories step's card is small until a provider is chosen, with Back alone in its footer, no count and no Create project; choosing one brings both back and keeps one height for every connection: an empty state shows whole without a scroll, and only a longer list scrolls.
+- [ ] Choosing a provider with one connection names it in a line; with several, each gets a tab captioned with the provider and its label.
+- [ ] An organization with no source connection sees an empty state that says so instead of chips.
+- [ ] A GitLab or Bitbucket connection that exposes no repositories offers Try GitHub sample, which chooses the GitHub provider, when the organization has a GitHub connection.
+- [ ] A connection whose repositories cannot be read shows, in place of the table and centred under the search, the empty state's icon and "Could not read this connection.", with no title and no action.
+- [ ] A model provider (an API key) is offered neither as a chip nor as a connection on the repositories step.
 - [ ] A created project is a tenant of the project type whose parent is the workspace in scope, with `status = draft`, an `owner_id`, and the stages its workspace's catalogue marks required.
 - [ ] A workspace whose catalogue marks a different stage required seeds new projects with that one, and no code change is involved.
 - [ ] The owner field names the signed-in member and offers no way to change them; the created project carries their subject id as `owner_id`.
 - [ ] A refused creation leaves the wizard open with the draft intact and shows what was refused.
 - [ ] The created project appears in the list without a manual refresh.
-- [ ] The Updated column on the repositories step renders empty rather than a fabricated value.
+- [ ] The repositories step has no Updated column: the connector API carries no timestamp for a repository.
+- [ ] The chosen provider's chip shows as pressed, and pressing it again keeps it chosen.
 - [ ] A repository search that matches nothing says so under the column headers and offers to clear the search; a connection with no repositories, and an organization with no connections, each say what to do next.

@@ -62,10 +62,14 @@ repository (`cpt-studiofrontend-algo-project-artifacts-sync`).
 **Assumptions fixed here**, because the design is silent and each changes the
 code:
 
-- **The dialog offers the organization's existing connections only**, one tab
-  each, as the wizard does. The design authorizes a provider inside the dialog;
-  creating a connection here is out of #687's scope. With no connection, the
-  dialog opens the connection form of the Connections screen instead.
+- **The dialog offers the organization's existing connections only**, grouped
+  by provider, as the wizard does: a chip per source-code provider it has a
+  connection to, the chosen provider's connections under it. The design
+  authorizes a provider inside the dialog; creating a connection here is out of
+  #687's scope. An organization with no source connection is offered the
+  connection form of the Connections screen instead.
+  GitLab and Bitbucket connections are listed like GitHub ones; their
+  repositories are attached and not synced (below).
 - **A repository is attached once, whichever connection it came through.** Two
   sources are the same repository when their clone URLs give the same key, the
   one the backend uses (`repository_key`, `studio-backend/src/project_sources.rs`).
@@ -141,26 +145,28 @@ extensions, the shell's overlay frame and connections-mfe.
 **Error Scenarios**:
 - The organization has no source connection; the dialog says so and offers Add connection.
 - The config write is refused; the dialog stays open with the reason and the picks.
+- The project's config cannot be read; the dialog says so and offers no Connect source.
 - A picked repository is not on GitHub; it is attached and its line says why it is not synced.
 
 **Steps**:
 1. [ ] - `p1` - Member activates Connect source in the Sources header - `inst-1`
 2. [ ] - `p1` - Mount the dialog's extension in the shell's overlay domain - `inst-2`
 3. [ ] - `p1` - Reset the picks, the search and the chosen connection, so no earlier attempt is carried in - `inst-3`
-4. [ ] - `p1` - `API: GET /studio-connector/v1/connections?tenant= and GET /studio-connector/v1/providers (source-code drivers only, one tab each)` - `inst-4`
-5. [ ] - `p1` - **IF** there is no source connection - `inst-5`
+4. [ ] - `p1` - `API: GET /studio-connector/v1/connections?tenant= and GET /studio-connector/v1/providers (a chip per source-code provider with a connection, nothing listed yet)` - `inst-4`
+5. [ ] - `p1` - **IF** the organization has no source connection - `inst-5`
    1. [ ] - `p1` - Member activates Add connection - `inst-6`
    2. [ ] - `p1` - **RETURN** unmount the dialog and mount the connection form of connections-mfe - `inst-7`
-6. [ ] - `p1` - `API: GET /cf/account-management/v1/tenants/{project}/metadata/{project config type} (the repositories already attached)` - `inst-8`
-7. [ ] - `p1` - `API: GET /studio-connector/v1/connections/{id}/repositories?search=&limit= (rows for the active tab)` - `inst-9`
-8. [ ] - `p1` - Member picks repositories, across tabs if needed; the attached ones show picked and cannot be changed - `inst-10`
-9. [ ] - `p1` - Member activates Connect source - `inst-11`
-10. [ ] - `p1` - Run `cpt-studiofrontend-algo-project-sources-attach` - `inst-12`
-11. [ ] - `p1` - **IF** the write is refused - `inst-13`
+6. [ ] - `p1` - Member picks a provider; its connections show, one in a line or several as tabs - `inst-4a`
+7. [ ] - `p1` - `API: GET /cf/account-management/v1/tenants/{project}/metadata/{project config type} (the repositories already attached)` - `inst-8`
+8. [ ] - `p1` - `API: GET /studio-connector/v1/connections/{id}/repositories?search=&limit= (rows for the active connection)` - `inst-9`
+9. [ ] - `p1` - Member picks repositories, across providers and connections if needed; the attached ones show picked and cannot be changed - `inst-10`
+10. [ ] - `p1` - Member activates Connect source - `inst-11`
+11. [ ] - `p1` - Run `cpt-studiofrontend-algo-project-sources-attach` - `inst-12`
+12. [ ] - `p1` - **IF** the write is refused - `inst-13`
     1. [ ] - `p1` - **RETURN** the dialog stays open with the reason and the picks - `inst-14`
-12. [ ] - `p1` - Unmount the dialog - `inst-15`
-13. [ ] - `p1` - The project screen runs `cpt-studiofrontend-algo-project-sources-sync-missing` - `inst-16`
-14. [ ] - `p1` - **RETURN** the new repositories' syncs show in the project's import - `inst-17`
+13. [ ] - `p1` - Unmount the dialog - `inst-15`
+14. [ ] - `p1` - The project screen runs `cpt-studiofrontend-algo-project-sources-sync-missing` - `inst-16`
+15. [ ] - `p1` - **RETURN** the new repositories' syncs show in the project's import - `inst-17`
 
 ## 3. Processes / Business Logic (CDSL)
 
@@ -177,6 +183,7 @@ extensions, the shell's overlay frame and connections-mfe.
 2. [x] - `p1` - Record a sync attempt for the project in the tab's session storage, so the screen does not start a first import of every source on its own - `inst-2`
 3. [x] - `p1` - `API: GET /cf/account-management/v1/tenants/{project}/metadata/{project config type}`, read fresh - `inst-3`
 4. [x] - `p1` - Append the new sources, skipping a repository the project already has through any connection - `inst-4`
+   1. [x] - `p1` - **IF** that takes the project past 100 sources, **RETURN** the refusal that says so; nothing is written - `inst-4a`
 5. [x] - `p1` - `API: PUT /cf/account-management/v1/tenants/{project}/metadata/{project config type}` with every other field of the config as it was read - `inst-5`
 6. [x] - `p1` - **IF** the read or the write fails - `inst-6`
    1. [x] - `p1` - **RETURN** the refusal; the config is as it was - `inst-7`
@@ -215,16 +222,28 @@ so it is found the next time the project screen reads the project.
 
 - [ ] `p2` - **ID**: `cpt-studiofrontend-state-project-sources-connect`
 
-**States**: Picking, Writing
+**States**: Choosing, Picking, Writing
 
-**Initial State**: Picking
+**Initial State**: Choosing
 
 **Transitions**:
-1. [ ] - `p1` - **FROM** Picking **TO** Writing **WHEN** Connect source is activated with at least one repository picked - `inst-1`
-2. [ ] - `p1` - **FROM** Writing **TO** Picking **WHEN** the write is refused; the reason is shown and the picks are kept - `inst-2`
+1. [ ] - `p1` - **FROM** Choosing **TO** Picking **WHEN** a provider is chosen - `inst-1`
+2. [ ] - `p1` - **FROM** Picking **TO** Writing **WHEN** Connect source is activated with at least one repository picked - `inst-2`
+3. [ ] - `p1` - **FROM** Writing **TO** Picking **WHEN** the write is refused; the reason is shown and the picks are kept - `inst-3`
+4. [ ] - `p1` - **FROM** Picking **TO** Choosing **WHEN** Back is used; the picks are kept - `inst-4`
 
-The dialog leaves both states by being unmounted: after a write, on Cancel, on
-Escape or on the scrim. Nothing is written once it is gone.
+Choosing is the prototype's first step and the card is small: the chips and
+the hint (or, with no source connection, the empty state and Add connection),
+Back alone, no count and no Connect source. Picking and Writing keep one
+height for every connection (a list, an empty state, an error), so the card does
+not jump. It is the height the tallest empty state (connection tabs and Try
+GitHub sample) needs whole: an empty state never scrolls, only a longer list does. The
+viewport less 4rem caps it.
+
+The dialog leaves every state by being unmounted: after a write, on Back from
+Choosing, on Escape or on the scrim. Nothing is written once it is gone. Back
+from Picking returns to Choosing and keeps the picks; the prototype closes the
+dialog there.
 
 ## 5. Definitions of Done
 
@@ -236,6 +255,11 @@ The system **MUST** draw Connect source as an extension of the projects MFE in
 the shell's overlay domain, with its own entry and lifecycle, and **MUST** open
 it from a Connect source button in the Sources section's header.
 
+The dialog reads the open project from the shell's selected-project property, so
+the shell's overlay domain declares that property beside the organization and
+the workspace. A domain that does not declare a property an entry requires
+refuses the entry, and with it every extension of the MFE.
+
 The header's actions belong to the section: the project screen draws the header
 and asks the open section for its actions, and only Sources has any yet. Upload
 documents joins them with #693. When the ui-kit page header lands, it takes the
@@ -246,27 +270,33 @@ actions as they are.
 
 **Touches**:
 - Entities: `mfe.json` (projects-mfe), `sourcesConnectLifecycle`, `sourcesConnectActions`, `ProjectScreen`, `SourcesActions`, `openOverlay` and `closeOverlay` (mfe-shared)
+- Shell: the overlay domain's shared properties (`app/mfe/bootstrap.ts`), the overlay frame's height cap (`app/layout/OverlayDialog.tsx`)
 
 ### The dialog and the wizard share one repository picker
 
 - [x] `p1` - **ID**: `cpt-studiofrontend-dod-project-sources-picker`
 
 The system **MUST** draw the dialog's repositories with the New project wizard's
-picker: one tab per source connection, the search, the table and its empty
-states. The picker **MUST NOT** hold state of its own. The picks, the search
+picker: a chip per source-code provider the organization has a connection to,
+with nothing listed until one is chosen,
+the chosen provider's connections under it (one named in a line, several as
+tabs), the search, the table and its empty states. The picker **MUST NOT** hold state of its own. The picks, the search
 and the chosen connection come in through its props, from the wizard's slice in
 the wizard and from the dialog's slice in the dialog. The dialog's slice
 **MUST** be reset when the dialog mounts.
 
 The wizard behaves as before (`cpt-studiofrontend-dod-project-create-many-sources`).
-The dialog reuses the wizard's frame, its footer note and its strings, and adds
-four of its own: the title, Connect source, Already attached and Add connection.
+The dialog reuses the wizard's frame, small on its first step and one height after it, its
+footer note and its strings, and adds its own: the title, Connect source,
+Already attached, Add connection, the full project's footer and its errors. Its secondary button reads Back,
+the wizard's string: from the repositories it returns to the providers, and
+from the providers it closes the dialog.
 
 **Implements**:
 - `cpt-studiofrontend-flow-project-sources-connect`
 
 **Touches**:
-- Entities: `RepositoryPicker`, `RepositoriesStep`, `RepositoriesFooterNote`, `sourcesConnectSlice`, `SourcesConnectDialog`
+- Entities: `RepositoryPicker`, `SelectionNote`, `OverlayFrame.module.css`, `RepositoriesStep`, `RepositoriesFooterNote`, `sourcesConnectSlice`, `SourcesConnectDialog`
 
 ### A repository is attached once, and the project holds at most 100
 
@@ -275,11 +305,16 @@ four of its own: the title, Connect source, Already attached and Add connection.
 The system **MUST** show a repository the project already has, through any
 connection, as picked and inert, and **MUST NOT** let the attached and the
 picked repositories exceed 100 together: at the ceiling the unpicked rows are
-inert and the footer says so.
+inert and the footer says so, also when the attached ones fill it alone.
 
 A repository is the same when its clone URL gives the same key, the one the
 config write compares by (`sameRepository`), so the dialog never offers a pick
 the write would drop.
+
+Both rest on the config the dialog has read. When that read fails, the dialog
+**MUST** say so and offer no Connect source. The read may also be up to 30 s
+old, so the write **MUST** check the ceiling again against the config it reads
+fresh, and refuse rather than exceed it.
 
 **Implements**:
 - `cpt-studiofrontend-flow-project-sources-connect`
@@ -373,13 +408,17 @@ when the run starts.
 
 ## 6. Acceptance Criteria
 
-- [ ] The Sources section's header shows Connect source; no other section's header shows it.
-- [ ] Activating it opens the dialog over the project; Escape, the scrim and Cancel close it and write nothing.
-- [ ] The dialog shows one tab per source connection of the organization, with the same search and table as the New project wizard.
+- [ ] The Sources section's header shows Connect source, with a plug icon as in the prototype; no other section's header shows it.
+- [ ] Activating it opens the dialog over the project; Escape, the scrim and Back on the providers close it and write nothing; Back on the repositories returns to the providers and keeps the picks.
+- [ ] Before a provider is chosen the dialog is compact: the chips and the hint, and Back alone, with no count and no Connect source; choosing one grows it to the repositories, the count of the picks and Connect source, at one height for every connection: an empty state shows whole without a scroll, and only a longer list scrolls.
+- [ ] The dialog opens on a chip per source-code provider the organization has a connection to, with nothing listed; choosing one shows its connections, its search and its table, the same as the New project wizard.
 - [ ] Picking two repositories from two connections and activating Connect source closes the dialog, and the project's config lists both after its earlier sources, each with `branch` and `share_mode: branch`, and every other field unchanged.
 - [ ] Their syncs start, and Artifacts shows them beside the project's earlier repositories, whose syncs are not restarted.
 - [ ] A repository the project already has, through any connection, shows checked and cannot be unchecked or picked again.
 - [ ] With 99 repositories attached, one more can be picked; then the unpicked rows are inert and the footer states the maximum.
+- [ ] With 100 repositories attached, every row is inert and the footer says the project holds the maximum.
+- [ ] When the project's config cannot be read, the dialog says so and offers no Connect source.
+- [ ] A write that would take the project past 100, because its config grew after the dialog read it, is refused with the reason, and the picks are kept.
 - [ ] A GitLab or Bitbucket repository is attached, no sync is requested for it, and its line says why.
 - [ ] With no source connection, the dialog says so and offers Add connection, which closes it and opens the connection form.
 - [ ] A refused config write leaves the dialog open with the reason and the picks.

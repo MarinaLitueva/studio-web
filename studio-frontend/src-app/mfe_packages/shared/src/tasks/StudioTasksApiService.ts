@@ -34,8 +34,26 @@ export interface StudioRun {
   finished_at: string | null;
 }
 
+export interface StudioRunList {
+  items: StudioRun[];
+  total: number;
+}
+
+export interface RunsParams {
+  taskType: string;
+  state: StudioRunState;
+  /** 1..=200; the gear's default is 50. */
+  limit?: number;
+}
+
 function runPath({ runId }: { runId: string }): string {
   return `/runs/${encodeURIComponent(runId)}`;
+}
+
+export function runsPath({ taskType, state, limit }: RunsParams): string {
+  const query = new URLSearchParams({ task_type: taskType, state });
+  if (limit !== undefined) query.set('limit', String(limit));
+  return `/runs?${query.toString()}`;
 }
 
 export class StudioTasksApiService extends BaseApiService {
@@ -48,6 +66,8 @@ export class StudioTasksApiService extends BaseApiService {
 
   /** Read with `staleTime: 0`: the shared cache would answer one state per 30 s. */
   readonly run = this.protocol(RestEndpointProtocol).queryWith<StudioRun, { runId: string }>(runPath);
+
+  readonly runs = this.protocol(RestEndpointProtocol).queryWith<StudioRunList, RunsParams>(runsPath);
 
   /**
    * Asks the run to stop. Only a flag: the run ends `cancelled` once its

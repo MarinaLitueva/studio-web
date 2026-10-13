@@ -37,6 +37,10 @@ export default defineConfig({
       // mf-manifest.json must be generated alongside remoteEntry.js so that
       // MfeHandlerMF can discover expose chunk paths without regex-parsing the bundle.
       manifest: true,
+      // The one stylesheet goes to every entry. Without this the plugin credits
+      // only an entry whose own chunk imports CSS — see projects-mfe, whose
+      // Connect source dialog mounted with no styles at all.
+      bundleAllCSS: true,
     }),
     frontxMfGts(),
   ],

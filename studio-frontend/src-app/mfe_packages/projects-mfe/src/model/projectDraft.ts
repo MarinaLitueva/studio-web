@@ -48,6 +48,8 @@ export interface RepositoryPick {
   readonly cloneUrl: string;
   /** Which connection it came from — the tab the user was on. */
   readonly connectionId: string;
+  /** The provider's default branch, when it reports one. */
+  readonly defaultBranch?: string;
 }
 
 /**

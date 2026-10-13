@@ -3,6 +3,7 @@ import { useCallback, useMemo } from 'react';
 import { eventBus, useAppSelector } from '@gears-frontx/react';
 import { useSourceConnections } from './useConnections';
 import { attemptedInTab } from './importAttempts';
+import { syncPlan } from '../model/syncRequest';
 import {
   ARTIFACT_SYNC_SLICE_KEY,
   projectImport,
@@ -40,6 +41,7 @@ interface Params {
 
 // @cpt-dod:cpt-studiofrontend-dod-project-artifacts-import-detect:p1
 // @cpt-algo:cpt-studiofrontend-algo-project-artifacts-first-import:p2
+// @cpt-algo:cpt-studiofrontend-algo-project-artifacts-sync:p2
 export function useArtifactImport({
   projectId,
   workspaceId,
@@ -89,23 +91,9 @@ export function useArtifactImport({
   // @cpt-end:cpt-studiofrontend-algo-project-artifacts-first-import:p2:inst-9
 
   const start = useCallback(() => {
-    const request: SyncRequest = { projectId, workspaceId, repos: [], unsyncable: [] };
-    for (const source of sources) {
-      const connection = byId.get(source.connection_id);
-      if (!connection) {
-        request.unsyncable.push({
-          repo: source.full_path,
-          reason: { kind: 'i18n', key: 'artifacts_reason_no_connection' },
-        });
-        continue;
-      }
-      request.repos.push({
-        repo: source.full_path,
-        provider: connection.provider,
-        baseUrl: connection.base_url || undefined,
-        secretRef: connection.secret_ref,
-      });
-    }
+    // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-1
+    const request: SyncRequest = { projectId, workspaceId, ...syncPlan(sources, byId) };
+    // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-1
     eventBus.emit('mfe/artifacts/sync-requested', request);
   }, [projectId, workspaceId, sources, byId]);
 

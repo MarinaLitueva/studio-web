@@ -474,6 +474,7 @@ export async function bootstrapMFE(app: FrontXApp): Promise<void> {
       ...overlayDomain.sharedProperties,
       STUDIO_SHARED_PROPERTY_CONTEXT_ORGANIZATION,
       STUDIO_SHARED_PROPERTY_CONTEXT_WORKSPACE,
+      STUDIO_SHARED_PROPERTY_CONTEXT_PROJECT,
       STUDIO_SHARED_PROPERTY_SESSION_PROFILE,
     ],
   };

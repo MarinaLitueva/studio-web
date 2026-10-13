@@ -19,9 +19,11 @@ import { specsFilterSlice } from './slices/specsFilterSlice';
 import { createWizardSlice } from './slices/createSlice';
 import { workspaceCreateSlice } from './slices/workspaceSlice';
 import { artifactSyncSlice } from './slices/artifactSyncSlice';
+import { sourcesConnectSlice } from './slices/sourcesConnectSlice';
 import { initWizardEffects } from './effects/wizardEffects';
 import { initWorkspaceEffects } from './effects/workspaceEffects';
 import { initArtifactEffects } from './effects/artifactEffects';
+import { initSourcesConnectEffects } from './effects/sourcesConnectEffects';
 import { ArtifactIngestApiService } from './api/ArtifactIngestApiService';
 import { DocumentsApiService } from './api/DocumentsApiService';
 import { SpecQualityApiService } from './api/SpecQualityApiService';
@@ -69,5 +71,6 @@ registerSlice(workspaceCreateSlice, initWorkspaceEffects);
 // artifacts mid-flight, and cache invalidation outside React goes through the
 // app-bound QueryClient.
 registerSlice(artifactSyncSlice, (dispatch) => initArtifactEffects(dispatch, mfeApp));
+registerSlice(sourcesConnectSlice, (dispatch) => initSourcesConnectEffects(dispatch, mfeApp));
 
 export { mfeApp };

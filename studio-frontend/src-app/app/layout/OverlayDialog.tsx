@@ -84,7 +84,7 @@ export const OverlayDialog: React.FC = () => {
         role="dialog"
         aria-modal="true"
         aria-label={label}
-        className="relative flex h-fit w-fit max-h-[calc(100vh-8rem)] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-lg"
+        className="relative flex h-fit w-fit max-h-[calc(100vh-4rem)] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-lg"
       >
         {app.mfeRegistry && (
           <ExtensionDomainSlot

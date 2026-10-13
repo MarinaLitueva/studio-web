@@ -4,6 +4,7 @@
  */
 
 import type { ProjectSource } from '@constructor-studio/mfe-shared';
+import type { RepositoryPick } from './projectDraft';
 
 /**
  * A clone URL reduced to what names the repository: host and path, without
@@ -61,4 +62,15 @@ export function withoutSource(
     (source) =>
       source.connection_id !== entry.connection_id || source.full_path !== entry.full_path
   );
+}
+
+/** The source a picked repository is attached as, from the wizard or from Connect source. */
+export function sourceOf(pick: RepositoryPick): ProjectSource {
+  return {
+    connection_id: pick.connectionId,
+    full_path: pick.fullPath,
+    clone_url: pick.cloneUrl,
+    ...(pick.defaultBranch ? { branch: pick.defaultBranch } : {}),
+    share_mode: 'branch',
+  };
 }

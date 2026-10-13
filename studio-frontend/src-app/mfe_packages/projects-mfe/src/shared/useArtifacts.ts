@@ -16,6 +16,10 @@ export const ARTIFACTS_PAGE_SIZE = 18;
 
 const REPOSITORY_CEILING = 200;
 
+export function repositoryNodesParams(projectId: string): NodesParams {
+  return { scope: projectId, type: ARTIFACT_REPO_TYPE, limit: REPOSITORY_CEILING };
+}
+
 export interface ArtifactCountView {
   total: number;
   sources: ProjectSource[];
@@ -129,10 +133,7 @@ export function useArtifacts(projectId: string, query: ArtifactsQuery): Artifact
     [projectId, pageSize, query.offset, query.repo, query.kind, search]
   );
 
-  const repositoryParams = useMemo<NodesParams>(
-    () => ({ scope: projectId, type: ARTIFACT_REPO_TYPE, limit: REPOSITORY_CEILING }),
-    [projectId]
-  );
+  const repositoryParams = useMemo(() => repositoryNodesParams(projectId), [projectId]);
 
   const page = useApiQuery(ingest.nodes(pageParams));
   // The last answer for this project, so a new filter keeps the strip and the

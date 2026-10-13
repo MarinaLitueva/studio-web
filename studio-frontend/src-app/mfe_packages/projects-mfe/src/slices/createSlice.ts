@@ -18,6 +18,7 @@ import { FIRST_STEP_KEY, type WizardStepKey } from '../model/wizardSteps';
 export interface CreateState {
   stepKey: WizardStepKey;
   draft: ProjectDraft;
+  providerId: string | null;
   connectionId: string | null;
   repoSearch: string;
   submitting: boolean;
@@ -29,6 +30,7 @@ const SLICE_KEY = 'projects/create' as const;
 const initialState: CreateState = {
   stepKey: FIRST_STEP_KEY,
   draft: EMPTY_DRAFT,
+  providerId: null,
   connectionId: null,
   repoSearch: '',
   submitting: false,
@@ -41,6 +43,8 @@ const {
   goToStep,
   editDraft,
   pickSource,
+  selectProvider,
+  clearProvider,
   selectConnection,
   searchRepositories,
   submitStarted,
@@ -53,6 +57,7 @@ const {
     resetWizard: (state: CreateState) => {
       state.stepKey = FIRST_STEP_KEY;
       state.draft = EMPTY_DRAFT;
+      state.providerId = null;
       state.connectionId = null;
       state.repoSearch = '';
       state.submitting = false;
@@ -80,6 +85,18 @@ const {
       state.error = null;
     },
     // @cpt-end:cpt-studiofrontend-dod-project-create-many-sources:p1:inst-1
+    selectProvider: (state: CreateState, action: ReducerPayload<string>) => {
+      if (state.providerId === action.payload) return;
+      state.providerId = action.payload;
+      state.connectionId = null;
+      state.repoSearch = '';
+    },
+    /** Back from the repositories to the providers; the picks stay. */
+    clearProvider: (state: CreateState) => {
+      state.providerId = null;
+      state.connectionId = null;
+      state.repoSearch = '';
+    },
     selectConnection: (state: CreateState, action: ReducerPayload<string>) => {
       if (state.connectionId === action.payload) return;
       state.connectionId = action.payload;
@@ -105,6 +122,8 @@ export {
   goToStep,
   editDraft,
   pickSource,
+  selectProvider,
+  clearProvider,
   selectConnection,
   searchRepositories,
   submitStarted,

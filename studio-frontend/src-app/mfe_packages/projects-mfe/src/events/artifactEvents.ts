@@ -32,6 +32,8 @@ declare module '@gears-frontx/react' {
   interface EventPayloadMap {
     /** Pull these repositories into this project's graph. */
     'mfe/artifacts/sync-requested': SyncRequest;
+    /** Add these repositories to the project's import, beside the ones it already follows. */
+    'mfe/artifacts/repos-added': SyncRequest;
     /** Stop this repository's sync. */
     'mfe/artifacts/cancel-requested': RepoRef;
     /** Put this repository's failed or cancelled sync back on the queue. */

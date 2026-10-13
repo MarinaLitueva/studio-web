@@ -54,6 +54,10 @@ export type StudioArtifactRequest = StudioArtifact & { projectId: string };
 export const STUDIO_EXTENSION_WORKSPACE_CREATE =
   'gts.frontx.mfes.ext.extension.v1~frontx.screensets.layout.overlay.v1~constructor_studio.overlays.workspace_create.main.v1';
 
+/** connections-mfe's connection form, opened from projects-mfe as well. */
+export const STUDIO_EXTENSION_CONNECTION_CREATE =
+  'gts.frontx.mfes.ext.extension.v1~frontx.screensets.layout.overlay.v1~constructor_studio.overlays.connect_source.main.v1';
+
 export interface HostAction {
   type: string;
   target: string;

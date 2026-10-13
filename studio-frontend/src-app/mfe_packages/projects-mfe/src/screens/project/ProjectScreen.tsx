@@ -12,13 +12,20 @@ import { useOrganization, useWorkspace } from '@constructor-studio/mfe-shared';
 import { useProjectScreenTranslations, useProjectText } from '../../i18n';
 import { useArtifactCount } from '../../shared/useArtifacts';
 import { useArtifactImport } from '../../shared/useArtifactImport';
-import { NAV_SLICE_KEY, landOnFirstImport } from '../../slices/navSlice';
+import { useSourcesSync } from '../../shared/useSourcesSync';
+import { NAV_SLICE_KEY, landOnFirstImport, type ProjectSection } from '../../slices/navSlice';
 import { announceSection } from '../../actions/projectsActions';
 import { PlaceholderSection } from './sections/PlaceholderSection';
 import { ArtifactsSection } from './sections/ArtifactsSection';
 import { SpecsSection } from './sections/specs/SpecsSection';
 import { SourcesSection } from './sections/sources/SourcesSection';
+import { SourcesActions } from './sections/sources/SourcesActions';
 import styles from './ProjectScreen.module.css';
+
+/** A section's buttons in the project header. */
+const SECTION_ACTIONS: Partial<Record<ProjectSection, React.FC>> = {
+  sources: SourcesActions,
+};
 
 interface ImportWatchProps {
   projectId: string;
@@ -45,6 +52,14 @@ const ImportWatch: React.FC<ImportWatchProps> = ({
     sources,
     artifactCount,
     artifactsRead,
+  });
+  useSourcesSync({
+    projectId,
+    workspaceId,
+    orgId,
+    sources,
+    sourcesRead: artifactsRead,
+    isFirstImport,
   });
 
   useEffect(() => {
@@ -85,6 +100,7 @@ export const ProjectScreen: React.FC<ProjectScreenProps> = ({ projectId }) => {
   const artifactsRead = !artifactsLoading && !artifactsFailed;
 
   const busy = (!isLoaded && !translationsFailed) || isLoading;
+  const Actions = SECTION_ACTIONS[section];
 
   const body = () => {
     if (busy) {
@@ -128,6 +144,7 @@ export const ProjectScreen: React.FC<ProjectScreenProps> = ({ projectId }) => {
           <h2 className={styles.title}>
             {busy ? <Skeleton className={styles.titleSkeleton} /> : t(`section_${section}`)}
           </h2>
+          {!busy && project && Actions ? <Actions /> : null}
         </header>
         <div className={styles.body} data-section={section}>
           {body()}

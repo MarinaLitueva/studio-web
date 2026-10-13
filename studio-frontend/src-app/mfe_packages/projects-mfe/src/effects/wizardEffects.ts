@@ -16,6 +16,7 @@ import {
 import { refusalFrom } from '@constructor-studio/mfe-shared';
 import { DocumentsApiService } from '../api/DocumentsApiService';
 import { INITIAL_STATUS, MAX_SOURCES, type ProjectDraft } from '../model/projectDraft';
+import { sourceOf } from '../model/projectSources';
 import { submitFailed, submitStarted } from '../slices/createSlice';
 import type { ProjectRef } from '../events/wizardEvents';
 import '../events/wizardEvents';
@@ -54,11 +55,7 @@ function toProjectConfig(draft: ProjectDraft, stages: readonly string[]): Projec
   if (draft.goal.trim()) config.brief = draft.goal.trim();
   const sources = draft.sources.slice(0, MAX_SOURCES);
   if (sources.length > 0) {
-    config.sources = sources.map((pick) => ({
-      connection_id: pick.connectionId,
-      full_path: pick.fullPath,
-      clone_url: pick.cloneUrl,
-    }));
+    config.sources = sources.map(sourceOf);
     if (sources.length === 1) config.source_git_url = sources[0]!.cloneUrl;
   }
   if (draft.ownerId) config.owner_id = draft.ownerId;

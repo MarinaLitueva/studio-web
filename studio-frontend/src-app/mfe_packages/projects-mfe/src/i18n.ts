@@ -20,6 +20,7 @@ const CREATE_SCREEN = 'create';
 const WORKSPACE_SCREEN = 'workspace';
 const SPECS_SCREEN = 'specs';
 const SOURCES_SCREEN = 'sources';
+const CONNECT_SCREEN = 'connect';
 
 export const PROJECT_LIST_NAMESPACE = `screen.${SCREENSET}.${LIST_SCREEN}`;
 export const PROJECT_NAMESPACE = `screen.${SCREENSET}.${PROJECT_SCREEN}`;
@@ -27,6 +28,7 @@ export const PROJECT_CREATE_NAMESPACE = `screen.${SCREENSET}.${CREATE_SCREEN}`;
 export const WORKSPACE_CREATE_NAMESPACE = `screen.${SCREENSET}.${WORKSPACE_SCREEN}`;
 export const SPECS_NAMESPACE = `screen.${SCREENSET}.${SPECS_SCREEN}`;
 export const SOURCES_NAMESPACE = `screen.${SCREENSET}.${SOURCES_SCREEN}`;
+export const SOURCES_CONNECT_NAMESPACE = `screen.${SCREENSET}.${CONNECT_SCREEN}`;
 
 type ModuleMap = TranslationModules;
 
@@ -37,6 +39,7 @@ const createModules = import.meta.glob('./screens/project-create/i18n/*.json') a
 const workspaceModules = import.meta.glob('./screens/workspace-create/i18n/*.json') as ModuleMap;
 const specsModules = import.meta.glob('./screens/project/sections/specs/i18n/*.json') as ModuleMap;
 const sourcesModules = import.meta.glob('./screens/project/sections/sources/i18n/*.json') as ModuleMap;
+const connectModules = import.meta.glob('./screens/sources-connect/i18n/*.json') as ModuleMap;
 
 
 const loadListTranslations = loadScreenTranslations(listModules, './screens/project-list/i18n');
@@ -45,6 +48,7 @@ const loadCreateTranslations = loadScreenTranslations(createModules, './screens/
 const loadWorkspaceTranslations = loadScreenTranslations(workspaceModules, './screens/workspace-create/i18n');
 const loadSpecsTranslations = loadScreenTranslations(specsModules, './screens/project/sections/specs/i18n');
 const loadSourcesTranslations = loadScreenTranslations(sourcesModules, './screens/project/sections/sources/i18n');
+const loadConnectTranslations = loadScreenTranslations(connectModules, './screens/sources-connect/i18n');
 
 /** Loads the list screen's dictionary. One call, in `ProjectListScreen`. */
 export function useProjectListScreenTranslations(): UseScreenTranslationsReturn {
@@ -57,7 +61,8 @@ export function useProjectScreenTranslations(): UseScreenTranslationsReturn {
 }
 
 /**
- * Loads the New project wizard's dictionary. One call, in `NewProjectWizard`.
+ * Loads the New project wizard's dictionary. One call per root: `NewProjectWizard`,
+ * and `SourcesConnectDialog`, which shares the wizard's repository picker.
  * The wizard is a second mounted root with its own shadow root, but the i18n
  * registry is the MFE app's and `init.ts` builds that once for any entry — so
  * this is the same registry the screens use, not a second one.
@@ -76,9 +81,14 @@ export function useSpecsSectionTranslations(): UseScreenTranslationsReturn {
   return useScreenTranslations(SCREENSET, SPECS_SCREEN, loadSpecsTranslations);
 }
 
-/** Loads the Sources section's dictionary. One call, in `SourcesSection`. */
+/** Loads the Sources section's dictionary, in `SourcesSection` and its header actions. */
 export function useSourcesSectionTranslations(): UseScreenTranslationsReturn {
   return useScreenTranslations(SCREENSET, SOURCES_SCREEN, loadSourcesTranslations);
+}
+
+/** Loads Connect source's own dictionary. One call, in `SourcesConnectDialog`. */
+export function useSourcesConnectScreenTranslations(): UseScreenTranslationsReturn {
+  return useScreenTranslations(SCREENSET, CONNECT_SCREEN, loadConnectTranslations);
 }
 
 export const useProjectListText = createText(PROJECT_LIST_NAMESPACE);
@@ -87,3 +97,4 @@ export const useProjectCreateText = createText(PROJECT_CREATE_NAMESPACE);
 export const useWorkspaceCreateText = createText(WORKSPACE_CREATE_NAMESPACE);
 export const useSpecsText = createText(SPECS_NAMESPACE);
 export const useSourcesText = createText(SOURCES_NAMESPACE);
+export const useSourcesConnectText = createText(SOURCES_CONNECT_NAMESPACE);

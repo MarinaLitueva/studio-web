@@ -17,6 +17,17 @@ describe('StudioTasksApiService', () => {
     expect(service.run({ runId: 'a/b' }).key[2]).toBe('/runs/a%2Fb');
   });
 
+  it('lists one type of run in one state, with the page size only when asked', () => {
+    expect(service.runs({ taskType: 'artifact.ingest', state: 'running' }).key.slice(0, 3)).toEqual([
+      '/cf/studio-tasks/v1',
+      'GET',
+      '/runs?task_type=artifact.ingest&state=running',
+    ]);
+    expect(service.runs({ taskType: 'artifact.ingest', state: 'queued', limit: 200 }).key[2]).toBe(
+      '/runs?task_type=artifact.ingest&state=queued&limit=200'
+    );
+  });
+
   it('asks a run to stop with a POST to its cancel action', () => {
     expect(service.cancel('r-1').key).toEqual(['/cf/studio-tasks/v1', 'POST', '/runs/r-1/cancel']);
   });

@@ -8,7 +8,13 @@ import { type ConnectionDto, ConnectorsApiService } from '@constructor-studio/mf
 /** `ProviderDto.category` of a driver whose repositories can be browsed. */
 const SOURCE_CODE_CATEGORY = 'source_code';
 
+export interface SourceProvider {
+  provider: string;
+  displayName: string;
+}
+
 export interface ConnectionsView {
+  providers: readonly SourceProvider[];
   /** Source hosts only, in catalogue order. */
   connections: readonly ConnectionDto[];
   loading: boolean;
@@ -43,11 +49,16 @@ export function useSourceConnections(orgId: string): ConnectionsView {
     ])
   );
 
+  const providers = (providerData?.items ?? [])
+    .filter((provider) => provider.category === SOURCE_CODE_CATEGORY)
+    .map((provider) => ({ provider: provider.provider, displayName: provider.display_name }));
+
   const connections = (connectionData?.items ?? []).filter(
     (connection) => facts.get(connection.provider)?.category === SOURCE_CODE_CATEGORY
   );
 
   return {
+    providers,
     connections,
     loading: connectionsLoading || providersLoading,
     failed: connectionsFailed || providersFailed,
