@@ -219,7 +219,7 @@ are traced.
 3. [x] - `p1` - **IF** account-management refuses - `inst-3`
    1. [x] - `p1` - **RETURN** the refusal; the draft survives so the member can correct it - `inst-4`
 4. [x] - `p1` - `API: GET /studio-documents/v1/workspaces/{id}/stages (the required ones seed the project)` - `inst-4a`
-5. [x] - `p1` - `API: PUT /cf/account-management/v1/tenants/{id}/metadata/{project config type} (mode, stages, status, brief, source)` - `inst-5`
+5. [x] - `p1` - `API: PUT /cf/account-management/v1/tenants/{id}/metadata/{project config type} (mode, stages, status, brief, sources, each with its default branch and share mode)` - `inst-5`
 6. [x] - `p1` - **IF** the metadata write fails - `inst-6`
    1. [x] - `p1` - Report it but keep the tenant: a project without attributes is recoverable, a rollback is not - `inst-7`
 7. [x] - `p1` - **RETURN** the tenant id - `inst-8`
@@ -377,11 +377,21 @@ unpicked rows are inert and the footer says so.
 A repository is identified by its connection together with its provider-native
 id: that id is unique only within one connection, and the selection spans them.
 
+Each pick keeps the repository's default branch, and the write records it as the
+source's `branch`, with `share_mode: branch`, as Connect source does for a
+repository attached later. A provider that reports no default branch gets no
+`branch`.
+
+The picker is shared with Connect source in the project's Sources section
+(`cpt-studiofrontend-dod-project-sources-picker`). It holds no state; the
+wizard passes it the selection, the search and the chosen connection from its
+slice.
+
 **Implements**:
 - `cpt-studiofrontend-flow-project-create-modernize`
 
 **Touches**:
-- Entities: `createSlice`, `projectDraft`
+- Entities: `createSlice`, `projectDraft`, `RepositoryPicker`, `RepositoriesStep`
 
 ### Each root resolves the organization for itself
 
@@ -433,6 +443,7 @@ row.
 - [ ] The primary action is disabled until the current step is complete: a non-empty name and a chosen starting point on the details step, at least one chosen repository on the repositories step.
 - [ ] Picking a second repository keeps the first; picking a selected one removes it; the footer counts what is selected.
 - [ ] The selection survives switching connection tabs, and a created project records every picked repository.
+- [ ] Each recorded repository carries its default branch as `branch` and `share_mode: branch`.
 - [ ] At 100 selected the unpicked checkboxes are inert and the footer states the maximum.
 - [ ] A connection to a model provider (an API key) is not offered as a tab on the repositories step.
 - [ ] A created project is a tenant of the project type whose parent is the workspace in scope, with `status = draft`, an `owner_id`, and the stages its workspace's catalogue marks required.

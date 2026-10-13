@@ -9,7 +9,6 @@
 // @cpt-dod:cpt-studiofrontend-dod-workspace-scope-slot:p1
 import {
   eventBus,
-  FRONTX_ACTION_UNMOUNT_EXT,
   FRONTX_OVERLAY_DOMAIN,
   FRONTX_SCREEN_DOMAIN,
   type ChildMfeBridge,
@@ -17,6 +16,7 @@ import {
 import {
   STUDIO_ACTION_WORKSPACES_PUBLISH,
   STUDIO_EXTENSION_WORKSPACE_CREATE,
+  closeOverlay,
   sendAndForget,
   sendToHost,
 } from '@constructor-studio/mfe-shared';
@@ -30,13 +30,7 @@ import './../events/workspaceEvents';
  * overlay that will not unmount.
  */
 export function closeWorkspaceForm(bridge: ChildMfeBridge | null): Promise<void> {
-  return sendToHost(bridge, {
-    type: FRONTX_ACTION_UNMOUNT_EXT,
-    target: FRONTX_OVERLAY_DOMAIN,
-    payload: { subject: STUDIO_EXTENSION_WORKSPACE_CREATE },
-  }).catch((error: unknown) => {
-    console.error('[projects] closing the workspace form failed', error);
-  });
+  return closeOverlay(bridge, STUDIO_EXTENSION_WORKSPACE_CREATE, 'projects');
 }
 
 /**

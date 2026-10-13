@@ -1,6 +1,11 @@
 /** The MFE -> shell channel */
 
-import type { ChildMfeBridge } from '@gears-frontx/react';
+import {
+  FRONTX_ACTION_MOUNT_EXT,
+  FRONTX_ACTION_UNMOUNT_EXT,
+  FRONTX_OVERLAY_DOMAIN,
+  type ChildMfeBridge,
+} from '@gears-frontx/react';
 
 /** Screen domain: `kind: opened | closed | section`. */
 export const STUDIO_ACTION_CONTEXT_PUBLISH =
@@ -65,4 +70,25 @@ export function sendAndForget(bridge: ChildMfeBridge | null, action: HostAction,
   void sendToHost(bridge, action).catch((error: unknown) => {
     console.error(`[${tag}] host action failed`, action.type, error);
   });
+}
+
+function overlayAction(type: string, extensionId: string): HostAction {
+  return { type, target: FRONTX_OVERLAY_DOMAIN, payload: { subject: extensionId } };
+}
+
+export function openOverlay(bridge: ChildMfeBridge | null, extensionId: string, tag: string): void {
+  sendAndForget(bridge, overlayAction(FRONTX_ACTION_MOUNT_EXT, extensionId), tag);
+}
+
+export function closeOverlay(
+  bridge: ChildMfeBridge | null,
+  extensionId: string,
+  tag: string
+): Promise<void> {
+  if (!bridge) return Promise.resolve();
+  return sendToHost(bridge, overlayAction(FRONTX_ACTION_UNMOUNT_EXT, extensionId)).catch(
+    (error: unknown) => {
+      console.error(`[${tag}] closing the overlay failed`, extensionId, error);
+    }
+  );
 }

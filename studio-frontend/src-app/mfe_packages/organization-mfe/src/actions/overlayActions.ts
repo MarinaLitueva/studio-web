@@ -8,21 +8,9 @@
  * domain is what both talk to.
  */
 
-import {
-  FRONTX_ACTION_MOUNT_EXT,
-  FRONTX_OVERLAY_DOMAIN,
-  type ChildMfeBridge,
-} from '@gears-frontx/react';
-import { STUDIO_EXTENSION_WORKSPACE_CREATE, sendAndForget } from '@constructor-studio/mfe-shared';
+import type { ChildMfeBridge } from '@gears-frontx/react';
+import { STUDIO_EXTENSION_WORKSPACE_CREATE, openOverlay } from '@constructor-studio/mfe-shared';
 
 export function openWorkspaceForm(bridge: ChildMfeBridge | null): void {
-  sendAndForget(
-    bridge,
-    {
-      type: FRONTX_ACTION_MOUNT_EXT,
-      target: FRONTX_OVERLAY_DOMAIN,
-      payload: { subject: STUDIO_EXTENSION_WORKSPACE_CREATE },
-    },
-    'organization'
-  );
+  openOverlay(bridge, STUDIO_EXTENSION_WORKSPACE_CREATE, 'organization');
 }

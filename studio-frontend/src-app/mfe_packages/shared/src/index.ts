@@ -23,6 +23,8 @@ export {
   isStudioArtifactKind,
   sendToHost,
   sendAndForget,
+  openOverlay,
+  closeOverlay,
   type HostAction,
   type StudioArtifact,
   type StudioArtifactKind,

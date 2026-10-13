@@ -26,6 +26,8 @@ owner: studio-team
   - [Build the artifact rows](#build-the-artifact-rows)
   - [Decide whether this is a first import](#decide-whether-this-is-a-first-import)
   - [Sync the project's repositories](#sync-the-projects-repositories)
+  - [Decide which sources can be synced](#decide-which-sources-can-be-synced)
+  - [Add repositories to a project's import](#add-repositories-to-a-projects-import)
   - [Cancel or retry a repository's sync](#cancel-or-retry-a-repositorys-sync)
 - [4. States (CDSL)](#4-states-cdsl)
   - [Import State Machine](#import-state-machine)
@@ -37,6 +39,8 @@ owner: studio-team
   - [Updated shows a time or says where the row came from](#updated-shows-a-time-or-says-where-the-row-came-from)
   - [Reads are scoped to the project](#reads-are-scoped-to-the-project)
   - [A repository is the unit of sync and of retry](#a-repository-is-the-unit-of-sync-and-of-retry)
+  - [Only a provider that can sync is asked to](#only-a-provider-that-can-sync-is-asked-to)
+  - [Repositories added to a project join its import](#repositories-added-to-a-project-join-its-import)
   - [Every repository's sync is shown and can be stopped or retried](#every-repositorys-sync-is-shown-and-can-be-stopped-or-retried)
   - [A first import is recognised from data](#a-first-import-is-recognised-from-data)
   - [A created project opens](#a-created-project-opens)
@@ -136,6 +140,17 @@ have and the choice changes the code:
   session storage. The store forgets on reload, the gear's tasks do not, and
   nothing lets the screen list them — so without it a reload before the first
   object lands would enqueue every repository a second time.
+- **Only a provider that can sync is asked to.** The GitLab and Bitbucket
+  drivers list repositories and do nothing else: `POST /sync` accepts their
+  repositories, and the run then fails on its first step and is retried five
+  times before it gives up. So the portal asks only for GitHub repositories, and
+  records the others as unsyncable, saying their provider does not expose files
+  yet. The list of providers that can sync is the portal's until the gear says it.
+- **Repositories added to a project join its import.** Asking to sync the
+  project's sources replaces the import's lines and ends its watch, which is
+  right for Sync repositories. A repository attached later (#687), or synced on
+  its own (#686), is added beside the others instead, and the runs already
+  watched keep their lines.
 - **The import runs in an effect, and it talks to the gear.** Effects in this
   MFE otherwise carry no HTTP; reads go through `useApiQuery` and writes through
   `useApiMutation`. An import is the exception because it outlives the component
@@ -191,6 +206,7 @@ Actor ids are defined in the [PRD](../prd/constructor-studio.md); a gear taking 
 - **Feature**: [Create a project](project-create.md) — writes the sources this feature syncs
 - **Feature**: [Workspaces in scope](workspace-scope.md) — the parent tenant tagged onto every synced node
 - **Feature**: [Connect a source host](connection-create.md) — holds the `secret_ref` a sync needs
+- **Feature**: [The project's sources](project-sources.md) — attaches repositories after creation, whose syncs join the import
 - **Dependencies**: `studio-artifact-ingest` (`/cf/studio-artifact-ingest/v1`), `studio-tasks` (`/cf/studio-tasks/v1`), `studio-events` (`/cf/studio-events/v1`), account-management (`/cf/account-management/v1`), studio-connector (`/cf/studio-connector/v1`)
 - **Prerequisite**: `@gears-frontx/ui-kit` at `0.4.0-alpha.1` or later, for `DataTable` and `Sidebar`
 
@@ -307,22 +323,57 @@ Definitions of Done, which are traced.
 **Output**: the outcome of each repository's pull
 
 **Steps**:
-1. [x] - `p1` - Resolve each source's connection, for the provider, the installation root and the credential reference the gear needs - `inst-1`
-2. [x] - `p1` - **IF** a source's connection cannot be resolved - `inst-2`
-   1. [x] - `p1` - Record that repository as unsyncable and continue with the rest - `inst-3`
-3. [x] - `p1` - `API: GET /cf/studio-events/v1/events?after_seq=0&limit=1` for the tenant's cursor, before the first sync is requested - `inst-4`
-4. [x] - `p1` - `API: POST /cf/studio-artifact-ingest/v1/sync (provider, base_url, secret_ref, repo_full_path, project, workspace)` for each source, a bounded number at a time - `inst-5`
-5. [x] - `p1` - `API: GET /cf/studio-events/v1/stream` from the cursor, keeping the `task.*` events whose subject is one of the runs - `inst-6`
-6. [x] - `p1` - `API: GET /cf/studio-tasks/v1/runs/{id}` once for a run that joins the stream after it opened; the stream's replay from the cursor covers the rest - `inst-7`
-7. [x] - `p1` - **IF** the stream cannot be opened, cannot replay what it missed, or ends, or the read of a run joining it fails - `inst-8`
+1. [x] - `p1` - Run `cpt-studiofrontend-algo-project-artifacts-sync-request` for the project's sources - `inst-1`
+2. [x] - `p1` - Replace the import's lines with one per source: queued for a repository to sync, unsyncable with its reason for the rest. End the watch of an earlier import - `inst-2`
+3. [x] - `p1` - Record the attempt, for the project and for each repository asked for, in the store and in the tab's session storage - `inst-3`
+4. [x] - `p1` - `API: GET /cf/studio-events/v1/events?after_seq=0&limit=1` for the tenant's cursor, before the first sync is requested - `inst-4`
+5. [x] - `p1` - `API: POST /cf/studio-artifact-ingest/v1/sync (provider, base_url, secret_ref, repo_full_path, project, workspace)` for each repository to sync, a bounded number at a time - `inst-5`
+6. [x] - `p1` - `API: GET /cf/studio-events/v1/stream` from the cursor, keeping the `task.*` events whose subject is one of the runs - `inst-6`
+7. [x] - `p1` - `API: GET /cf/studio-tasks/v1/runs/{id}` once for a run that joins the stream after it opened; the stream's replay from the cursor covers the rest - `inst-7`
+8. [x] - `p1` - **IF** the stream cannot be opened, cannot replay what it missed, or ends, or the read of a run joining it fails - `inst-8`
    1. [x] - `p1` - `API: GET /cf/studio-tasks/v1/runs/{id}` for the runs not yet settled, on an interval, for the rest of the import - `inst-9`
-8. [x] - `p1` - Report each run's state, phase and counts onward; a run waiting for another repository's sync is reported as queued - `inst-10`
+9. [x] - `p1` - Report each run's state, phase and counts onward; a run waiting for another repository's sync is reported as queued - `inst-10`
    1. [x] - `p1` - **IF** a run starts or settles, the read of the project's repositories re-issues itself; **IF** its stored count has grown, the reads of the artifacts do, at most once every two seconds. The import does not reach into their cache - `inst-11`
-9. [x] - `p1` - **IF** the gear no longer knows a run, or five reads in a row go unanswered - `inst-12`
-   1. [x] - `p1` - Treat it as lost rather than pending, and stop asking about it - `inst-13`
-10. [x] - `p1` - **IF** a run failed or was cancelled - `inst-14`
+10. [x] - `p1` - **IF** the gear no longer knows a run, or five reads in a row go unanswered - `inst-12`
+    1. [x] - `p1` - Treat it as lost rather than pending, and stop asking about it - `inst-13`
+11. [x] - `p1` - **IF** a run failed or was cancelled - `inst-14`
     1. [x] - `p1` - Keep its reason against its repository, and do not resubmit it - `inst-15`
-11. [x] - `p1` - **RETURN** when no run is left unsettled. Nothing ends the watch early but a change of the project in scope - `inst-16`
+12. [x] - `p1` - **RETURN** when no run is left unsettled. Nothing ends the watch early but a change of the project in scope - `inst-16`
+
+### Decide which sources can be synced
+
+- [x] `p2` - **ID**: `cpt-studiofrontend-algo-project-artifacts-sync-request`
+
+**Input**: the sources to sync and the organization's connections
+
+**Output**: the repositories to sync, each with what the gear needs to pull it, and the ones that cannot be synced, each with its reason
+
+**Steps**:
+1. [x] - `p1` - **FOR EACH** source - `inst-1`
+   1. [x] - `p1` - Resolve its connection, for the provider, the installation root and the credential reference the gear needs - `inst-2`
+   2. [x] - `p1` - **IF** the connection cannot be resolved - `inst-3`
+      1. [x] - `p1` - Record the repository as unsyncable: its connection is gone - `inst-4`
+   3. [x] - `p1` - **ELSE IF** the provider is not one whose driver can sync (GitHub today) - `inst-5`
+      1. [x] - `p1` - Record the repository as unsyncable: its provider does not expose files yet - `inst-6`
+   4. [x] - `p1` - **ELSE** - `inst-7`
+      1. [x] - `p1` - Keep the repository to sync - `inst-8`
+2. [x] - `p1` - **RETURN** the repositories to sync and the unsyncable ones - `inst-9`
+
+### Add repositories to a project's import
+
+- [x] `p2` - **ID**: `cpt-studiofrontend-algo-project-artifacts-sync-add`
+
+**Input**: the repositories to sync and the unsyncable ones, from `cpt-studiofrontend-algo-project-artifacts-sync-request`, with the project tenant and its workspace
+
+**Output**: the outcome of each added repository's pull, beside the import's other repositories
+
+**Steps**:
+1. [x] - `p1` - Leave out a repository whose line is queued or running already, so it is not requested twice - `inst-1`
+2. [x] - `p1` - Add a line for each of the others: queued, or unsyncable with its reason. A settled line of the same repository is replaced; every other line is kept - `inst-2`
+3. [x] - `p1` - Record the attempt, for the project and for each repository asked for, in the store and in the tab's session storage - `inst-3`
+4. [x] - `p1` - Keep the project's watch if one is open, and open one if not - `inst-4`
+5. [x] - `p1` - Request and follow each added repository's sync as `cpt-studiofrontend-algo-project-artifacts-sync` does from its cursor on: the cursor, the bounded requests, the stream and the reads - `inst-5`
+6. [x] - `p1` - **RETURN** when the added runs have settled; the import settles when every line has - `inst-6`
 
 ### Cancel or retry a repository's sync
 
@@ -363,6 +414,9 @@ Definitions of Done, which are traced.
 7. [ ] - `p1` - **FROM** Running **TO** Idle **WHEN** the project in scope changes; the tasks outlive the screen on the server and are simply no longer watched. The attempt stays recorded, so returning does not restart it - `inst-7`
 8. [ ] - `p1` - **FROM** Settled **TO** Running **WHEN** the member retries a repository's sync - `inst-8`
 9. [ ] - `p1` - **FROM** Failed **TO** Running **WHEN** the member retries a repository's sync - `inst-9`
+10. [ ] - `p1` - **FROM** Idle **TO** Running **WHEN** repositories are added to the project's import - `inst-10`
+11. [ ] - `p1` - **FROM** Settled **TO** Running **WHEN** repositories are added to the project's import - `inst-11`
+12. [ ] - `p1` - **FROM** Failed **TO** Running **WHEN** repositories are added to the project's import - `inst-12`
 
 ## 5. Definitions of Done
 
@@ -672,6 +726,46 @@ never the shared fetch cache.
 - API: `POST /cf/studio-artifact-ingest/v1/sync`, `GET /cf/studio-tasks/v1/runs/{id}`, `GET /cf/studio-events/v1/stream`, `GET /cf/studio-events/v1/events`
 - Entities: `artifactEffects`, `artifactSyncSlice`, `followRuns`
 
+### Only a provider that can sync is asked to
+
+- [x] `p1` - **ID**: `cpt-studiofrontend-dod-project-artifacts-syncable-providers`
+
+The system **MUST** request a sync only for a repository whose provider's driver
+can sync, GitHub today, and **MUST** record every other repository as unsyncable,
+with a reason saying its provider does not expose files yet. The first import,
+Sync repositories and a repository attached later all decide this in one place.
+
+A request for a GitLab or Bitbucket repository is accepted and then fails on
+its first step, five times, before the run gives up; the line would end red for
+something the member cannot fix. The list is the portal's until the gear reports
+which drivers can sync.
+
+**Implements**:
+- `cpt-studiofrontend-algo-project-artifacts-sync-request`
+
+**Touches**:
+- Entities: `model/syncRequest`, `useArtifactImport`, `useSourcesSync`
+
+### Repositories added to a project join its import
+
+- [x] `p1` - **ID**: `cpt-studiofrontend-dod-project-artifacts-sync-join`
+
+The system **MUST** add a repository synced after the import started beside the
+import's other lines, and **MUST NOT** end the watch of the runs already
+followed or drop their lines. A repository already queued or running **MUST
+NOT** be requested again.
+
+Sync repositories replaces the lines because it asks for every source again. An
+addition asks for a few, and replacing would hide the others' syncs while their
+runs went on. #686 syncs one repository the same way.
+
+**Implements**:
+- `cpt-studiofrontend-algo-project-artifacts-sync-add`
+
+**Touches**:
+- Event: `mfe/artifacts/repos-added`
+- Entities: `artifactEffects`, `artifactSyncSlice`
+
 ### Every repository's sync is shown and can be stopped or retried
 
 - [ ] `p1` - **ID**: `cpt-studiofrontend-dod-project-artifacts-run-control`
@@ -730,6 +824,10 @@ member can still ask for a sync.
 
 The same derivation chooses the section, so the landing is decided inside the
 project frame and not announced to it.
+
+Repositories attached later, from Connect source in Sources, cross the same
+boundary the same way: the dialog writes the config, and the project frame finds
+the sources the graph has no repository for (`cpt-studiofrontend-dod-project-sources-sync-missing`).
 
 **Implements**:
 - `cpt-studiofrontend-algo-project-artifacts-first-import`
@@ -870,6 +968,8 @@ placeholder, a dash or a zero dressed as an answer.
 - [ ] Rows appear in that table while the import is still running, without a reload and without the member acting.
 - [ ] The header's totals climb as the import proceeds and stop when it finishes.
 - [ ] Opening the same project by hand from the list, before its import has been run, reaches the same section and starts the same import.
+- [ ] A GitLab or Bitbucket source gets no sync request; its line says its provider does not expose files yet.
+- [ ] Repositories added while an import runs get their own lines and syncs; the lines already there keep their state and their runs are still followed.
 - [ ] Opening a project that already has artifacts lands on its first section and requests no sync.
 - [ ] Reloading the page during an import does not start a second import.
 - [ ] One repository failing to sync leaves the other repositories' rows in the table, and the failure is reported against that repository.

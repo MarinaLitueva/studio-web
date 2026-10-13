@@ -43,6 +43,7 @@ owner: studio-team
   - [2.26 The editor's session](#226-the-editors-session)
   - [2.27 The editor's bridge](#227-the-editors-bridge)
   - [2.28 The project's specs](#228-the-projects-specs)
+  - [2.29 The project's sources](#229-the-projects-sources)
 - [3. Feature Dependencies](#3-feature-dependencies)
 
 <!-- /toc -->
@@ -1439,6 +1440,55 @@ requirements are planned (`cpt-studio-fr-authz-row-roles`,
 
   - None
 
+### 2.29 [The project's sources](../feature/project-sources.md)
+
+- [ ] `p1` - **ID**: `cpt-studio-feature-project-sources`
+
+- **Purpose**: A project's Sources section: the repositories the project works from, attaching more of them, and each one's sync. Started by #687 with Connect source; the rows, the row menu, the table and uploading documents follow in #685, #686, #688 and #693.
+
+- **Depends On**: `cpt-studio-feature-project-create`, `cpt-studio-feature-project-artifacts`, `cpt-studio-feature-connection-create`
+
+- **Scope**:
+  - the Sources section of `projects-mfe` and its Connect source dialog, an overlay extension sharing the New project wizard's repository picker
+  - appending repositories to the project config's `sources[]`, and syncing the new ones as part of the project's import
+
+- **Out of scope**:
+  - creating a connection inside the dialog (the Connections screen's form is opened instead)
+  - syncing GitLab and Bitbucket repositories, whose drivers do not expose files
+
+- **Requirements Covered**:
+
+  - [ ] `p1` - `cpt-studio-fr-connections`
+  - [ ] `p1` - `cpt-studio-fr-artifact-ingest`
+
+- **Design Principles Covered**:
+
+  - [ ] `p1` - `cpt-studio-principle-project-is-unit`
+
+- **Design Constraints Covered**:
+
+  - None
+
+- **Domain Model Entities**:
+  - Tenant, Connection, Artifact node
+
+- **Design Components**:
+
+  - [ ] `p1` - `cpt-studio-component-projects-mfe`
+  - [ ] `p1` - `cpt-studio-component-connector`
+  - [ ] `p1` - `cpt-studio-component-artifact-ingest`
+
+- **API**:
+  - `/cf/account-management/v1` (the project config), `/studio-connector/v1`, `/studio-artifact-ingest/v1`
+
+- **Sequences**:
+
+  - None
+
+- **Data**:
+
+  - None
+
 ## 3. Feature Dependencies
 
 ```text
@@ -1455,7 +1505,8 @@ cpt-studio-feature-tenancy
     │       │       │       └─→ cpt-studio-feature-organization-overview
     │       │       └─→ cpt-studio-feature-project-create
     │       │               ├─→ cpt-studio-feature-project-artifacts
-    │       │               │       └─→ cpt-studio-feature-project-specs
+    │       │               │       ├─→ cpt-studio-feature-project-specs
+    │       │               │       └─→ cpt-studio-feature-project-sources
     │       │               └─→ cpt-studio-feature-editor-session
     │       │                       └─→ cpt-studio-feature-editor-bridge
     │       ├─→ cpt-studio-feature-connection-create
