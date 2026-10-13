@@ -1,5 +1,15 @@
 import React, { useState } from 'react';
-import { Skeleton } from '@gears-frontx/ui-kit';
+import { Network } from 'lucide-react';
+import {
+  Button,
+  Empty,
+  EmptyActions,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  Skeleton,
+} from '@gears-frontx/ui-kit';
 import { useConnectionListScreenTranslations, useConnectionListText } from '../../i18n';
 import { useConnectionList } from '../../shared/useConnectionList';
 import { ConnectionsToolbar } from './components/ConnectionsToolbar';
@@ -29,21 +39,35 @@ export const ConnectionListScreen: React.FC = () => {
           <p className={styles.state}>
             {translationsFailed ? 'Could not load this screen.' : t('error_title')}
           </p>
-        ) : rows.length === 0 ? (
-          <div className={styles.state}>
-            <p className={styles.stateTitle}>
-              {total > 0 ? t('empty_no_match') : t('empty_title')}
-            </p>
-            <p className={styles.stateHint}>
-              {total > 0
-                ? t('empty_no_match_hint')
-                : org
-                  ? t('empty_hint')
-                  : t('empty_no_org')}
-            </p>
-          </div>
         ) : (
-          <ConnectionsTable rows={rows} tenantId={org?.id ?? ''} />
+          <ConnectionsTable
+            rows={rows}
+            tenantId={org?.id ?? ''}
+            empty={
+              total > 0 ? (
+                <Empty className={styles.empty}>
+                  <EmptyHeader>
+                    <EmptyDescription>{t('empty_no_match')}</EmptyDescription>
+                  </EmptyHeader>
+                  <EmptyActions>
+                    <Button variant="link" onClick={() => setQuery('')}>
+                      {t('clear_search')}
+                    </Button>
+                  </EmptyActions>
+                </Empty>
+              ) : (
+                <Empty className={styles.empty}>
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <Network />
+                    </EmptyMedia>
+                    <EmptyTitle>{t('empty_title')}</EmptyTitle>
+                    <EmptyDescription>{org ? t('empty_hint') : t('empty_no_org')}</EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              )
+            }
+          />
         )}
         {!busy && !failed && !translationsFailed && rows.length > 0 ? (
           <footer className={styles.footer}>

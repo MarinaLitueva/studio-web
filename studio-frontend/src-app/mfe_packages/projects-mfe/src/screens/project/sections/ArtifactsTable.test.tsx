@@ -8,7 +8,6 @@ import { ArtifactsTable, type ArtifactsTableLabels } from './ArtifactsTable';
 
 const LABELS: ArtifactsTableLabels = {
   table: 'Artifacts',
-  emptyMessage: 'No artifacts match.',
   previous: 'Previous',
   next: 'Next',
   sortedNewest: 'Newest first',
@@ -38,6 +37,7 @@ function table(props: { rows: ArtifactRow[]; loading?: boolean }) {
     <ArtifactsTable
       columns={COLUMNS}
       labels={LABELS}
+      empty="No artifacts match."
       offset={0}
       total={40}
       pageSize={18}

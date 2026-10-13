@@ -29,7 +29,7 @@ afterEach(cleanup);
 describe('the caption under the table', () => {
   it('counts the organization, not the page', () => {
     render(
-      <WorkspacesTable rows={workspaces(10)} total={10} emptyMessage="" onOpen={() => undefined} />
+      <WorkspacesTable rows={workspaces(10)} total={10} empty={null} onOpen={() => undefined} />
     );
     expect(screen.getByText(/of/).textContent).toBe('1–10 of 10 workspaces');
   });
@@ -39,21 +39,21 @@ describe('the caption under the table', () => {
   // saying how many of the organization's workspaces the search matched.
   it('keeps naming the whole when a search narrows the rows', () => {
     render(
-      <WorkspacesTable rows={workspaces(2)} total={10} emptyMessage="" onOpen={() => undefined} />
+      <WorkspacesTable rows={workspaces(2)} total={10} empty={null} onOpen={() => undefined} />
     );
     expect(screen.getByText(/of/).textContent).toBe('1–2 of 10 workspaces');
   });
 
   it('says none are shown when a search matches nothing', () => {
     render(
-      <WorkspacesTable rows={workspaces(0)} total={10} emptyMessage="none" onOpen={() => undefined} />
+      <WorkspacesTable rows={workspaces(0)} total={10} empty="none" onOpen={() => undefined} />
     );
     expect(screen.getByText(/of/).textContent).toBe('0–0 of 10 workspaces');
   });
 
   it('reads as one workspace when that is all the organization has', () => {
     render(
-      <WorkspacesTable rows={workspaces(1)} total={1} emptyMessage="" onOpen={() => undefined} />
+      <WorkspacesTable rows={workspaces(1)} total={1} empty={null} onOpen={() => undefined} />
     );
     expect(screen.getByText(/of/).textContent).toBe('1–1 of 1 workspace');
   });

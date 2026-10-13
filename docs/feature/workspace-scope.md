@@ -449,4 +449,5 @@ only button is already refused.
 - [ ] A project opened, or a sibling list published, from a workspace since left changes neither the top bar nor the project switcher.
 - [ ] A failed workspace read leaves the workspace in scope and the switcher's list untouched, and does not present the organization as having no workspace.
 - [ ] The Projects list shows an empty state, not workspace rows, for a workspace with no projects.
+- [ ] A search that matches no project says so, rather than claiming the workspace has no projects, and offers to clear the search.
 - [ ] Every row in the list is a project: no expandable rows, no indentation and no container rows anywhere in it.

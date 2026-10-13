@@ -491,7 +491,7 @@ do share, because `queryCacheShared` retains the host's off `globalThis`.
 - [ ] Each row's status resolves on its own: the table is drawn before any check has answered, and a provider that never answers leaves only its own row unresolved.
 - [ ] A connection whose credential was rotated at the provider reads Needs attention, and its reason is readable on the cell.
 - [ ] Typing in the toolbar's search narrows the rows by name, account and provider, without a request.
-- [ ] A search that matches nothing says so, rather than claiming the organization has no connections, and the row count never contradicts the rows on screen.
+- [ ] A search that matches nothing says so, rather than claiming the organization has no connections, offers to clear the search, and the row count never contradicts the rows on screen.
 - [ ] Available data, Projects, Last sync and Actions render a placeholder in every row; no cell shows the record's creation time.
 - [ ] Activating "Connect source" opens the overlay; the list stays visible behind the scrim.
 - [ ] Escape, a click on the scrim, and Cancel all close the overlay and write nothing.

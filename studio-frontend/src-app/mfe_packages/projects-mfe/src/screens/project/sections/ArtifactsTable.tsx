@@ -19,7 +19,6 @@ import styles from './ArtifactsSection.module.css';
 
 export interface ArtifactsTableLabels {
   table: string;
-  emptyMessage: string;
   previous: string;
   next: string;
   sortedNewest: string;
@@ -31,6 +30,7 @@ interface ArtifactsTableProps {
   rows: readonly ArtifactRow[];
   columns: readonly ArtifactColumn[];
   labels: ArtifactsTableLabels;
+  empty: React.ReactNode;
   offset: number;
   total: number;
   pageSize: number;
@@ -55,6 +55,7 @@ export const ArtifactsTable: React.FC<ArtifactsTableProps> = ({
   rows,
   columns,
   labels,
+  empty,
   offset,
   total,
   pageSize,
@@ -101,8 +102,8 @@ export const ArtifactsTable: React.FC<ArtifactsTableProps> = ({
             ))
           ) : rows.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={columns.length} className={styles.emptyCell}>
-                {labels.emptyMessage}
+              <TableCell colSpan={columns.length}>
+                {empty}
               </TableCell>
             </TableRow>
           ) : (

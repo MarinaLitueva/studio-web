@@ -16,7 +16,6 @@
   "col_configuration": "Configuration",
   "col_updated": "Updated",
   "no_data": "No data for this workspace yet",
-  "empty_none": "This organization has no workspaces yet.",
   "empty_search": "No workspace matches that search.",
   "error_title": "The workspaces could not be read.",
   "retry": "Try again",

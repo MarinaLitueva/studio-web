@@ -441,3 +441,4 @@ row.
 - [ ] A refused creation leaves the wizard open with the draft intact and shows what was refused.
 - [ ] The created project appears in the list without a manual refresh.
 - [ ] The Updated column on the repositories step renders empty rather than a fabricated value.
+- [ ] A repository search that matches nothing says so under the column headers and offers to clear the search; a connection with no repositories, and an organization with no connections, each say what to do next.

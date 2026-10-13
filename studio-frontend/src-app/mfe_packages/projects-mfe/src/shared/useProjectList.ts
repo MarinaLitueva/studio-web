@@ -10,6 +10,8 @@ import { useWorkspaceProjects } from './workspaceProjects';
 
 export interface ProjectListView {
   rows: Tenant[];
+  /** The workspace's projects before the search narrowed them. */
+  total: number;
   loading: boolean;
   failed: boolean;
   org: ReturnType<typeof useWorkspaceProjects>['org'];
@@ -27,5 +29,5 @@ export function useProjectList(query: string, sort: ProjectSortOption): ProjectL
     return [...matched].sort(tenantComparator(sort));
   }, [projects, query, sort]);
 
-  return { rows, loading, failed, org, workspace };
+  return { rows, total: projects.length, loading, failed, org, workspace };
 }

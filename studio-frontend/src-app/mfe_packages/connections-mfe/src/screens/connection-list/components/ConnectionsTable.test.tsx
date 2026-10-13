@@ -40,7 +40,7 @@ async function mount(rows: ConnectionRow[]) {
 
   render(
     <FrontXProvider app={mfeApp}>
-      <ConnectionsTable rows={rows} tenantId="org-1" />
+      <ConnectionsTable rows={rows} tenantId="org-1" empty={null} />
     </FrontXProvider>
   );
 }

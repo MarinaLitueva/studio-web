@@ -178,10 +178,10 @@ input.search {
   color: var(--muted-foreground);
 }
 
-.emptyCell {
-  height: calc(3 * var(--space-8));
-  color: var(--muted-foreground);
-  text-align: center;
+.empty {
+  margin-inline: auto;
+  border: 0;
+  white-space: normal;
 }
 
 .footer {

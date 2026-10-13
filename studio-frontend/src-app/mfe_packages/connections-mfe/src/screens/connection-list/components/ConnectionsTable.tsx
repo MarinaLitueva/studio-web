@@ -20,6 +20,7 @@ import styles from '../ConnectionListScreen.module.css';
 interface ConnectionsTableProps {
   rows: readonly ConnectionRow[];
   tenantId: string;
+  empty: React.ReactNode;
 }
 
 const Row: React.FC<{ row: ConnectionRow; tenantId: string }> = React.memo(({ row, tenantId }) => {
@@ -62,7 +63,7 @@ const Row: React.FC<{ row: ConnectionRow; tenantId: string }> = React.memo(({ ro
 
 Row.displayName = 'ConnectionRow';
 
-export const ConnectionsTable: React.FC<ConnectionsTableProps> = ({ rows, tenantId }) => {
+export const ConnectionsTable: React.FC<ConnectionsTableProps> = ({ rows, tenantId, empty }) => {
   const t = useConnectionListText();
 
   return (
@@ -78,9 +79,15 @@ export const ConnectionsTable: React.FC<ConnectionsTableProps> = ({ rows, tenant
         </TableRow>
       </TableHeader>
       <TableBody>
-        {rows.map((row) => (
-          <Row key={row.connection.id} row={row} tenantId={tenantId} />
-        ))}
+        {rows.length === 0 ? (
+          <TableRow>
+            <TableCell colSpan={6}>
+              {empty}
+            </TableCell>
+          </TableRow>
+        ) : (
+          rows.map((row) => <Row key={row.connection.id} row={row} tenantId={tenantId} />)
+        )}
       </TableBody>
     </Table>
   );

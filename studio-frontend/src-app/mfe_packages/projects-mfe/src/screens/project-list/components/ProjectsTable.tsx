@@ -22,6 +22,7 @@ import styles from '../ProjectListScreen.module.css';
 
 interface ProjectsTableProps {
   rows: readonly Tenant[];
+  empty: React.ReactNode;
 }
 
 /**
@@ -78,7 +79,7 @@ ProjectRow.displayName = 'ProjectRow';
  * The mockup's Projects Portfolio table: Project, Status, Issues, 7-day
  * movement, Owner, Updated.
  */
-export const ProjectsTable: React.FC<ProjectsTableProps> = ({ rows }) => {
+export const ProjectsTable: React.FC<ProjectsTableProps> = ({ rows, empty }) => {
   const t = useProjectListText();
 
   return (
@@ -94,9 +95,15 @@ export const ProjectsTable: React.FC<ProjectsTableProps> = ({ rows }) => {
         </TableRow>
       </TableHeader>
       <TableBody>
-        {rows.map((project) => (
-          <ProjectRow key={project.id} project={project} />
-        ))}
+        {rows.length === 0 ? (
+          <TableRow>
+            <TableCell colSpan={6}>
+              {empty}
+            </TableCell>
+          </TableRow>
+        ) : (
+          rows.map((project) => <ProjectRow key={project.id} project={project} />)
+        )}
       </TableBody>
     </Table>
   );

@@ -865,6 +865,7 @@ placeholder, a dash or a zero dressed as an answer.
 - [ ] The header states nothing about artifacts being complete or needing attention.
 - [ ] A project with no sources shows an empty state that says so and offers no sync.
 - [ ] A project with sources and nothing ingested shows an empty state that offers a sync.
+- [ ] A search or filter that matches no artifact says so under the column headers and offers to clear the search and both filters.
 - [ ] Creating a project from selected repositories leaves the wizard closed, the project open, and the Artifacts section showing.
 - [ ] Rows appear in that table while the import is still running, without a reload and without the member acting.
 - [ ] The header's totals climb as the import proceeds and stop when it finishes.

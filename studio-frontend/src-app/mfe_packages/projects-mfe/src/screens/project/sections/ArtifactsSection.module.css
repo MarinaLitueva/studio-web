@@ -99,10 +99,14 @@ input.search {
   white-space: nowrap;
 }
 
-.emptyCell {
-  height: calc(3 * var(--space-8));
-  color: var(--muted-foreground);
-  text-align: center;
+.empty {
+  margin-inline: auto;
+  border: 0;
+  white-space: normal;
+}
+
+.emptyFailed {
+  color: var(--danger);
 }
 
 .footer {
@@ -196,26 +200,17 @@ input.search {
   gap: var(--space-1);
 }
 
-.empty,
 .error {
   margin: 0;
   padding-inline: var(--space-4);
   font-size: var(--text-body-size);
   line-height: var(--text-body-line-height);
-  color: var(--muted-foreground);
-}
-
-.error {
   color: var(--danger);
 }
 
 .retry {
   margin-inline: var(--space-4);
   align-self: flex-start;
-}
-
-.repoLine {
-  padding-inline: var(--space-4);
 }
 
 .importing {

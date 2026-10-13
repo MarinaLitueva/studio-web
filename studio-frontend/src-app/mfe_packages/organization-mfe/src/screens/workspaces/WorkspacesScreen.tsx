@@ -7,7 +7,17 @@ import {
   useMfeBridge,
   useSharedProperty,
 } from "@gears-frontx/react";
-import { Button, Skeleton } from "@gears-frontx/ui-kit";
+import { Folder } from "lucide-react";
+import {
+  Button,
+  Empty,
+  EmptyActions,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  Skeleton,
+} from "@gears-frontx/ui-kit";
 import {
   useOrganization,
   AccountsApiService,
@@ -116,7 +126,30 @@ const WorkspaceList: React.FC<{
               // The organization's count, not the search's: the caption reads
               // "1-2 of 10", and passing `rows` would make it say "1-2 of 2".
               total={all.length}
-              emptyMessage={t(query.trim() ? "empty_search" : "empty_none")}
+              empty={
+                query.trim() ? (
+                  <Empty className={styles.empty}>
+                    <EmptyHeader>
+                      <EmptyDescription>{t("empty_search")}</EmptyDescription>
+                    </EmptyHeader>
+                    <EmptyActions>
+                      <Button variant="link" onClick={() => setQuery("")}>
+                        {t("clear_search")}
+                      </Button>
+                    </EmptyActions>
+                  </Empty>
+                ) : isError ? null : (
+                  <Empty className={styles.empty}>
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon">
+                        <Folder />
+                      </EmptyMedia>
+                      <EmptyTitle>{t("empty_title")}</EmptyTitle>
+                      <EmptyDescription>{t("empty_hint")}</EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
+                )
+              }
               onOpen={open}
             />
           </>

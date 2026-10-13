@@ -164,17 +164,10 @@ input.search {
   text-align: center;
 }
 
-.stateTitle {
-  margin: 0 0 var(--space-1);
-  font-size: var(--text-body-size);
-  line-height: var(--text-body-line-height);
-}
-
-.stateHint {
-  margin: 0;
-  font-size: var(--text-meta-size);
-  line-height: var(--text-meta-line-height);
-  color: var(--muted-foreground);
+.empty {
+  margin-inline: auto;
+  border: 0;
+  white-space: normal;
 }
 
 .footer {

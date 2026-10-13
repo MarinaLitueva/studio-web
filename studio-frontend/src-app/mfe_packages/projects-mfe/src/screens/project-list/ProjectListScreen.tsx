@@ -1,5 +1,15 @@
 import React, { useState } from 'react';
-import { Skeleton } from '@gears-frontx/ui-kit';
+import { Folder } from 'lucide-react';
+import {
+  Button,
+  Empty,
+  EmptyActions,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  Skeleton,
+} from '@gears-frontx/ui-kit';
 import { useProjectListScreenTranslations, useProjectListText } from '../../i18n';
 import { WorkspaceProjectsProvider } from '../../shared/workspaceProjects';
 import { useProjectList } from '../../shared/useProjectList';
@@ -16,7 +26,7 @@ const ProjectList: React.FC = () => {
 
   const sort: ProjectSortOption = DEFAULT_SORT_OPTION;
 
-  const { loading, failed, org, workspace, rows } = useProjectList(query, sort);
+  const { loading, failed, org, workspace, rows, total } = useProjectList(query, sort);
   const busy = (!isLoaded && !translationsFailed) || loading;
 
   return (
@@ -39,15 +49,40 @@ const ProjectList: React.FC = () => {
           <p className={styles.state}>
             {translationsFailed ? 'Could not load this screen.' : t('error_title')}
           </p>
-        ) : rows.length === 0 ? (
-          <div className={styles.state}>
-            <p className={styles.stateTitle}>{t('empty_title')}</p>
-            <p className={styles.stateHint}>
-              {!org ? t('empty_no_org') : !workspace ? t('empty_no_workspace') : t('empty_hint')}
-            </p>
-          </div>
         ) : (
-          <ProjectsTable rows={rows} />
+          <ProjectsTable
+            rows={rows}
+            empty={
+              total > 0 ? (
+                <Empty className={styles.empty}>
+                  <EmptyHeader>
+                    <EmptyDescription>{t('empty_no_match')}</EmptyDescription>
+                  </EmptyHeader>
+                  <EmptyActions>
+                    <Button variant="link" onClick={() => setQuery('')}>
+                      {t('clear_search')}
+                    </Button>
+                  </EmptyActions>
+                </Empty>
+              ) : (
+                <Empty className={styles.empty}>
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <Folder />
+                    </EmptyMedia>
+                    <EmptyTitle>{t('empty_title')}</EmptyTitle>
+                    <EmptyDescription>
+                      {!org
+                        ? t('empty_no_org')
+                        : !workspace
+                          ? t('empty_no_workspace')
+                          : t('empty_hint')}
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              )
+            }
+          />
         )}
 
         {!busy && !failed && !translationsFailed && rows.length > 0 ? (

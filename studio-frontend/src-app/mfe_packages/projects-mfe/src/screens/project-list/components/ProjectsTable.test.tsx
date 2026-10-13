@@ -87,7 +87,7 @@ async function mount(rows: Tenant[]) {
   render(
     <FrontXProvider app={mfeApp} mfeBridge={mfeContextValue(bridge)}>
       <OrganizationProvider>
-        <ProjectsTable rows={rows} />
+        <ProjectsTable rows={rows} empty={null} />
       </OrganizationProvider>
     </FrontXProvider>
   );

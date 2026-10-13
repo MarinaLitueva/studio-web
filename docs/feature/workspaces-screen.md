@@ -272,6 +272,7 @@ claim.
 - [ ] Workspaces is the organization's first tab, a fresh session opens on it, and Settings is the last tab.
 - [ ] The screen lists every workspace of the organization in scope, with a project count per row taken from one request.
 - [ ] An organization with no workspaces shows an empty state and the creation control, not a spinner.
+- [ ] A search that matches no workspace says so under the column headers and offers to clear the search.
 - [ ] Activating a row opens that workspace's projects, and the path in the top bar gains the workspace slot naming it.
 - [ ] Switching the organization re-reads the list, and never shows the previous organization's workspaces.
 - [ ] A failed read keeps whatever rows were shown and offers to try again.

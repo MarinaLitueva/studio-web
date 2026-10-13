@@ -5,9 +5,16 @@
 // @cpt-dod:cpt-studiofrontend-dod-project-create-many-sources:p1
 // @cpt-algo:cpt-studiofrontend-algo-project-create-repos:p2
 import React from 'react';
-import { Search, Lock, Eye } from 'lucide-react';
+import { Search, Lock, Eye, Plug } from 'lucide-react';
 import {
+  Button,
   Checkbox,
+  Empty,
+  EmptyActions,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
   Input,
   Skeleton,
   Table,
@@ -92,10 +99,6 @@ const RepositoryTable: React.FC<{ connectionId: string; orgId: string }> = ({
         </div>
       ) : failed ? (
         <p className={styles.placeholder}>{t('repos_error')}</p>
-      ) : repositories.length === 0 ? (
-        <p className={styles.placeholder}>
-          {search.trim() ? t('repos_no_match') : t('repos_empty')}
-        </p>
       ) : (
         <div className={styles.repoScroll}>
           <Table label={t('repos_region')} className={styles.repoTable}>
@@ -117,6 +120,34 @@ const RepositoryTable: React.FC<{ connectionId: string; orgId: string }> = ({
             </TableHeader>
             {/* @cpt-begin:cpt-studiofrontend-algo-project-create-repos:p2:inst-4 */}
             <TableBody>
+            {repositories.length === 0 && (
+              <TableRow className={styles.repoEmptyRow}>
+                <TableCell colSpan={4}>
+                  {search.trim() ? (
+                    <Empty className={styles.empty}>
+                      <EmptyHeader>
+                        <EmptyDescription>{t('repos_no_match')}</EmptyDescription>
+                      </EmptyHeader>
+                      <EmptyActions>
+                        <Button variant="link" onClick={() => dispatch(searchRepositories(''))}>
+                          {t('clear_search')}
+                        </Button>
+                      </EmptyActions>
+                    </Empty>
+                  ) : (
+                    <Empty className={styles.empty}>
+                      <EmptyHeader>
+                        <EmptyMedia variant="icon">
+                          <Plug />
+                        </EmptyMedia>
+                        <EmptyTitle>{t('repos_empty_title')}</EmptyTitle>
+                        <EmptyDescription>{t('repos_empty')}</EmptyDescription>
+                      </EmptyHeader>
+                    </Empty>
+                  )}
+                </TableCell>
+              </TableRow>
+            )}
             {repositories.map((repo) => {
               const picked = pickedKeys.has(repoKey(connectionId, repo.id));
               const blocked = atCap && !picked;
@@ -177,7 +208,19 @@ const Catalogue: React.FC<{ orgId: string }> = ({ orgId }) => {
   if (loading) return <Skeleton className={styles.repoRowSkeleton} />;
   if (failed) return <p className={styles.placeholder}>{t('connections_error')}</p>;
   if (connections.length === 0) {
-    return <p className={styles.placeholder}>{t('connections_empty')}</p>;
+    return (
+      <div className={styles.repoViewport}>
+        <Empty className={styles.empty}>
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <Plug />
+            </EmptyMedia>
+            <EmptyTitle>{t('connections_empty_title')}</EmptyTitle>
+            <EmptyDescription>{t('connections_empty')}</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      </div>
+    );
   }
 
   const active = connections.find((c) => c.id === chosen) ?? connections[0]!;

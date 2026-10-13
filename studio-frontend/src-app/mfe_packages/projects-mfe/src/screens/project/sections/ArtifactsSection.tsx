@@ -2,6 +2,13 @@ import type { ProjectSource } from '@constructor-studio/mfe-shared';
 import React from 'react';
 import {
   Button,
+  Empty,
+  EmptyActions,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
   Input,
   Select,
   SelectContent,
@@ -12,7 +19,7 @@ import {
 } from '@gears-frontx/ui-kit';
 import { useFormatters, useMfeBridge } from '@gears-frontx/react';
 import { useOrganization, useWorkspace } from '@constructor-studio/mfe-shared';
-import { Search } from 'lucide-react';
+import { Files, Search } from 'lucide-react';
 import { useProjectText } from '../../../i18n';
 import { ARTIFACTS_PAGE_SIZE, useArtifacts } from '../../../shared/useArtifacts';
 import { useArtifactImport, useProjectImport } from '../../../shared/useArtifactImport';
@@ -60,9 +67,11 @@ const SyncNow: React.FC<{
   });
   if (!canSync) return null;
   return (
-    <Button variant="outline" size="sm" className={styles.retry} onClick={start}>
-      {t('artifacts_sync_now')}
-    </Button>
+    <EmptyActions>
+      <Button variant="outline" size="sm" onClick={start}>
+        {t('artifacts_sync_now')}
+      </Button>
+    </EmptyActions>
   );
 };
 
@@ -184,22 +193,37 @@ export const ArtifactsSection: React.FC<ArtifactsSectionProps> = ({ projectId })
           : failedImport
             ? 'artifacts_import_failed'
             : 'artifacts_not_synced';
+    const notThrough = importState.repos.filter(notComeThrough);
     return (
       <div className={`${styles.section} ${styles.stateBlock}`}>
-        <p className={failedImport ? styles.error : styles.empty}>{t(messageKey)}</p>
-        {org && !running && (
-          <SyncNow
-            projectId={projectId}
-            orgId={org.id}
-            workspaceId={workspace?.id ?? null}
-            sources={sources}
-          />
-        )}
-        {importState.repos.filter(notComeThrough).map((repo) => (
-          <p key={repo.repo} className={`${frame.repoFailure} ${styles.repoLine}`}>
-            {repoImportLine(t, repo)}
-          </p>
-        ))}
+        <Empty className={styles.empty}>
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <Files />
+            </EmptyMedia>
+            <EmptyTitle>{t('artifacts_empty_title')}</EmptyTitle>
+            <EmptyDescription className={failedImport ? styles.emptyFailed : undefined}>
+              {t(messageKey)}
+            </EmptyDescription>
+          </EmptyHeader>
+          {org && !running && (
+            <SyncNow
+              projectId={projectId}
+              orgId={org.id}
+              workspaceId={workspace?.id ?? null}
+              sources={sources}
+            />
+          )}
+          {notThrough.length > 0 && (
+            <EmptyContent>
+              {notThrough.map((repo) => (
+                <p key={repo.repo} className={frame.repoFailure}>
+                  {repoImportLine(t, repo)}
+                </p>
+              ))}
+            </EmptyContent>
+          )}
+        </Empty>
       </div>
     );
   }
@@ -302,6 +326,27 @@ export const ArtifactsSection: React.FC<ArtifactsSectionProps> = ({ projectId })
       <ArtifactsTable
         rows={rows}
         columns={columns}
+        empty={
+          <Empty className={styles.empty}>
+            <EmptyHeader>
+              <EmptyDescription>{t('artifacts_no_matches')}</EmptyDescription>
+            </EmptyHeader>
+            <EmptyActions>
+              <Button
+                variant="link"
+                onClick={() => {
+                  setTyped('');
+                  setSearch('');
+                  setRepository(null);
+                  setKind(null);
+                  setOffset(0);
+                }}
+              >
+                {t('artifacts_clear_filters')}
+              </Button>
+            </EmptyActions>
+          </Empty>
+        }
         offset={offset}
         total={total}
         pageSize={ARTIFACTS_PAGE_SIZE}
@@ -309,7 +354,6 @@ export const ArtifactsSection: React.FC<ArtifactsSectionProps> = ({ projectId })
         loading={refreshing}
         labels={{
           table: t('section_artifacts'),
-          emptyMessage: t('artifacts_no_matches'),
           previous: t('artifacts_prev_page'),
           next: t('artifacts_next_page'),
           sortedNewest: t('artifacts_sorted_newest'),

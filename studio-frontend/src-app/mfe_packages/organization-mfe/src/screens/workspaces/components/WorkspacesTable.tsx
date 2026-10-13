@@ -16,14 +16,14 @@ import styles from "../WorkspacesScreen.module.css";
 interface WorkspacesTableProps {
   rows: readonly Tenant[];
   total: number;
-  emptyMessage: string;
+  empty: React.ReactNode;
   onOpen: (row: Tenant) => void;
 }
 
 export const WorkspacesTable: React.FC<WorkspacesTableProps> = ({
   rows,
   total,
-  emptyMessage,
+  empty,
   onOpen,
 }) => {
   const { formatRelative } = useFormatters();
@@ -62,8 +62,8 @@ export const WorkspacesTable: React.FC<WorkspacesTableProps> = ({
         <TableBody>
           {rows.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={columns.length} className={styles.emptyCell}>
-                {emptyMessage}
+              <TableCell colSpan={columns.length}>
+                {empty}
               </TableCell>
             </TableRow>
           ) : (

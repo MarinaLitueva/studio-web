@@ -185,6 +185,12 @@ input.repoSearch {
   text-align: center;
 }
 
+.empty {
+  margin: auto;
+  border: 0;
+  white-space: normal;
+}
+
 .repoRows {
   display: flex;
   flex-direction: column;
@@ -254,6 +260,18 @@ input.repoSearch {
 
 .repoTable tbody tr[aria-disabled]:hover {
   background: none;
+}
+
+.repoTable tbody tr.repoEmptyRow {
+  cursor: default;
+}
+
+.repoTable tbody tr.repoEmptyRow:hover > * {
+  background: none;
+}
+
+.repoTable tbody tr.repoEmptyRow > td {
+  border-bottom: 0;
 }
 
 /* The mockup's 34px row with a hairline under it, against the kit's 12/16 cell
