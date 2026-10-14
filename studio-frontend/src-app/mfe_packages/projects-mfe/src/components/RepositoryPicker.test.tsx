@@ -102,6 +102,27 @@ describe('the repository picker', () => {
     expect(onSearchChange).toHaveBeenCalledWith('');
   });
 
+  it('makes the unpicked rows inert at the ceiling, and still lets a pick be taken back', () => {
+    data.repositories = [repo('acme/api'), repo('acme/web')];
+    const picked = {
+      id: 'acme/api',
+      fullPath: 'acme/api',
+      cloneUrl: 'https://example.test/acme/api.git',
+      connectionId: 'c-github',
+    };
+    const { onToggle } = renderPicker({ picks: [picked], atCap: true });
+
+    const web = screen.getByRole('checkbox', { name: 'acme/web' }).closest('tr')!;
+    expect(web.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(web);
+    expect(onToggle).not.toHaveBeenCalled();
+
+    const api = screen.getByRole('checkbox', { name: 'acme/api' }).closest('tr')!;
+    expect(api.getAttribute('aria-disabled')).toBeNull();
+    fireEvent.click(api);
+    expect(onToggle).toHaveBeenCalledWith(expect.objectContaining({ id: 'acme/api' }));
+  });
+
   it("says when the connection's repositories cannot be read, with no table", () => {
     data.reposFailed = true;
     renderPicker();

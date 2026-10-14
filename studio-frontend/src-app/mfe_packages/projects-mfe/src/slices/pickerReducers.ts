@@ -5,7 +5,7 @@ import type { ReducerPayload } from '@gears-frontx/react';
 import type { Refusal } from '@constructor-studio/mfe-shared';
 import { sourceKey, type RepositoryPick } from '../model/projectDraft';
 
-export interface PickerState {
+interface PickerState {
   providerId: string | null;
   connectionId: string | null;
   search: string;
