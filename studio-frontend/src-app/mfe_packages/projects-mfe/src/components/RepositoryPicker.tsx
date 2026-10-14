@@ -1,4 +1,7 @@
-/** The repository picker of the New project wizard and of Connect source */
+/**
+ * The repository picker of the New project wizard and of Connect source.
+ * Its strings are the wizard's: a caller loads the `create` dictionary.
+ */
 
 // @cpt-dod:cpt-studiofrontend-dod-project-create-many-sources:p1
 // @cpt-algo:cpt-studiofrontend-algo-project-create-repos:p2

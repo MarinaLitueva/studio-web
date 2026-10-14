@@ -59,11 +59,8 @@ describe('the sources nothing has pulled in', () => {
     expect(unsyncedSources([source('Acme/API')], ['acme/api'], [], [])).toEqual([]);
   });
 
-  it('leaves out a repository whose sync is queued or running', () => {
-    const lines = [
-      { repo: 'acme/web', status: 'queued' as const },
-      { repo: 'acme/docs', status: 'running' as const },
-    ];
+  it('leaves out a repository that has a line in the import, whatever its state', () => {
+    const lines = [{ repo: 'acme/web' }, { repo: 'acme/docs' }];
     expect(unsyncedSources(sources, [], lines, []).map((s) => s.full_path)).toEqual(['acme/api']);
   });
 
@@ -72,8 +69,5 @@ describe('the sources nothing has pulled in', () => {
       'acme/api',
       'acme/docs',
     ]);
-    expect(
-      unsyncedSources(sources, [], [{ repo: 'acme/docs', status: 'failed' }], []).map((s) => s.full_path)
-    ).toEqual(['acme/api', 'acme/web']);
   });
 });

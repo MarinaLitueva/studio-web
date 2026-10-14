@@ -5,10 +5,11 @@ import { ARTIFACT_NODE_TYPES } from '../api/artifactTypes';
 
 /** The project screen syncs the sources the dialog attached (DoD `...-sources-sync-missing`). */
 
-const { nodes, connections, lines, emit } = vi.hoisted(() => ({
+const { nodes, connections, lines, lookedUp, emit } = vi.hoisted(() => ({
   nodes: { current: { data: undefined as unknown, isError: false } },
   connections: { current: { connections: [] as ConnectionDto[], loading: false, failed: false } },
   lines: { current: [] as { repo: string; status: string }[] },
+  lookedUp: { current: true },
   emit: vi.fn(),
 }));
 
@@ -22,7 +23,9 @@ vi.mock('./useArtifacts', () => ({
   repositoryNodesParams: (scope: string) => ({ scope, type: 'repo', limit: 200 }),
 }));
 vi.mock('./useConnections', () => ({ useSourceConnections: () => connections.current }));
-vi.mock('./useArtifactImport', () => ({ useProjectImport: () => ({ repos: lines.current }) }));
+vi.mock('./useArtifactImport', () => ({
+  useProjectImport: () => ({ repos: lines.current, lookedUp: lookedUp.current }),
+}));
 
 import { useSourcesSync } from './useSourcesSync';
 import { recordRequests } from './importAttempts';
@@ -75,6 +78,7 @@ beforeEach(() => {
     failed: false,
   };
   lines.current = [];
+  lookedUp.current = true;
 });
 
 describe('the sources nothing has pulled in', () => {
@@ -90,6 +94,22 @@ describe('the sources nothing has pulled in', () => {
         { repo: 'lab/tool', reason: { kind: 'i18n', key: 'artifacts_reason_provider_cannot_sync' } },
       ],
     });
+  });
+
+  it("wait until the gear has said which syncs are in flight, so another tab's queued run is not asked for again", () => {
+    lookedUp.current = false;
+    const { rerender } = render();
+    expect(emit).not.toHaveBeenCalled();
+
+    lines.current = [{ repo: 'acme/web', status: 'queued' }];
+    lookedUp.current = true;
+    rerender();
+
+    expect(emit).toHaveBeenCalledTimes(1);
+    expect(emit).toHaveBeenCalledWith(
+      'mfe/artifacts/repos-added',
+      expect.objectContaining({ repos: [] })
+    );
   });
 
   it('are left to the first import while it starts', () => {

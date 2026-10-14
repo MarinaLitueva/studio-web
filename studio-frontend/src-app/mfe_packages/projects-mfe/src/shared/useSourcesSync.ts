@@ -34,7 +34,7 @@ export function useSourcesSync({
   const nodes = useApiQuery(ingest.nodes(repositoryNodesParams(projectId)));
   // @cpt-end:cpt-studiofrontend-algo-project-sources-sync-missing:p2:inst-4
   const { connections, loading, failed } = useSourceConnections(orgId);
-  const { repos: lines } = useProjectImport(projectId);
+  const { repos: lines, lookedUp } = useProjectImport(projectId);
 
   const synced = useMemo(
     () => (nodes.data ? buildRepositories(nodes.data.nodes).map((repository) => repository.name) : null),
@@ -48,6 +48,11 @@ export function useSourcesSync({
 
   useEffect(() => {
     if (!ready || !synced) return;
+    // @cpt-begin:cpt-studiofrontend-algo-project-sources-sync-missing:p2:inst-13
+    // @cpt-begin:cpt-studiofrontend-algo-project-sources-sync-missing:p2:inst-14
+    if (!lookedUp) return;
+    // @cpt-end:cpt-studiofrontend-algo-project-sources-sync-missing:p2:inst-13
+    // @cpt-end:cpt-studiofrontend-algo-project-sources-sync-missing:p2:inst-14
     // @cpt-begin:cpt-studiofrontend-algo-project-sources-sync-missing:p2:inst-1
     // @cpt-begin:cpt-studiofrontend-algo-project-sources-sync-missing:p2:inst-2
     if (isFirstImport) return;
@@ -69,5 +74,5 @@ export function useSourcesSync({
     eventBus.emit('mfe/artifacts/repos-added', { projectId, workspaceId, ...plan });
     // @cpt-end:cpt-studiofrontend-algo-project-sources-sync-missing:p2:inst-11
     // @cpt-end:cpt-studiofrontend-algo-project-sources-sync-missing:p2:inst-12
-  }, [ready, isFirstImport, sources, synced, lines, byId, projectId, workspaceId]);
+  }, [ready, lookedUp, isFirstImport, sources, synced, lines, byId, projectId, workspaceId]);
 }

@@ -173,6 +173,7 @@ function harness(repos = REPOS, inFlight: StudioRun[] = []) {
     retryFetch,
     rows: () => projectImport(state, PROJECT).repos,
     phase: () => projectImport(state, PROJECT).phase,
+    lookedUp: () => projectImport(state, PROJECT).lookedUp,
     leaveProject: () => {
       openProject = 'p-2';
       dispatch({ type: 'test/nav-changed' });
@@ -558,6 +559,52 @@ describe('an import found again on the gear', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(h.phase()).toBe('running');
     expect(h.rows().map((row) => row.runId)).toEqual(['r-9']);
+  });
+
+  it('marks the project looked up only once the runs are listed, and again on each opening', async () => {
+    // Nothing in flight, so leaving abandons no import and only the opening clears the mark.
+    const h = harness(REPOS);
+    expect(h.lookedUp()).toBe(false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.lookedUp()).toBe(true);
+
+    h.leaveProject();
+    h.returnToProject();
+    expect(h.lookedUp()).toBe(false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.lookedUp()).toBe(true);
+  });
+
+  it('marks the project looked up when the gear has no sync for it', async () => {
+    const h = harness(REPOS, [inFlightRun('r-7', 'running', 'acme/other', 'p-2')]);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(h.lookedUp()).toBe(true);
+    expect(h.rows()).toEqual([]);
+  });
+
+  it('marks the project looked up when the runs cannot be listed, and follows nothing', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const h = harness(REPOS, [inFlightRun('r-9', 'running', 'acme/api')]);
+    h.tasks.runs.mockImplementation(() => ({ fetch: vi.fn().mockRejectedValue(new Error('503')) }));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(h.lookedUp()).toBe(true);
+    expect(h.rows()).toEqual([]);
+    expect(h.events.streamFrom).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it('lists the runs once per opening, however much else is dispatched', async () => {
+    const h = harness(REPOS);
+    await vi.advanceTimersByTimeAsync(0);
+
+    h.dispatch({ type: 'test/unrelated' });
+    h.dispatch({ type: 'test/unrelated' });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(h.tasks.runs).toHaveBeenCalledTimes(2);
+    expect(h.tasks.runs.mock.calls.map(([params]) => params.state).sort()).toEqual(['queued', 'running']);
   });
 
   it('leaves a sync asked for while the runs were being listed to its own runs', async () => {

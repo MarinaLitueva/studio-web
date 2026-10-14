@@ -137,11 +137,13 @@ have and the choice changes the code:
   explanation.
 - **A first import is recognised from data, not from a flag.** The screen does
   not need to be told that a project was just created; it asks whether the
-  project has sources and no artifacts yet. One thing is remembered outside the
-  data: which projects this tab has already asked a sync for, in the tab's
-  session storage. The store forgets on reload, the gear's tasks do not, and
-  nothing lets the screen list them — so without it a reload before the first
-  object lands would enqueue every repository a second time.
+  project has sources and no artifacts yet. Before it answers, it asks the gear
+  for the project's syncs still queued or running, so a sync another tab started
+  is shown rather than started again. One thing is remembered outside the data:
+  which projects, and which of their repositories, this tab has already asked a
+  sync for, in the tab's session storage. The gear lists only the runs still in
+  flight, so without it a reload after every run had failed would enqueue every
+  repository again.
 - **Only a provider that can sync is asked to.** The GitLab and Bitbucket
   drivers list repositories and do nothing else: `POST /sync` accepts their
   repositories, and the run then fails on its first step and is retried five
@@ -312,9 +314,11 @@ Definitions of Done, which are traced.
 3. [x] - `p1` - Read the project's artifacts, reusing the answer the section needs anyway - `inst-4`
 4. [x] - `p1` - **IF** any artifact exists - `inst-5`
    1. [x] - `p1` - **RETURN** no; the sources have been pulled in at least once - `inst-6`
-5. [x] - `p1` - **IF** a sync for this project has already been attempted in this tab, by the store or by its session storage - `inst-7`
+5. [x] - `p1` - **IF** the gear has not yet been asked for the project's syncs in flight since the project opened (`cpt-studiofrontend-algo-project-artifacts-sync-resume`) - `inst-10`
+   1. [x] - `p1` - **RETURN** not yet; a first import another tab started gets its lines here and is not started again, since nothing is stored until its first object lands - `inst-11`
+6. [x] - `p1` - **IF** a sync for this project has already been attempted in this tab, by the store or by its session storage - `inst-7`
    1. [x] - `p1` - **RETURN** no; an attempt that produced nothing is not repeated on its own - `inst-8`
-6. [x] - `p1` - **RETURN** yes - `inst-9`
+7. [x] - `p1` - **RETURN** yes - `inst-9`
 
 ### Sync the project's repositories
 
@@ -383,16 +387,22 @@ Definitions of Done, which are traced.
 
 **Input**: the project the project frame has just opened
 
-**Output**: a line and a watch for each sync the gear still has queued or running for the project
+**Output**: a line and a watch for each sync the gear still has queued or running for the project, and the project's import marked as looked up
 
 **Steps**:
-1. [x] - `p1` - **IF** the project's import is watched already, **RETURN**: this tab follows it - `inst-1`
+1. [x] - `p1` - **IF** the project's import is watched already, mark it looked up and **RETURN**: this tab follows it - `inst-1`
 2. [x] - `p1` - `API: GET /cf/studio-events/v1/events?after_seq=0&limit=1` for the tenant's cursor, before the runs are listed - `inst-2`
 3. [x] - `p1` - `API: GET /cf/studio-tasks/v1/runs?task_type=artifact.ingest&state=queued` and `&state=running`, one page of each - `inst-3`
-4. [x] - `p1` - Keep the runs whose payload names this project; **IF** none is left, **RETURN** with the import as it was - `inst-4`
-5. [x] - `p1` - Give each of their repositories a line with its run, queued or running as the gear says, and keep every other line. Record the attempt as `cpt-studiofrontend-algo-project-artifacts-sync` does - `inst-5`
-6. [x] - `p1` - Follow those runs from the cursor as `cpt-studiofrontend-algo-project-artifacts-sync` does: the stream, the reads, and the reads of the repositories and the artifacts re-issued as runs move - `inst-6`
-7. [x] - `p1` - **RETURN** when they have settled - `inst-7`
+4. [x] - `p1` - **IF** the listing fails, mark the import looked up and **RETURN** with it as it was; the screen then decides from its own data, as before this lookup existed - `inst-8`
+5. [x] - `p1` - Keep the runs whose payload names this project; **IF** none is left, mark the import looked up and **RETURN** with it as it was - `inst-4`
+6. [x] - `p1` - Give each of their repositories a line with its run, queued or running as the gear says, and keep every other line. Record the attempt as `cpt-studiofrontend-algo-project-artifacts-sync` does, and mark the import looked up - `inst-5`
+7. [x] - `p1` - Follow those runs from the cursor as `cpt-studiofrontend-algo-project-artifacts-sync` does: the stream, the reads, and the reads of the repositories and the artifacts re-issued as runs move - `inst-6`
+8. [x] - `p1` - **RETURN** when they have settled - `inst-7`
+
+Looked up holds until the project closes. The first import
+(`cpt-studiofrontend-algo-project-artifacts-first-import`) and the sync of the
+sources the graph does not have (`cpt-studiofrontend-algo-project-sources-sync-missing`)
+wait for it.
 
 ### Cancel or retry a repository's sync
 
@@ -792,7 +802,15 @@ runs went on. #686 syncs one repository the same way.
 
 The system **MUST**, when a project opens and its import is not watched, ask
 the gear for the syncs still queued or running for the project, and show and
-follow them as the import's own. It **MUST NOT** request them again.
+follow them as the import's own. It **MUST NOT** request them again: until the
+gear has answered, or failed to, the project screen **MUST NOT** start the
+first import or sync a source the graph does not have.
+
+The lookup and the screen's own reads start together when a project opens, and
+the lookup takes two round trips. In a tab with no record of the project, a
+first import another tab started looks like one that never began until its
+first object lands, so whichever answered first would decide. Waiting makes the
+lookup decide.
 
 Leaving a project ends the watch of its import, and a reload empties the store,
 while the gear's runs go on. Without this the section would say nothing is
@@ -808,7 +826,7 @@ a page holds may show only some of them.
 
 **Touches**:
 - API: `GET /cf/studio-tasks/v1/runs`
-- Entities: `artifactEffects`, `artifactSyncSlice`, `StudioTasksApiService`
+- Entities: `artifactEffects`, `artifactSyncSlice`, `StudioTasksApiService`, `useArtifactImport`, `useSourcesSync`
 
 ### Every repository's sync is shown and can be stopped or retried
 
@@ -866,6 +884,12 @@ store, because a reload mid-import empties the store while the gear's tasks run
 on. A remembered attempt only stops the import from starting on its own; the
 member can still ask for a sync.
 
+A tab that never made the attempt has no record of it, and a first import
+started elsewhere has no artifact until its first object lands. So the answer
+**MUST** wait until the gear has been asked for the project's syncs in flight
+(`cpt-studiofrontend-dod-project-artifacts-sync-resume`); a run found there
+records the attempt, and the answer is no.
+
 The same derivation chooses the section, so the landing is decided inside the
 project frame and not announced to it.
 
@@ -878,7 +902,7 @@ the sources the graph has no repository for (`cpt-studiofrontend-dod-project-sou
 - `cpt-studiofrontend-flow-project-artifacts-import`
 
 **Touches**:
-- Entities: `useArtifactImport`, `ProjectScreen`, `navSlice`
+- Entities: `useArtifactImport`, `ProjectScreen`, `navSlice`, `artifactSyncSlice`
 
 ### A created project opens
 
@@ -1017,6 +1041,8 @@ placeholder, a dash or a zero dressed as an answer.
 - [ ] Opening a project that already has artifacts lands on its first section and requests no sync.
 - [ ] Reloading the page during an import does not start a second import, and the section shows it importing again.
 - [ ] Leaving a project while its import runs and coming back shows it importing again, and its rows keep arriving without a reload.
+- [ ] Opening, in a new tab, a project whose first import another tab started shows that import and starts no second one, even when the project's artifacts answer before the gear's runs.
+- [ ] When the gear's runs cannot be listed, the project screen still decides from its own data: a project with sources and no artifacts, not attempted in this tab, starts its first import.
 - [ ] One repository failing to sync leaves the other repositories' rows in the table, and the failure is reported against that repository.
 - [ ] Creating a project from three repositories lists all three in the repository filter as each one's sync starts, without a reload, even when the first takes longer than twenty minutes.
 - [ ] While the event stream is open, no run is read on an interval.

@@ -99,18 +99,18 @@ describe('the repositories step', () => {
     expect(screen.getByRole('button', { name: 'back' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'create' })).toBeNull();
 
-    const { selectProvider } = await import('../../slices/createSlice');
+    const { chooseProvider } = await import('../../slices/createSlice');
     act(() => {
-      app.store.dispatch(selectProvider('github'));
+      app.store.dispatch(chooseProvider('github'));
     });
     expect(screen.getByRole('button', { name: 'create' })).toBeTruthy();
   });
 
   it('goes Back to the providers first, then to the details', async () => {
     const app = await onRepositories();
-    const { selectProvider } = await import('../../slices/createSlice');
+    const { chooseProvider } = await import('../../slices/createSlice');
     act(() => {
-      app.store.dispatch(selectProvider('github'));
+      app.store.dispatch(chooseProvider('github'));
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'back' }));

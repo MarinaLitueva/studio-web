@@ -5,7 +5,8 @@
 // @cpt-dod:cpt-studiofrontend-dod-project-sources-picker:p1
 import { createSlice, type ReducerPayload } from '@gears-frontx/react';
 import type { Refusal } from '@constructor-studio/mfe-shared';
-import { sourceKey, type RepositoryPick } from '../model/projectDraft';
+import type { RepositoryPick } from '../model/projectDraft';
+import { pickerReducers, toggled } from './pickerReducers';
 
 export interface SourcesConnectState {
   picks: RepositoryPick[];
@@ -45,32 +46,10 @@ const {
     // The ceiling counts the project's sources too, which only the dialog
     // reads, so the dialog makes the rows inert rather than this refusing.
     togglePick: (state: SourcesConnectState, action: ReducerPayload<RepositoryPick>) => {
-      const key = sourceKey(action.payload);
-      const kept = state.picks.filter((pick) => sourceKey(pick) !== key);
-      state.picks = kept.length === state.picks.length ? [...kept, action.payload] : kept;
+      state.picks = toggled(state.picks, action.payload) ?? state.picks;
       state.error = null;
     },
-    chooseProvider: (state: SourcesConnectState, action: ReducerPayload<string>) => {
-      if (state.providerId === action.payload) return;
-      state.providerId = action.payload;
-      state.connectionId = null;
-      state.search = '';
-    },
-    /** Back from the repositories to the providers; the picks stay. */
-    clearProvider: (state: SourcesConnectState) => {
-      state.providerId = null;
-      state.connectionId = null;
-      state.search = '';
-      state.error = null;
-    },
-    chooseConnection: (state: SourcesConnectState, action: ReducerPayload<string>) => {
-      if (state.connectionId === action.payload) return;
-      state.connectionId = action.payload;
-      state.search = '';
-    },
-    searchRepos: (state: SourcesConnectState, action: ReducerPayload<string>) => {
-      state.search = action.payload;
-    },
+    ...pickerReducers<SourcesConnectState>(),
     connectStarted: (state: SourcesConnectState) => {
       state.submitting = true;
       state.error = null;

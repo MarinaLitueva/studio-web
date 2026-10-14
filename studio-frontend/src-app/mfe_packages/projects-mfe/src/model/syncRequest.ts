@@ -8,7 +8,6 @@
 // @cpt-algo:cpt-studiofrontend-algo-project-sources-sync-missing:p2
 import type { ConnectionDto, ProjectSource } from '@constructor-studio/mfe-shared';
 import type { SyncRequest } from '../events/artifactEvents';
-import type { RepoImportStatus } from './repoImport';
 
 // TODO: take this from the gear once it says which drivers can sync.
 /** GitLab and Bitbucket only list repositories; a sync for one fails five times. */
@@ -73,7 +72,7 @@ function pathKey(path: string): string {
 export function unsyncedSources(
   sources: readonly ProjectSource[],
   synced: readonly string[],
-  lines: readonly { repo: string; status: RepoImportStatus }[],
+  lines: readonly { repo: string }[],
   requested: readonly string[]
 ): ProjectSource[] {
   // @cpt-begin:cpt-studiofrontend-algo-project-sources-sync-missing:p2:inst-5

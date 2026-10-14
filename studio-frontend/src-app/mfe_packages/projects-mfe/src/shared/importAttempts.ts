@@ -1,7 +1,8 @@
 /**
- * Which projects this tab has already asked a sync for. The store forgets on
- * reload; the gear's tasks do not, and nothing lets us list them, so this is
- * what keeps a reload mid-import from enqueueing every repository twice.
+ * Which projects, and which of their repositories, this tab has already asked
+ * a sync for. The store forgets on reload, and the gear lists only the runs
+ * still in flight, so this is what keeps a reload after a failed import from
+ * enqueueing every repository again.
  */
 
 const KEY = 'projects/artifact-sync/attempted';

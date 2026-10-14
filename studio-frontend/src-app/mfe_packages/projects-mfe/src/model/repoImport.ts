@@ -60,7 +60,7 @@ interface RepoRun {
 }
 
 export function canCancel(row: RepoRun): boolean {
-  return row.runId !== null && (row.status === 'queued' || row.status === 'running');
+  return row.runId !== null && inFlight(row.status);
 }
 
 export function canRetry(row: RepoRun): boolean {

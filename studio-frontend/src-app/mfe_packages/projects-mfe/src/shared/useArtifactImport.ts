@@ -81,6 +81,11 @@ export function useArtifactImport({
     // @cpt-end:cpt-studiofrontend-algo-project-artifacts-first-import:p2:inst-4
     // @cpt-end:cpt-studiofrontend-algo-project-artifacts-first-import:p2:inst-5
     // @cpt-end:cpt-studiofrontend-algo-project-artifacts-first-import:p2:inst-6
+    // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-first-import:p2:inst-10
+    // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-first-import:p2:inst-11
+    state.lookedUp &&
+    // @cpt-end:cpt-studiofrontend-algo-project-artifacts-first-import:p2:inst-10
+    // @cpt-end:cpt-studiofrontend-algo-project-artifacts-first-import:p2:inst-11
     // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-first-import:p2:inst-7
     // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-first-import:p2:inst-8
     // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-first-import:p2:inst-9

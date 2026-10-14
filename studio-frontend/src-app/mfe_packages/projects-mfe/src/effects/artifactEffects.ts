@@ -26,8 +26,10 @@ import { ArtifactIngestApiService } from '../api/ArtifactIngestApiService';
 import {
   ARTIFACT_SYNC_SLICE_KEY,
   importAbandoned,
+  importLookedUp,
   importResumed,
   importStarted,
+  lookupStarted,
   projectImport,
   reposAdded,
   repoCancelling,
@@ -204,8 +206,14 @@ export function initArtifactEffects(dispatch: AppDispatch, app: FrontXApp): void
 
   /** A sync the store has lost track of — after leaving the project, a reload, or another tab — is still the gear's. */
   const resume = (projectId: string): void => {
+    const lookedUp = (): void => {
+      if (openProjectId() === projectId) dispatch(importLookedUp(projectId));
+    };
     // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync-resume:p2:inst-1
-    if (watches.has(projectId)) return;
+    if (watches.has(projectId)) {
+      lookedUp();
+      return;
+    }
     // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync-resume:p2:inst-1
     void (async () => {
       // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync-resume:p2:inst-2
@@ -224,15 +232,24 @@ export function initArtifactEffects(dispatch: AppDispatch, app: FrontXApp): void
         // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync-resume:p2:inst-3
         listed = pages.flatMap((page) => page.items);
       } catch (error) {
+        // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync-resume:p2:inst-8
         console.warn('[artifacts] could not list the syncs in flight:', error);
+        lookedUp();
         return;
+        // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync-resume:p2:inst-8
       }
       // A sync asked for meanwhile follows its own runs; a closed project needs none.
-      if (watches.has(projectId) || openProjectId() !== projectId) return;
+      if (watches.has(projectId) || openProjectId() !== projectId) {
+        lookedUp();
+        return;
+      }
 
       // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync-resume:p2:inst-4
       const runs = projectRuns(listed, projectId);
-      if (runs.length === 0) return;
+      if (runs.length === 0) {
+        lookedUp();
+        return;
+      }
       // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync-resume:p2:inst-4
 
       // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync-resume:p2:inst-5
@@ -259,7 +276,9 @@ export function initArtifactEffects(dispatch: AppDispatch, app: FrontXApp): void
     const projectId = openProjectId();
     if (projectId === opened) return;
     opened = projectId;
-    if (projectId) resume(projectId);
+    if (!projectId) return;
+    dispatch(lookupStarted(projectId));
+    resume(projectId);
   };
   app.store.subscribe(onNavigation);
   onNavigation();

@@ -291,4 +291,35 @@ describe('Connect source', () => {
     expect(connectButton().disabled).toBe(false);
     expect(screen.getByRole('checkbox', { name: 'acme/web' }).getAttribute('aria-checked')).toBe('true');
   });
+
+  it('holds Back and Connect source while the write is under way', async () => {
+    const app = await mountDialog();
+    const { connectStarted } = await import('../../slices/sourcesConnectSlice');
+
+    chooseProvider('GitHub');
+    fireEvent.click(row('web'));
+    act(() => {
+      app.store.dispatch(connectStarted());
+    });
+
+    expect(connectButton().disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'back' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('closes once the write has succeeded, and not before', async () => {
+    await mountDialog();
+    const { eventBus } = await import('@gears-frontx/react');
+
+    chooseProvider('GitHub');
+    fireEvent.click(row('web'));
+    fireEvent.click(connectButton());
+    expect(actions.requestSourcesConnect).toHaveBeenCalledTimes(1);
+    expect(actions.closeSourcesConnect).not.toHaveBeenCalled();
+
+    act(() => {
+      eventBus.emit('mfe/projects/sources-connected', { projectId: PROJECT });
+    });
+
+    expect(actions.closeSourcesConnect).toHaveBeenCalledTimes(1);
+  });
 });

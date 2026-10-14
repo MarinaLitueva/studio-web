@@ -2,7 +2,7 @@
 
 import { createSlice, type ReducerPayload } from '@gears-frontx/react';
 import { runCount, type Refusal, type RunUpdate } from '@constructor-studio/mfe-shared';
-import { repoStatusOf, type RepoImportStatus } from '../model/repoImport';
+import { inFlight, repoStatusOf, type RepoImportStatus } from '../model/repoImport';
 
 export type { RepoImportStatus } from '../model/repoImport';
 
@@ -29,6 +29,8 @@ export type ImportPhase = 'idle' | 'running' | 'settled' | 'failed';
 export interface ProjectImport {
   phase: ImportPhase;
   attempted: boolean;
+  /** The gear was asked for the project's syncs in flight since it opened. */
+  lookedUp: boolean;
   repos: RepoImport[];
 }
 
@@ -40,14 +42,12 @@ const SLICE_KEY = 'projects/artifact-sync' as const;
 
 const initialState: ArtifactSyncState = { byProject: {} };
 
-const EMPTY: ProjectImport = { phase: 'idle', attempted: false, repos: [] };
-
-const UNSETTLED: readonly RepoImportStatus[] = ['queued', 'running'];
+const EMPTY: ProjectImport = { phase: 'idle', attempted: false, lookedUp: false, repos: [] };
 
 // @cpt-state:cpt-studiofrontend-state-project-artifacts-import:p2
 function settle(repos: readonly RepoImport[]): ImportPhase {
   if (repos.length === 0) return 'settled';
-  if (repos.some((r) => UNSETTLED.includes(r.status))) return 'running';
+  if (repos.some((r) => inFlight(r.status))) return 'running';
   return repos.some((r) => r.status === 'succeeded') ? 'settled' : 'failed';
 }
 
@@ -63,6 +63,10 @@ function row(repo: string, status: RepoImportStatus, reason: Refusal | null): Re
     cancelling: false,
     refusal: null,
   };
+}
+
+function wasLookedUp(state: ArtifactSyncState, projectId: string): boolean {
+  return state.byProject[projectId]?.lookedUp ?? false;
 }
 
 function repoOf(state: ArtifactSyncState, projectId: string, repo: string) {
@@ -84,7 +88,7 @@ function applyUpdate(target: RepoImport, update: RunUpdate): void {
   }
   // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-14
   // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync:p2:inst-15
-  if (!UNSETTLED.includes(target.status)) target.cancelling = false;
+  if (!inFlight(target.status)) target.cancelling = false;
 }
 
 const {
@@ -94,6 +98,8 @@ const {
   repoEnqueued,
   repoUpdated,
   importResumed,
+  lookupStarted,
+  importLookedUp,
   repoProgressed,
   repoCancelling,
   repoRetried,
@@ -116,7 +122,12 @@ const {
         ...repos.map((repo) => row(repo, 'queued', null)),
         ...unsyncable.map(({ repo, reason }) => row(repo, 'unsyncable', reason)),
       ];
-      state.byProject[projectId] = { phase: settle(rows), attempted: true, repos: rows };
+      state.byProject[projectId] = {
+        phase: settle(rows),
+        attempted: true,
+        lookedUp: wasLookedUp(state, projectId),
+        repos: rows,
+      };
     },
 
     // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-sync-add:p2:inst-2
@@ -134,13 +145,18 @@ const {
         ...unsyncable.map(({ repo, reason }) => row(repo, 'unsyncable', reason)),
       ];
       const kept = (state.byProject[projectId]?.repos ?? []).filter(
-        (line) => !added.some((next) => next.repo === line.repo) || UNSETTLED.includes(line.status)
+        (line) => !added.some((next) => next.repo === line.repo) || inFlight(line.status)
       );
       const fresh = added.filter(
         (next) => !kept.some((line) => line.repo === next.repo)
       );
       const rows = [...kept, ...fresh];
-      state.byProject[projectId] = { phase: settle(rows), attempted: true, repos: rows };
+      state.byProject[projectId] = {
+        phase: settle(rows),
+        attempted: true,
+        lookedUp: wasLookedUp(state, projectId),
+        repos: rows,
+      };
     },
     // @cpt-end:cpt-studiofrontend-algo-project-artifacts-sync-add:p2:inst-2
 
@@ -179,7 +195,21 @@ const {
         (line) => !resumed.some((next) => next.repo === line.repo)
       );
       const rows = [...kept, ...resumed];
-      state.byProject[projectId] = { phase: settle(rows), attempted: true, repos: rows };
+      state.byProject[projectId] = {
+        phase: settle(rows),
+        attempted: true,
+        lookedUp: true,
+        repos: rows,
+      };
+    },
+
+    /** The project opened: until the gear answers, nothing may start a sync on its own. */
+    lookupStarted: (state: ArtifactSyncState, action: ReducerPayload<string>) => {
+      state.byProject[action.payload] = { ...projectImport(state, action.payload), lookedUp: false };
+    },
+
+    importLookedUp: (state: ArtifactSyncState, action: ReducerPayload<string>) => {
+      state.byProject[action.payload] = { ...projectImport(state, action.payload), lookedUp: true };
     },
 
     /** The portal's own verdict: the request was refused, or the run is gone. */
@@ -254,6 +284,8 @@ export {
   repoEnqueued,
   repoUpdated,
   importResumed,
+  lookupStarted,
+  importLookedUp,
   repoProgressed,
   repoCancelling,
   repoRetried,

@@ -199,18 +199,20 @@ extensions, the shell's overlay frame and connections-mfe.
 **Output**: the syncs requested for the sources the graph does not have yet, or nothing
 
 **Steps**:
-1. [x] - `p1` - **IF** the project's first import is starting (`cpt-studiofrontend-algo-project-artifacts-first-import`) - `inst-1`
+1. [x] - `p1` - **IF** the gear has not yet been asked for the project's syncs in flight since the project opened (`cpt-studiofrontend-algo-project-artifacts-sync-resume`) - `inst-13`
+   1. [x] - `p1` - **RETURN** nothing for now; a sync another tab started gets its line first - `inst-14`
+2. [x] - `p1` - **IF** the project's first import is starting (`cpt-studiofrontend-algo-project-artifacts-first-import`) - `inst-1`
    1. [x] - `p1` - **RETURN** nothing; the first import syncs every source - `inst-2`
-2. [x] - `p1` - Read the project's sources from its config - `inst-3`
-3. [x] - `p1` - `API: GET /cf/studio-artifact-ingest/v1/nodes?scope={project}&type=repo` for the repositories the graph has - `inst-4`
-4. [x] - `p1` - Take the sources whose path has no repository node - `inst-5`
-5. [x] - `p1` - Leave out a source whose line in the import is queued or running - `inst-6`
-6. [x] - `p1` - Leave out a source a sync was already requested for in this tab, whatever came of it - `inst-7`
-7. [x] - `p1` - **IF** none is left - `inst-8`
+3. [x] - `p1` - Read the project's sources from its config - `inst-3`
+4. [x] - `p1` - `API: GET /cf/studio-artifact-ingest/v1/nodes?scope={project}&type=repo` for the repositories the graph has - `inst-4`
+5. [x] - `p1` - Take the sources whose path has no repository node - `inst-5`
+6. [x] - `p1` - Leave out a source that already has a line in the import, whatever its state - `inst-6`
+7. [x] - `p1` - Leave out a source a sync was already requested for in this tab, whatever came of it - `inst-7`
+8. [x] - `p1` - **IF** none is left - `inst-8`
    1. [x] - `p1` - **RETURN** nothing - `inst-9`
-8. [x] - `p1` - Run `cpt-studiofrontend-algo-project-artifacts-sync-request` for them, so only GitHub repositories are asked for and the rest get an unsyncable line - `inst-10`
-9. [x] - `p1` - Run `cpt-studiofrontend-algo-project-artifacts-sync-add` with what it returned; it records each repository as requested in this tab - `inst-11`
-10. [x] - `p1` - **RETURN** the requested syncs - `inst-12`
+9. [x] - `p1` - Run `cpt-studiofrontend-algo-project-artifacts-sync-request` for them, so only GitHub repositories are asked for and the rest get an unsyncable line - `inst-10`
+10. [x] - `p1` - Run `cpt-studiofrontend-algo-project-artifacts-sync-add` with what it returned; it records each repository as requested in this tab - `inst-11`
+11. [x] - `p1` - **RETURN** the requested syncs - `inst-12`
 
 The rule reads data, not a change. A source attached in another tab, or while
 the project was closed, or just before a reload, has no repository node either,
@@ -285,7 +287,19 @@ and the chosen connection come in through its props, from the wizard's slice in
 the wizard and from the dialog's slice in the dialog. The dialog's slice
 **MUST** be reset when the dialog mounts.
 
-The wizard behaves as before (`cpt-studiofrontend-dod-project-create-many-sources`).
+Both slices **MUST** take the picker's navigation from one set of reducer
+helpers: choosing a provider clears the connection and the search, choosing a
+connection clears the search, and Back to the providers clears all three and
+the error. The picks stay each slice's own, because the cap differs: the wizard
+refuses the 101st pick itself, while the dialog has to count the project's
+attached sources too, which only the dialog reads.
+
+The wizard takes the picker with everything above, as `project-create.md`
+describes: the provider chips first, Back to the providers, no Updated column,
+and each pick written with `branch` and `share_mode`
+(`cpt-studiofrontend-algo-project-create-repos`,
+`cpt-studiofrontend-dod-project-create-many-sources`).
+
 The dialog reuses the wizard's frame, small on its first step and one height after it, its
 footer note and its strings, and adds its own: the title, Connect source,
 Already attached, Add connection, the full project's footer and its errors. Its secondary button reads Back,
@@ -296,7 +310,7 @@ from the providers it closes the dialog.
 - `cpt-studiofrontend-flow-project-sources-connect`
 
 **Touches**:
-- Entities: `RepositoryPicker`, `SelectionNote`, `OverlayFrame.module.css`, `RepositoriesStep`, `RepositoriesFooterNote`, `sourcesConnectSlice`, `SourcesConnectDialog`
+- Entities: `RepositoryPicker`, `SelectionNote`, `OverlayFrame.module.css`, `RepositoriesStep`, `RepositoriesFooterNote`, `sourcesConnectSlice`, `createSlice`, `pickerReducers`, `SourcesConnectDialog`
 
 ### A repository is attached once, and the project holds at most 100
 
@@ -369,12 +383,15 @@ organization-mfe began to open it.
 - [x] `p1` - **ID**: `cpt-studiofrontend-dod-project-sources-sync-missing`
 
 The system **MUST** request, from the project screen, a sync for every GitHub
-source of the open project that has no repository node in the graph, whose line
-in the import is not queued or running, and for which no sync was requested in
+source of the open project that has no repository node in the graph, no line in
+the import, whatever that line's state, and for which no sync was requested in
 this tab, even one that then failed. It **MUST** decide this from the data each
 time it reads the project's sources or repository nodes, not from what changed
-in the config. The syncs **MUST** join the project's import rather than restart
-it, and the member **MUST** stay on the section they are on.
+in the config, and **MUST NOT** decide before the gear has been asked for the
+project's syncs in flight since the project opened
+(`cpt-studiofrontend-dod-project-artifacts-sync-resume`), whether that answered
+or failed. The syncs **MUST** join the project's import rather than restart it,
+and the member **MUST** stay on the section they are on.
 
 The dialog cannot ask for the sync itself: it is another extension, with its own
 store and event bus, so whatever it starts the screen never sees. It writes the
@@ -388,23 +405,32 @@ path that makes one: the first import, Sync repositories and this rule. So a
 repository whose sync fails before its node is written is asked for once per
 tab, as the first import already is, and not again on every read.
 
+The cost is accepted: such a repository is asked for again in every new tab, by
+every member who opens the project, and each request is a run the gear tries up
+to five times. In return a repository whose token or path is put right syncs
+the next time anyone opens the project, without anyone asking. Leaving out the
+repositories whose last run failed would need the failed runs, and the gear
+lists only the tenant's newest page of them, so the guard would hold only for
+recent failures.
+
 The dialog records the project's attempt before it writes. Otherwise a project
 with no artifacts would meet the first import's conditions the moment its new
 sources arrive, and the screen would sync every source and move to Artifacts.
 
-Accepted rather than prevented: two tabs, or two members, can request the same
-repository before either sees the other's run. Each request carries its own
+Waiting for the gear's syncs in flight is what keeps a second tab from asking
+again: a tab that opens the project after another has asked finds that run,
+queued or running, and gives it a line before this rule looks. Accepted rather
+than prevented: two tabs, or two members, that both look before either has
+asked can request the same repository. Each request carries its own
 Idempotency-Key, so the gear queues the second behind the first on the same
-partition. The cost is one repeated upsert. A repository is exposed to this only
-while its run waits in the queue, because the gear writes the repository node
-when the run starts.
+partition. The cost is one repeated upsert.
 
 **Implements**:
 - `cpt-studiofrontend-algo-project-sources-sync-missing`
 
 **Touches**:
 - API: `GET /cf/studio-artifact-ingest/v1/nodes?scope={project}&type=repo`
-- Entities: `ProjectScreen`, `useSourcesSync`, `importAttempts`
+- Entities: `ProjectScreen`, `useSourcesSync`, `importAttempts`, `artifactSyncSlice`
 
 ## 6. Acceptance Criteria
 
@@ -425,6 +451,7 @@ when the run starts.
 - [ ] Connecting repositories to a project with no artifacts keeps the member on Sources and syncs only the new repositories.
 - [ ] A repository attached in another tab, or just before a reload, is synced the next time the project screen reads the project.
 - [ ] A repository whose sync is queued or running is not requested again.
+- [ ] A repository whose sync another tab asked for and is still queued is not requested again when the project opens in a new tab, even when the project's other reads answer before the gear's runs.
 - [ ] A repository whose sync failed before the graph had its node is not requested again in the same tab; a new tab asks for it once.
 - [ ] Reopening a project syncs its GitHub sources that have no repository node and have not been requested in this tab, and no others.
-- [ ] The New project wizard behaves as before.
+- [ ] The New project wizard's repositories step works as `project-create.md` describes, on the same picker; in both, Back to the providers clears the connection, the search and any error, and keeps the picks.

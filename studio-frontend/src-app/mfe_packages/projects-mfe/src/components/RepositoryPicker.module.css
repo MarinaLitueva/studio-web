@@ -110,7 +110,8 @@ input.repoSearch {
   opacity: 0.55;
 }
 
-.repoTable tbody tr[aria-disabled]:hover {
+.repoTable tbody tr[aria-disabled]:hover,
+.repoTable tbody tr[aria-disabled]:hover > * {
   background: none;
 }
 
