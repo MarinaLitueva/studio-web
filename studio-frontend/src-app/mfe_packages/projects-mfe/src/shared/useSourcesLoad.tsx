@@ -13,15 +13,19 @@ import {
   buildSourceRows,
   filterSourceRows,
   sourcesFooter,
+  type SourceImportLine,
   type SourceRow,
   type SourcesAnswers,
   type SourcesFooter,
 } from '../model/sourceRows';
+import { TEXT_SEARCH_FILTER_KEY } from './dataGridFilters';
 import { useProjectImport } from './useArtifactImport';
 import { repositoryNodesParams } from './useArtifacts';
 import { useProjectConfig } from './useProjectConfig';
 
-export const SOURCES_SEARCH_KEY = 'textSearch';
+export const SOURCES_FILTER_KEYS = {
+  search: TEXT_SEARCH_FILTER_KEY,
+} as const;
 
 export interface SourcesLoad {
   ready: boolean;
@@ -43,6 +47,25 @@ const RowsBridge: React.FC<{ rowsKey: string }> = ({ rowsKey }) => {
   }, [grid, rowsKey]);
   return null;
 };
+
+function settledSyncsOf(lines: readonly SourceImportLine[]): string {
+  return lines
+    .filter((line) => !inFlight(line.status))
+    .map((line) => `${line.repo}:${line.runId}:${line.status}`)
+    .join('\n');
+}
+
+function useOnSyncSettled(projectId: string, settledSyncs: string, onSettled: () => void): void {
+  const seen = useRef<{ projectId: string; syncs: Set<string> } | null>(null);
+  useEffect(() => {
+    const previous = seen.current;
+    const current = new Set(settledSyncs ? settledSyncs.split('\n') : []);
+    seen.current = { projectId, syncs: current };
+    if (previous?.projectId !== projectId) return;
+    const newlySettled = [...current].some((sync) => !previous.syncs.has(sync));
+    if (newlySettled) onSettled();
+  }, [projectId, settledSyncs, onSettled]);
+}
 
 // @cpt-dod:cpt-studiofrontend-dod-project-sources-reads:p1
 // @cpt-dod:cpt-studiofrontend-dod-project-sources-gaps:p1
@@ -93,21 +116,12 @@ export function useSourcesLoad(projectId: string, workspaceId: string, orgId: st
   const rowsKey = useMemo(() => JSON.stringify(rows), [rows]);
 
   // A repository's numbers move when its sync ends; nothing pushes them.
-  const settled = lines
-    .filter((line) => !inFlight(line.status))
-    .map((line) => `${line.repo}:${line.runId}:${line.status}`)
-    .join('\n');
-  const seen = useRef<{ projectId: string; settled: Set<string> } | null>(null);
-  useEffect(() => {
-    const last = seen.current;
-    const now = new Set(settled ? settled.split('\n') : []);
-    seen.current = { projectId, settled: now };
-    if (last?.projectId !== projectId) return;
-    if (![...now].some((line) => !last.settled.has(line))) return;
+  const refetchAfterSync = useCallback(() => {
     void cache.invalidate(ingest.nodes(nodesParams));
     void cache.invalidate(ingest.sourceActivity({ scope: projectId }));
     void cache.invalidate(documents.specsPerSource({ scope: projectId }));
-  }, [settled, projectId, cache, ingest, documents, nodesParams]);
+  }, [cache, ingest, documents, nodesParams, projectId]);
+  useOnSyncSettled(projectId, settledSyncsOf(lines), refetchAfterSync);
 
   const rowsRef = useRef(rows);
   useLayoutEffect(() => {
@@ -116,7 +130,7 @@ export function useSourcesLoad(projectId: string, workspaceId: string, orgId: st
 
   const load = useCallback(
     async (context: DataGridLoadContext): Promise<DataGridLoadResult<SourceRow>> => {
-      const search: string = context.filters?.[SOURCES_SEARCH_KEY]?.value ?? '';
+      const search: string = context.filters?.[SOURCES_FILTER_KEYS.search]?.value ?? '';
       const shown = filterSourceRows(rowsRef.current, search);
       const { page, limit } = context.pagination ?? { page: 1, limit: shown.length };
       return { results: shown.slice((page - 1) * limit, page * limit), total: shown.length };

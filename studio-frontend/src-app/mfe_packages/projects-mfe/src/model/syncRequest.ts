@@ -82,7 +82,7 @@ export function repoNodeOf(
     if (node.type_id !== ARTIFACT_NODE_TYPES.repo) continue;
     if (pathKey(node.value.full_path ?? '') !== path) continue;
     if (node.value.connector_id === connector) return node;
-    if (node.value.connector_id === undefined) pathOnly ??= node;
+    if (!node.value.connector_id) pathOnly ??= node;
   }
   return pathOnly;
 }

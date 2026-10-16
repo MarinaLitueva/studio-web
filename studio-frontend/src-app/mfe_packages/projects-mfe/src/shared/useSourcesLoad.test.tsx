@@ -41,7 +41,7 @@ vi.mock('./useArtifacts', () => ({
   repositoryNodesParams: (scope: string) => ({ scope, type: 'repo', limit: 200 }),
 }));
 
-import { SOURCES_SEARCH_KEY, useSourcesLoad, type SourcesLoad } from './useSourcesLoad';
+import { SOURCES_FILTER_KEYS, useSourcesLoad, type SourcesLoad } from './useSourcesLoad';
 
 const answered = (data: unknown): Query => ({ data, isLoading: false, isError: false });
 const failedQuery: Query = { data: undefined, isLoading: false, isError: true };
@@ -88,18 +88,30 @@ function answerAll() {
 
 /** The hook, and its bridge rendered as the grid would. */
 function mount() {
-  const hook = renderHook(() => useSourcesLoad('p-1', 'ws-1', 'org-1'));
+  let projectId = 'p-1';
+  const hook = renderHook((props: { projectId: string }) => useSourcesLoad(props.projectId, 'ws-1', 'org-1'), {
+    initialProps: { projectId },
+  });
   const grid = render(hook.result.current.rowsBridge);
   return {
     get view(): SourcesLoad {
       return hook.result.current;
     },
-    rerender() {
-      hook.rerender();
+    rerender(next = projectId) {
+      projectId = next;
+      hook.rerender({ projectId });
       grid.rerender(hook.result.current.rowsBridge);
     },
   };
 }
+
+const importLine = (runId: string, status: string) => ({
+  repo: 'acme/web',
+  runId,
+  status,
+  reason: null,
+  cancelling: false,
+});
 
 beforeEach(() => {
   answerAll();
@@ -127,7 +139,7 @@ describe('useSourcesLoad', () => {
   it('searches and pages the rows it built, and the footer still counts them all', async () => {
     const { view } = mount();
 
-    const searched = await view.load({ filters: { [SOURCES_SEARCH_KEY]: { value: 'ACME' } } });
+    const searched = await view.load({ filters: { [SOURCES_FILTER_KEYS.search]: { value: 'ACME' } } });
     expect(searched.results.map((row) => row.fullPath)).toEqual(['acme/api', 'acme/web']);
     expect(searched.total).toBe(2);
 
@@ -167,25 +179,39 @@ describe('useSourcesLoad', () => {
     expect(sources.view.failed).toBe(true);
   });
 
+  it('with the connections unread, reads no row as Not connected and takes the provider from the node', () => {
+    queries.current.connections = failedQuery;
+    const { view } = mount();
+
+    expect(view.failed).toBe(false);
+    expect(view.rows.map((row) => [row.provider, row.lastSync.kind])).toEqual([
+      ['github', 'synced'],
+      [null, 'not_synced'],
+      [null, 'not_synced'],
+    ]);
+  });
+
   it('reads the nodes, the activity and the specs again when a sync settles', () => {
-    const line = (runId: string, status: string) => ({
-      repo: 'acme/web',
-      runId,
-      status,
-      reason: null,
-      cancelling: false,
-    });
-    lines.current = [line('r-old', 'failed')];
+    lines.current = [importLine('r-old', 'failed')];
     const sources = mount();
     expect(invalidate).not.toHaveBeenCalled();
 
-    lines.current = [line('r-1', 'running')];
+    lines.current = [importLine('r-1', 'running')];
     sources.rerender();
     expect(invalidate).not.toHaveBeenCalled();
 
-    lines.current = [line('r-1', 'succeeded')];
+    lines.current = [importLine('r-1', 'succeeded')];
     sources.rerender();
     expect(invalidate.mock.calls.map(([query]) => query.key)).toEqual(['nodes', 'activity', 'specs']);
+  });
+
+  it('does not read again for a sync that settles as the project changes', () => {
+    lines.current = [importLine('r-1', 'running')];
+    const sources = mount();
+
+    lines.current = [importLine('r-1', 'succeeded')];
+    sources.rerender('p-2');
+    expect(invalidate).not.toHaveBeenCalled();
   });
 
   it("loads the grid again when the rows change, but not for its first load or a sync's progress", () => {

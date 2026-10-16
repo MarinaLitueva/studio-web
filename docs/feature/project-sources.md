@@ -120,10 +120,10 @@ the prototype does not read:
   connected", "Artifact snapshot · no connection recorded"). Here such a
   repository can only be left over from a failed reconcile, so it gets no row.
 - **A row finds its repository node by path and connection.** The node's
-  `connector_id` is `studio-connection-<connection id>`; a node without one is
-  matched by its path alone. A repository attached again through another
-  connection does not take the old connection's node: it reads Not synced, and
-  the screen syncs it, comparing by the same key.
+  `connector_id` is `studio-connection-<connection id>`; a node without one, or
+  with an empty one, is matched by its path alone. A repository attached again
+  through another connection does not take the old connection's node: it reads
+  Not synced, and the screen syncs it, comparing by the same key.
 - **The branch is the config's.** A source attached before #687 has none, and
   neither the repository node nor the connection's listing is read for one; its
   row shows the path alone.
@@ -306,7 +306,7 @@ so it is found the next time the project screen reads the project.
 
 **Steps**:
 1. [x] - `p1` - **FOR EACH** source in the config, in its order - `inst-1`
-   1. [x] - `p1` - Find its repository node: the same path, ignoring case, and a `connector_id` of `studio-connection-<its connection id>`, or no `connector_id` at all - `inst-2`
+   1. [x] - `p1` - Find its repository node: the same path, ignoring case, and a `connector_id` of `studio-connection-<its connection id>`, or no `connector_id` or an empty one - `inst-2`
    2. [x] - `p1` - Find its connection by id - `inst-3`
    3. [x] - `p1` - Take the provider from the node, else from the connection, else none - `inst-4`
    4. [x] - `p1` - Name it by the last segment of its path; keep the path, and the config's `branch` when it has one - `inst-5`
@@ -581,8 +581,11 @@ The system **MUST** build one row per entry of the project config's `sources[]`,
 in the config's order, and **MUST NOT** build one for a repository node the
 config does not name. A row **MUST** find its repository node by its path,
 ignoring case, and its connection: the node's `connector_id` is
-`studio-connection-<connection id>`. A node without a `connector_id` is matched
-by its path alone; a node of another connection is not matched.
+`studio-connection-<connection id>`. A node without a `connector_id`, or with an
+empty one, is matched by its path alone; a node of another connection is not
+matched. The `connector_id` is empty when the repository was synced through a
+connection without a token: such a connection's `secret_ref` is empty, and the
+sync runs without credentials.
 
 A row carries what the table's cells need (#688): the provider, the name (the
 last segment of the path), the path, the config's branch when it has one, the

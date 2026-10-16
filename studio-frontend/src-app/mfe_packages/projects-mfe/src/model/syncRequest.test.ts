@@ -69,6 +69,11 @@ describe("a source's repository node", () => {
     expect(repoNodeOf([repoNode('acme/api')], source('acme/api'))?.instance_id).toBe('acme/api');
   });
 
+  it('is matched by path alone when synced through a connection without a token, whose reference is empty', () => {
+    expect(repoNodeOf([repoNode('acme/api', '')], source('acme/api'))?.instance_id).toBe('acme/api');
+    expect(unsyncedSources([source('acme/api')], [repoNode('acme/api', '')], [], [])).toEqual([]);
+  });
+
   it('ignores what the provider did to the path case, and nodes that are not repositories', () => {
     const file = { ...repoNode('acme/api'), type_id: ARTIFACT_NODE_TYPES.file };
     expect(repoNodeOf([file], source('acme/api'))).toBeNull();

@@ -141,6 +141,12 @@ describe('a source in the config is a row', () => {
     expect(only(answers({ connections: null, nodes: [] })).lastSync).toEqual({ kind: 'not_synced' });
   });
 
+  it("takes the provider from its node before its connection's", () => {
+    const row = only(answers({ connections: [connection('c-github', 'gitlab')] }));
+    expect(row.provider).toBe('github');
+    expect(row.lastSync).toEqual({ kind: 'synced', at: '2026-10-14T10:52:00Z' });
+  });
+
   it('attached again through another connection does not take the old node', () => {
     const old = repoNode('n-old', 'acme/api', {
       connector_id: 'studio-connection-c-old',
