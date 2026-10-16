@@ -2,7 +2,6 @@ import type { ProjectSource } from '@constructor-studio/mfe-shared';
 import { useEffect, useMemo } from 'react';
 import { apiRegistry, eventBus, useApiQuery } from '@gears-frontx/react';
 import { ArtifactIngestApiService } from '../api/ArtifactIngestApiService';
-import { buildRepositories } from '../model/artifact';
 import { syncPlan, unsyncedSources } from '../model/syncRequest';
 import { useSourceConnections } from './useConnections';
 import { useProjectImport } from './useArtifactImport';
@@ -36,10 +35,7 @@ export function useSourcesSync({
   const { connections, loading, failed } = useSourceConnections(orgId);
   const { repos: lines, lookedUp } = useProjectImport(projectId);
 
-  const synced = useMemo(
-    () => (nodes.data ? buildRepositories(nodes.data.nodes).map((repository) => repository.name) : null),
-    [nodes.data]
-  );
+  const synced = nodes.data?.nodes ?? null;
   const byId = useMemo(
     () => new Map(connections.map((connection) => [connection.id, connection])),
     [connections]
