@@ -55,7 +55,7 @@ export function useSourcesSync({
     // @cpt-end:cpt-studiofrontend-algo-project-sources-sync-missing:p2:inst-1
     // @cpt-end:cpt-studiofrontend-algo-project-sources-sync-missing:p2:inst-2
     // @cpt-begin:cpt-studiofrontend-algo-project-sources-sync-missing:p2:inst-3
-    const missing = unsyncedSources(sources, repoNodes, lines, requestedInTab(projectId));
+    const missing = unsyncedSources(sources, repoNodes, byId, lines, requestedInTab(projectId));
     // @cpt-end:cpt-studiofrontend-algo-project-sources-sync-missing:p2:inst-3
     // @cpt-begin:cpt-studiofrontend-algo-project-sources-sync-missing:p2:inst-8
     // @cpt-begin:cpt-studiofrontend-algo-project-sources-sync-missing:p2:inst-9

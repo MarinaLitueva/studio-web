@@ -140,7 +140,7 @@ export function buildSourceRows(answers: SourcesAnswers): SourceRow[] {
   // @cpt-begin:cpt-studiofrontend-algo-project-sources-rows:p2:inst-1
   for (const source of answers.sources) {
     // @cpt-begin:cpt-studiofrontend-algo-project-sources-rows:p2:inst-2
-    const node = repoNodeOf(answers.nodes, source);
+    const node = repoNodeOf(answers.nodes, source, connections);
     // @cpt-end:cpt-studiofrontend-algo-project-sources-rows:p2:inst-2
     // @cpt-begin:cpt-studiofrontend-algo-project-sources-rows:p2:inst-3
     const connection = connections?.get(source.connection_id) ?? null;

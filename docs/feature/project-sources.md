@@ -120,10 +120,11 @@ the prototype does not read:
   connected", "Artifact snapshot · no connection recorded"). Here such a
   repository can only be left over from a failed reconcile, so it gets no row.
 - **A row finds its repository node by path and connection.** The node's
-  `connector_id` is `studio-connection-<connection id>`; a node without one, or
-  with an empty one, is matched by its path alone. A repository attached again
-  through another connection does not take the old connection's node: it reads
-  Not synced, and the screen syncs it, comparing by the same key.
+  `connector_id` is the connection's `secret_ref`, empty for a connection
+  without a token; a node without one, or a source whose connection is not
+  known, is matched by its path alone. A repository attached again through
+  another connection does not take the old connection's node: it reads Not
+  synced, and the screen syncs it, comparing by the same key.
 - **The branch is the config's.** A source attached before #687 has none, and
   neither the repository node nor the connection's listing is read for one; its
   row shows the path alone.
@@ -306,7 +307,7 @@ so it is found the next time the project screen reads the project.
 
 **Steps**:
 1. [x] - `p1` - **FOR EACH** source in the config, in its order - `inst-1`
-   1. [x] - `p1` - Find its repository node: the same path, ignoring case, and a `connector_id` of `studio-connection-<its connection id>`, or no `connector_id` or an empty one - `inst-2`
+   1. [x] - `p1` - Find its repository node: the same path, ignoring case, and a `connector_id` equal to its connection's `secret_ref`; else one of the same path with no `connector_id`, or with any **IF** its connection is not known - `inst-2`
    2. [x] - `p1` - Find its connection by id - `inst-3`
    3. [x] - `p1` - Take the provider from the node, else from the connection, else none - `inst-4`
    4. [x] - `p1` - Name it by the last segment of its path; keep the path, and the config's `branch` when it has one - `inst-5`
@@ -580,12 +581,14 @@ partition. The cost is one repeated upsert.
 The system **MUST** build one row per entry of the project config's `sources[]`,
 in the config's order, and **MUST NOT** build one for a repository node the
 config does not name. A row **MUST** find its repository node by its path,
-ignoring case, and its connection: the node's `connector_id` is
-`studio-connection-<connection id>`. A node without a `connector_id`, or with an
-empty one, is matched by its path alone; a node of another connection is not
-matched. The `connector_id` is empty when the repository was synced through a
-connection without a token: such a connection's `secret_ref` is empty, and the
-sync runs without credentials.
+ignoring case, and its connection: the node's `connector_id` is the `secret_ref`
+its sync was sent, `studio-connection-<connection id>`, or empty for a
+connection without a token, whose sync runs without credentials. A node of the
+source's connection is taken first; a node without a `connector_id` is matched
+by its path alone, and so is any node of the path when the source's connection
+is not known, because the connections could not be read or it is gone. A node of
+another connection is not matched. Two connections without a token both have an
+empty `secret_ref`, so their nodes cannot be told apart.
 
 A row carries what the table's cells need (#688): the provider, the name (the
 last segment of the path), the path, the config's branch when it has one, the
@@ -620,7 +623,8 @@ NOT** change while a sync runs.
 The second line **MUST** show the sync this tab follows: Syncing… while it is
 queued or running, Cancelling… once a cancel is asked for and the gear has not
 recorded it, and Last attempt failed or Last attempt cancelled, with the reason
-as the line's title, once it stopped; nothing otherwise.
+as the line's title, once it stopped; nothing otherwise. A lost sync, one the
+gear stopped answering for, reads Last attempt failed, as Artifacts shows it.
 
 The phase, the counts and the gear's summary that the import's lines hold
 (`cpt-studiofrontend-dod-project-artifacts-run-control`) are not shown in the
@@ -758,7 +762,7 @@ open; the next opening finds it if it is still queued or running
 
 **Touches**:
 - API: every read of `cpt-studiofrontend-flow-project-sources-list`
-- Entities: `shared/useSourcesLoad`, `model/sourceRows`, `useProjectConfig`, `useSourceConnections`, `useProjectImport`
+- Entities: `shared/useSourcesLoad`, `model/sourceRows`, `useProjectConfig`, `ConnectorsApiService`, `useProjectImport`
 
 ## 6. Acceptance Criteria
 
@@ -781,7 +785,7 @@ open; the next opening finds it if it is still queued or running
 - [ ] A repository whose sync is queued or running is not requested again.
 - [ ] A repository whose sync another tab asked for and is still queued is not requested again when the project opens in a new tab, even when the project's other reads answer before the gear's runs.
 - [ ] A repository whose sync failed before the graph had its node is not requested again in the same tab; a new tab asks for it once.
-- [ ] Reopening a project syncs its GitHub sources that have no repository node and have not been requested in this tab, and no others.
+- [ ] Reopening a project syncs its GitHub sources that have no repository node of their path and connection and have not been requested in this tab, and no others.
 - [ ] The New project wizard's repositories step works as `project-create.md` describes, on the same picker; in both, Back to the providers clears the connection, the search and any error, and keeps the picks.
 
 The rows (#685), checked through the hook's tests until the table lands (#688):
@@ -792,7 +796,7 @@ The rows (#685), checked through the hook's tests until the table lands (#688):
 - [ ] A source whose connection is gone from the organization reads Not connected, and shows what its node holds.
 - [ ] A repository attached again through another connection does not show the old connection's node: it reads Not synced, and the screen requests its sync.
 - [ ] A row's name is the last segment of its path, and the path is followed by the config's branch only when the config has one.
-- [ ] While a source's sync is queued or running, its first line stays as it was and the second reads Syncing…; after Cancel sync, Cancelling…; once the sync fails or is cancelled, Last attempt failed or Last attempt cancelled, with the reason as the title.
+- [ ] While a source's sync is queued or running, its first line stays as it was and the second reads Syncing…; after Cancel sync, Cancelling…; once the sync fails or is lost, Last attempt failed, and once it is cancelled, Last attempt cancelled, with the reason as the title.
 - [ ] A row whose sync is in flight offers Cancel sync; a row whose last attempt failed offers Sync now, which retries that run.
 - [ ] When a source's sync settles, its row's last sync, pull requests, commits and specs are read again, without leaving the section.
 - [ ] After a reload, a source whose last attempt failed shows its last successful sync alone.

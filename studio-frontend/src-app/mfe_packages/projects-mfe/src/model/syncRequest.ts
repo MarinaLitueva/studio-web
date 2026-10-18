@@ -73,16 +73,17 @@ export function pathKey(path: string): string {
 
 export function repoNodeOf(
   nodes: readonly ArtifactNodeDto[],
-  source: ProjectSource
+  source: ProjectSource,
+  connections: ReadonlyMap<string, ConnectionDto> | null
 ): ArtifactNodeDto | null {
   const path = pathKey(source.full_path);
-  const connector = `studio-connection-${source.connection_id}`;
+  const connection = connections?.get(source.connection_id);
   let pathOnly: ArtifactNodeDto | null = null;
   for (const node of nodes) {
     if (node.type_id !== ARTIFACT_NODE_TYPES.repo) continue;
     if (pathKey(node.value.full_path ?? '') !== path) continue;
-    if (node.value.connector_id === connector) return node;
-    if (!node.value.connector_id) pathOnly ??= node;
+    if (connection && node.value.connector_id === connection.secret_ref) return node;
+    if (!connection || node.value.connector_id === undefined) pathOnly ??= node;
   }
   return pathOnly;
 }
@@ -90,6 +91,7 @@ export function repoNodeOf(
 export function unsyncedSources(
   sources: readonly ProjectSource[],
   nodes: readonly ArtifactNodeDto[],
+  connections: ReadonlyMap<string, ConnectionDto>,
   lines: readonly { repo: string }[],
   requested: readonly string[]
 ): ProjectSource[] {
@@ -101,7 +103,7 @@ export function unsyncedSources(
   // @cpt-end:cpt-studiofrontend-algo-project-sources-sync-missing:p2:inst-7
   return sources.filter((source) => {
     // @cpt-begin:cpt-studiofrontend-algo-project-sources-sync-missing:p2:inst-5
-    const inGraph = repoNodeOf(nodes, source) !== null;
+    const inGraph = repoNodeOf(nodes, source, connections) !== null;
     // @cpt-end:cpt-studiofrontend-algo-project-sources-sync-missing:p2:inst-5
     return !inGraph && !asked.has(pathKey(source.full_path));
   });

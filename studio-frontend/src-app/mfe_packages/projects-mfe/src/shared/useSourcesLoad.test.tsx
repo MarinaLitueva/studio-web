@@ -10,7 +10,7 @@ type Key = 'nodes' | 'connections' | 'activity' | 'specs' | 'documents';
 
 const { queries, config, lines, invalidate, triggerLoad } = vi.hoisted(() => ({
   queries: { current: {} as Record<string, Query> },
-  config: { current: { config: null as unknown, loading: false, failed: false } },
+  config: { current: { config: null as unknown, loading: false, unset: false, failed: false } },
   lines: { current: [] as unknown[] },
   invalidate: vi.fn(),
   triggerLoad: vi.fn(),
@@ -115,7 +115,7 @@ const importLine = (runId: string, status: string) => ({
 
 beforeEach(() => {
   answerAll();
-  config.current = { config: { sources: SOURCES }, loading: false, failed: false };
+  config.current = { config: { sources: SOURCES }, loading: false, unset: false, failed: false };
   lines.current = [];
   invalidate.mockReset();
   triggerLoad.mockReset();
@@ -149,10 +149,14 @@ describe('useSourcesLoad', () => {
     expect(view.footer.sources).toBe(3);
   });
 
-  it('is not ready until every read has answered or failed', () => {
-    queries.current.activity = pending;
-    expect(mount().view.ready).toBe(false);
-  });
+  it.each<Key | 'config'>(['config', 'nodes', 'connections', 'activity', 'specs', 'documents'])(
+    'is not ready until the %s read has answered or failed',
+    (read) => {
+      if (read === 'config') config.current.loading = true;
+      else queries.current[read] = pending;
+      expect(mount().view.ready).toBe(false);
+    }
+  );
 
   it('fails on the config or the repository nodes, and shows gaps for the other reads', () => {
     queries.current.activity = failedQuery;
@@ -174,9 +178,19 @@ describe('useSourcesLoad', () => {
     expect(sources.view.failed).toBe(true);
 
     answerAll();
-    config.current = { config: null, loading: false, failed: true };
+    config.current = { config: null, loading: false, unset: false, failed: true };
     sources.rerender();
     expect(sources.view.failed).toBe(true);
+  });
+
+  it('with no config written yet, is ready with no rows and does not fail', () => {
+    config.current = { config: null, loading: false, unset: true, failed: false };
+    const { view } = mount();
+
+    expect(view.ready).toBe(true);
+    expect(view.failed).toBe(false);
+    expect(view.rows).toEqual([]);
+    expect(view.footer.sources).toBe(0);
   });
 
   it('with the connections unread, reads no row as Not connected and takes the provider from the node', () => {
