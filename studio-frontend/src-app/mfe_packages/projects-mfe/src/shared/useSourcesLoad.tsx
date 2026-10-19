@@ -50,7 +50,7 @@ const RowsBridge: React.FC<{ rowsKey: string }> = ({ rowsKey }) => {
 
 function settledSyncsOf(lines: readonly SourceImportLine[]): string {
   return lines
-    .filter((line) => !inFlight(line.status))
+    .filter((line) => line.runId !== null && !inFlight(line.status))
     .map((line) => `${line.repo}:${line.runId}:${line.status}`)
     .join('\n');
 }

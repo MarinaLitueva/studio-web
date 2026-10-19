@@ -105,7 +105,7 @@ function mount() {
   };
 }
 
-const importLine = (runId: string, status: string) => ({
+const importLine = (runId: string | null, status: string) => ({
   repo: 'acme/web',
   runId,
   status,
@@ -217,6 +217,16 @@ describe('useSourcesLoad', () => {
     lines.current = [importLine('r-1', 'succeeded')];
     sources.rerender();
     expect(invalidate.mock.calls.map(([query]) => query.key)).toEqual(['nodes', 'activity', 'specs']);
+  });
+
+  it('does not read again for a line that never had a run', () => {
+    const sources = mount();
+
+    lines.current = [importLine(null, 'unsyncable')];
+    sources.rerender();
+    lines.current = [importLine(null, 'failed')];
+    sources.rerender();
+    expect(invalidate).not.toHaveBeenCalled();
   });
 
   it('does not read again for a sync that settles as the project changes', () => {
