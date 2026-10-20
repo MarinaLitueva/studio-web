@@ -8,25 +8,13 @@ vi.mock('../../../../i18n', () => {
 });
 
 import type { SourceRow } from '../../../../model/sourceRows';
+import { sourceRow } from '../../../../model/sourceRows.fixture';
 import type { SourceRowActions } from '../../../../shared/useSourceRowActions';
 import { SourceRowMenu } from './SourceRowMenu';
 
 /** The menu draws what `sourceRowMenu` says and hands each item to the section's actions. */
 
-const ROW: SourceRow = {
-  id: 'c-github:acme/api',
-  connectionId: 'c-github',
-  provider: 'github',
-  name: 'api',
-  fullPath: 'acme/api',
-  cloneUrl: 'https://github.com/acme/api.git',
-  branch: 'main',
-  nodeId: 'n-api',
-  specs: 12,
-  activity: null,
-  lastSync: { kind: 'synced', at: '2026-10-14T10:52:00Z' },
-  sync: { kind: 'none' },
-};
+const ROW = sourceRow();
 
 const NAMES: Record<string, string> = { github: 'GitHub', gitlab: 'GitLab' };
 
@@ -64,7 +52,7 @@ describe('the row menu', () => {
   it('Sync now retries a stopped run that can be retried', async () => {
     const given = actions();
     const stopped = { kind: 'stopped', status: 'failed', reason: null, canRetry: true } as const;
-    const menu = await openMenu({ ...ROW, sync: stopped }, given);
+    const menu = await openMenu(sourceRow({ sync: stopped }), given);
     fireEvent.click(within(menu).getByText('menu_sync_now'));
     expect(given.syncNow).toHaveBeenCalledWith(expect.objectContaining({ fullPath: 'acme/api' }), true);
   });
@@ -72,15 +60,33 @@ describe('the row menu', () => {
   it('Cancel sync stops a sync in flight', async () => {
     const given = actions();
     const inFlight = { kind: 'in_flight', cancelling: false, canCancel: true } as const;
-    const menu = await openMenu({ ...ROW, sync: inFlight }, given);
+    const menu = await openMenu(sourceRow({ sync: inFlight }), given);
     fireEvent.click(within(menu).getByText('menu_cancel_sync'));
     expect(given.cancelSync).toHaveBeenCalledWith(expect.objectContaining({ fullPath: 'acme/api' }));
+  });
+
+  it.each([
+    ['cancelling', sourceRow({ sync: { kind: 'in_flight', cancelling: true, canCancel: false } }), true, 'sync_cancelling'],
+    ['requesting', sourceRow({ sync: { kind: 'in_flight', cancelling: false, canCancel: false } }), true, 'sync_requesting'],
+    ['not_connected', sourceRow({ lastSync: { kind: 'not_connected' } }), true, 'sync_not_connected'],
+    [
+      'unavailable',
+      sourceRow({ provider: 'gitlab', lastSync: { kind: 'unavailable', provider: 'gitlab' } }),
+      true,
+      'sync_unavailable {"provider":"GitLab"}',
+    ],
+    ['connections_unread', sourceRow(), false, 'sync_connections_unread'],
+  ] as const)('a sync item disabled as %s says so in its title', async (_reason, row, connectionsRead, title) => {
+    const menu = await openMenu(row, { ...actions(), connectionsRead });
+    const [item] = within(menu).getAllByRole('menuitem');
+    expect(item.getAttribute('aria-disabled')).toBe('true');
+    expect(item.getAttribute('title')).toBe(title);
   });
 
   it('a sync item that cannot be used says why, and does nothing', async () => {
     const given = actions();
     const menu = await openMenu(
-      { ...ROW, provider: 'gitlab', lastSync: { kind: 'unavailable', provider: 'gitlab' } },
+      sourceRow({ provider: 'gitlab', lastSync: { kind: 'unavailable', provider: 'gitlab' } }),
       given
     );
     const item = within(menu).getByText('menu_sync_now').closest('[role="menuitem"]');

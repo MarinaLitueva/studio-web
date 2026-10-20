@@ -888,8 +888,10 @@ Sources section's namespace, `screen.projects.sources`, in English and in
 Russian.
 
 The menu is the Artifacts row menu's kind: the kit's dropdown menu, drawn inside
-the MFE's themed root. Sync now carries the design's refresh icon and Open in
-its external-link icon. The table (#688) puts the menu in its Actions column,
+the MFE's themed root. The kit takes the pointer off a disabled item, which would
+hide its title, so the menu gives it back; Base UI still does not activate the
+item. Sync now carries the design's refresh icon and Open in its external-link
+icon. The table (#688) puts the menu in its Actions column,
 and the row's Specs number calls what Open specs calls. Until then the section
 stays a placeholder, and the menu is checked through its tests.
 

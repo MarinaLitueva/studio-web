@@ -14,7 +14,7 @@ vi.mock('@gears-frontx/react', async (importOriginal) => ({
   eventBus: { emit: vi.fn() },
 }));
 vi.mock('./useConnections', () => ({
-  useSourceConnections: () => ({ connections: [], loading: false, failed: false }),
+  useSourceConnections: () => ({ connections: [], byId: new Map(), loading: false, failed: false }),
 }));
 
 import { useArtifactImport } from './useArtifactImport';

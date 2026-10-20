@@ -2,6 +2,7 @@
  * The source hosts the wizard can import from — one tab per connection.
  */
 
+import { useMemo } from 'react';
 import { apiRegistry, useApiQuery } from '@gears-frontx/react';
 import { type ConnectionDto, ConnectorsApiService } from '@constructor-studio/mfe-shared';
 
@@ -17,6 +18,7 @@ export interface ConnectionsView {
   providers: readonly SourceProvider[];
   /** Source hosts only, in catalogue order. */
   connections: readonly ConnectionDto[];
+  byId: ReadonlyMap<string, ConnectionDto>;
   loading: boolean;
   failed: boolean;
   providerName: (provider: string) => string;
@@ -42,26 +44,33 @@ export function useSourceConnections(orgId: string): ConnectionsView {
     isError: connectionsFailed,
   } = useApiQuery(connectors.connections({ tenantId: orgId }));
 
-  const facts = new Map<string, ProviderFacts>(
-    (providerData?.items ?? []).map((provider) => [
-      provider.provider,
-      { displayName: provider.display_name, category: provider.category },
-    ])
-  );
+  const catalogue = useMemo(() => {
+    const facts = new Map<string, ProviderFacts>(
+      (providerData?.items ?? []).map((provider) => [
+        provider.provider,
+        { displayName: provider.display_name, category: provider.category },
+      ])
+    );
 
-  const providers = (providerData?.items ?? [])
-    .filter((provider) => provider.category === SOURCE_CODE_CATEGORY)
-    .map((provider) => ({ provider: provider.provider, displayName: provider.display_name }));
+    const providers = (providerData?.items ?? [])
+      .filter((provider) => provider.category === SOURCE_CODE_CATEGORY)
+      .map((provider) => ({ provider: provider.provider, displayName: provider.display_name }));
 
-  const connections = (connectionData?.items ?? []).filter(
-    (connection) => facts.get(connection.provider)?.category === SOURCE_CODE_CATEGORY
-  );
+    const connections = (connectionData?.items ?? []).filter(
+      (connection) => facts.get(connection.provider)?.category === SOURCE_CODE_CATEGORY
+    );
+
+    return {
+      providers,
+      connections,
+      byId: new Map(connections.map((connection) => [connection.id, connection])),
+      providerName: (provider: string) => facts.get(provider)?.displayName ?? provider,
+    };
+  }, [providerData, connectionData]);
 
   return {
-    providers,
-    connections,
+    ...catalogue,
     loading: connectionsLoading || providersLoading,
     failed: connectionsFailed || providersFailed,
-    providerName: (provider: string) => facts.get(provider)?.displayName ?? provider,
   };
 }

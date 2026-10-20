@@ -1,5 +1,5 @@
 import type { ProjectSource } from '@constructor-studio/mfe-shared';
-import { useCallback, useMemo } from 'react';
+import { useCallback } from 'react';
 import { eventBus, useAppSelector } from '@gears-frontx/react';
 import { useSourceConnections } from './useConnections';
 import { attemptedInTab } from './importAttempts';
@@ -52,17 +52,12 @@ export function useArtifactImport({
 }: Params): ArtifactImportView {
   const state = useProjectImport(projectId);
   const {
-    connections,
+    byId,
     loading: connectionsLoading,
     failed: connectionsFailed,
   } = useSourceConnections(orgId);
 
   const connectionsRead = !connectionsLoading && !connectionsFailed;
-
-  const byId = useMemo(
-    () => new Map(connections.map((connection) => [connection.id, connection])),
-    [connections]
-  );
 
   const isFirstImport =
     artifactsRead &&

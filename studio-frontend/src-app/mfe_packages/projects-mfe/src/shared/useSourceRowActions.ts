@@ -27,7 +27,7 @@ export function useSourceRowActions(
 ): SourceRowActions {
   const dispatch = useAppDispatch();
   const bridge = useMfeBridge();
-  const { connections, loading, failed, providerName } = useSourceConnections(orgId);
+  const { byId, loading, failed, providerName } = useSourceConnections(orgId);
 
   const syncNow = useCallback(
     (row: SourceRow, retry: boolean) => {
@@ -35,7 +35,6 @@ export function useSourceRowActions(
         retryRepoSync(projectId, row.fullPath);
         return;
       }
-      const byId = new Map(connections.map((connection) => [connection.id, connection]));
       const source = {
         connection_id: row.connectionId,
         full_path: row.fullPath,
@@ -47,7 +46,7 @@ export function useSourceRowActions(
         ...syncPlan([source], byId),
       });
     },
-    [projectId, workspaceId, connections]
+    [projectId, workspaceId, byId]
   );
 
   const cancelSync = useCallback(

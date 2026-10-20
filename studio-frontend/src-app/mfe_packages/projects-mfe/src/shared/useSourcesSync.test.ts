@@ -7,7 +7,14 @@ import { ARTIFACT_NODE_TYPES } from '../api/artifactTypes';
 
 const { nodes, connections, lines, lookedUp, emit } = vi.hoisted(() => ({
   nodes: { current: { data: undefined as unknown, isError: false } },
-  connections: { current: { connections: [] as ConnectionDto[], loading: false, failed: false } },
+  connections: {
+    current: {
+      connections: [] as ConnectionDto[],
+      byId: new Map<string, ConnectionDto>(),
+      loading: false,
+      failed: false,
+    },
+  },
   lines: { current: [] as { repo: string; status: string }[] },
   lookedUp: { current: true },
   emit: vi.fn(),
@@ -72,8 +79,10 @@ beforeEach(() => {
   emit.mockClear();
   window.sessionStorage.clear();
   nodes.current = repoNodes('acme/api');
+  const list = [connection('c-github', 'github'), connection('c-gitlab', 'gitlab')];
   connections.current = {
-    connections: [connection('c-github', 'github'), connection('c-gitlab', 'gitlab')],
+    connections: list,
+    byId: new Map(list.map((entry) => [entry.id, entry])),
     loading: false,
     failed: false,
   };

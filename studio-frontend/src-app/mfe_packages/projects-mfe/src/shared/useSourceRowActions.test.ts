@@ -1,7 +1,6 @@
 import { renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConnectionDto } from '@constructor-studio/mfe-shared';
-import type { SourceRow } from '../model/sourceRows';
 
 /** What the row menu's items do (DoDs `...-sources-menu-sync`, `...-sources-menu-specs`). */
 
@@ -20,30 +19,22 @@ vi.mock('@gears-frontx/react', async (importOriginal) => ({
   useMfeBridge: () => bridge,
 }));
 vi.mock('./useConnections', () => ({
-  useSourceConnections: () => ({ ...connections.current, providerName: (p: string) => `name:${p}` }),
+  useSourceConnections: () => ({
+    ...connections.current,
+    byId: new Map(connections.current.connections.map((entry) => [entry.id, entry])),
+    providerName: (p: string) => `name:${p}`,
+  }),
 }));
 vi.mock('../actions/projectsActions', () => ({ announceSection }));
 
+import { sourceRow } from '../model/sourceRows.fixture';
 import { showSourceSpecs } from '../slices/specsFilterSlice';
 import { useSourceRowActions } from './useSourceRowActions';
 
 const connection = (id: string, provider: string): ConnectionDto =>
   ({ id, provider, label: id, base_url: '', secret_ref: `studio-connection-${id}` }) as ConnectionDto;
 
-const ROW: SourceRow = {
-  id: 'c-github:acme/api',
-  connectionId: 'c-github',
-  provider: 'github',
-  name: 'api',
-  fullPath: 'acme/api',
-  cloneUrl: 'https://github.com/acme/api.git',
-  branch: 'main',
-  nodeId: 'n-api',
-  specs: 12,
-  activity: null,
-  lastSync: { kind: 'synced', at: '2026-10-14T10:52:00Z' },
-  sync: { kind: 'none' },
-};
+const ROW = sourceRow();
 
 const render = () => renderHook(() => useSourceRowActions('p-1', 'ws-1', 'org-1')).result.current;
 

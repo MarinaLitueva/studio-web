@@ -1,5 +1,5 @@
 import type { ProjectSource } from '@constructor-studio/mfe-shared';
-import { useEffect, useMemo } from 'react';
+import { useEffect } from 'react';
 import { apiRegistry, eventBus, useApiQuery } from '@gears-frontx/react';
 import { ArtifactIngestApiService } from '../api/ArtifactIngestApiService';
 import { syncPlan, unsyncedSources } from '../model/syncRequest';
@@ -32,14 +32,10 @@ export function useSourcesSync({
   // @cpt-begin:cpt-studiofrontend-algo-project-sources-sync-missing:p2:inst-4
   const nodes = useApiQuery(ingest.nodes(repositoryNodesParams(projectId)));
   // @cpt-end:cpt-studiofrontend-algo-project-sources-sync-missing:p2:inst-4
-  const { connections, loading, failed } = useSourceConnections(orgId);
+  const { byId, loading, failed } = useSourceConnections(orgId);
   const { repos: lines, lookedUp } = useProjectImport(projectId);
 
   const repoNodes = nodes.data?.nodes ?? null;
-  const byId = useMemo(
-    () => new Map(connections.map((connection) => [connection.id, connection])),
-    [connections]
-  );
   const ready = sourcesRead && repoNodes !== null && !nodes.isError && !loading && !failed;
 
   useEffect(() => {

@@ -49,6 +49,7 @@ export const SourceRowMenu: React.FC<SourceRowMenuProps> = ({ row, actions, cont
         return (
           <DropdownMenuItem
             key="sync"
+            className={styles.item}
             disabled={entry.disabled !== null}
             title={entry.disabled ? disabledTitle(entry.disabled) : undefined}
             onClick={() => actions.cancelSync(row)}
@@ -60,6 +61,7 @@ export const SourceRowMenu: React.FC<SourceRowMenuProps> = ({ row, actions, cont
         return (
           <DropdownMenuItem
             key="sync"
+            className={styles.item}
             disabled={entry.disabled !== null}
             title={entry.disabled ? disabledTitle(entry.disabled) : undefined}
             onClick={() => actions.syncNow(row, entry.retry)}
@@ -88,7 +90,11 @@ export const SourceRowMenu: React.FC<SourceRowMenuProps> = ({ row, actions, cont
         return (
           <React.Fragment key="disconnect">
             <DropdownMenuSeparator />
-            <DropdownMenuItem disabled title={t('menu_disconnect_unavailable')}>
+            <DropdownMenuItem
+              className={styles.item}
+              disabled
+              title={t('menu_disconnect_unavailable')}
+            >
               {t('menu_disconnect')}
             </DropdownMenuItem>
           </React.Fragment>
