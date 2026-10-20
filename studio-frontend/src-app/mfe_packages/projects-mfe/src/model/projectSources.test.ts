@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ProjectSource } from '@constructor-studio/mfe-shared';
-import { repositoryKey, withSources, withoutSource } from './projectSources';
+import { repositoryKey, repositoryWebUrl, withSources, withoutSource } from './projectSources';
 
 const source = (connection: string, fullPath: string): ProjectSource => ({
   connection_id: connection,
@@ -22,6 +22,29 @@ describe('repositoryKey', () => {
   it('names nothing without a scheme, a host or a path', () => {
     expect(repositoryKey('git@github.com:acme/api.git')).toBeNull();
     expect(repositoryKey('https://github.com/')).toBeNull();
+  });
+});
+
+describe('repositoryWebUrl', () => {
+  it.each([
+    ['https://github.com/acme/api.git', 'https://github.com/acme/api'],
+    ['https://jdoe@bitbucket.org/acme/api.git', 'https://bitbucket.org/acme/api'],
+    ['https://x-access-token:secret@github.com/acme/api.git', 'https://github.com/acme/api'],
+    ['http://git.internal:8443/acme/api.git', 'http://git.internal:8443/acme/api'],
+    ['https://gitlab.com/group/sub/api/', 'https://gitlab.com/group/sub/api'],
+    ['https://github.com/acme/api.github.io.git', 'https://github.com/acme/api.github.io'],
+  ])('%s opens %s', (cloneUrl, page) => {
+    expect(repositoryWebUrl(cloneUrl)).toBe(page);
+  });
+
+  it.each([
+    'git@github.com:acme/api.git',
+    'ssh://git@github.com/acme/api.git',
+    'git://github.com/acme/api.git',
+    'https://github.com/',
+    '',
+  ])('%s gives none', (cloneUrl) => {
+    expect(repositoryWebUrl(cloneUrl)).toBeNull();
   });
 });
 

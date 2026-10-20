@@ -23,11 +23,13 @@ owner: studio-team
 - [2. Actor Flows (CDSL)](#2-actor-flows-cdsl)
   - [Connect repositories to a project](#connect-repositories-to-a-project)
   - [See the project's sources](#see-the-projects-sources)
+  - [Act on a source from its row](#act-on-a-source-from-its-row)
 - [3. Processes / Business Logic (CDSL)](#3-processes--business-logic-cdsl)
   - [Attach the picked repositories](#attach-the-picked-repositories)
   - [Sync the sources nothing has pulled in](#sync-the-sources-nothing-has-pulled-in)
   - [Build the Sources rows](#build-the-sources-rows)
   - [Count the Sources footer](#count-the-sources-footer)
+  - [Say what a row's menu offers](#say-what-a-rows-menu-offers)
 - [4. States (CDSL)](#4-states-cdsl)
   - [Connect Source Dialog State Machine](#connect-source-dialog-state-machine)
   - [Source Row Sync State Machine](#source-row-sync-state-machine)
@@ -45,6 +47,12 @@ owner: studio-team
   - [The rows are searched by name and path, in the config's order](#the-rows-are-searched-by-name-and-path-in-the-configs-order)
   - [The footer counts the whole project](#the-footer-counts-the-whole-project)
   - [The section reads through the shared cache, and the table shows the rows it builds](#the-section-reads-through-the-shared-cache-and-the-table-shows-the-rows-it-builds)
+  - [The row's menu is a component of its own, which the table places](#the-rows-menu-is-a-component-of-its-own-which-the-table-places)
+  - [Sync now joins the import, and Cancel sync stops the run](#sync-now-joins-the-import-and-cancel-sync-stops-the-run)
+  - [A refused cancel or retry is a notification](#a-refused-cancel-or-retry-is-a-notification)
+  - [Open specs shows Specs searched by the source's path](#open-specs-shows-specs-searched-by-the-sources-path)
+  - [The repository's page opens from its clone URL](#the-repositorys-page-opens-from-its-clone-url)
+  - [Disconnect is shown, disabled, until the backend can take a source out](#disconnect-is-shown-disabled-until-the-backend-can-take-a-source-out)
 - [6. Acceptance Criteria](#6-acceptance-criteria)
 
 <!-- /toc -->
@@ -62,8 +70,11 @@ This spec starts with attaching more: **Connect source** in the section's
 header opens a dialog with the wizard's repository picker, and the picked
 repositories join the project's config and its import (#687). It then builds the
 rows the section's table shows (#685): each source joined to its repository in
-the graph, its week of pull requests and commits, its specs and its sync. The
-row menu, the table and uploading documents are added with #686, #688 and #693.
+the graph, its week of pull requests and commits, its specs and its sync. Each
+row has a menu (#686): sync the source or cancel its sync, open its specs, open
+it at its provider. Disconnect is in the menu, disabled until the backend can
+take a source out of a project. The table and uploading documents are added
+with #688 and #693.
 
 ### 1.2 Purpose
 
@@ -144,6 +155,38 @@ the prototype does not read:
   what it reads, each of which drops its query in the shared cache rather than
   reaching into this section.
 
+**For the row menu (#686)**, fixed here because the design is silent, or shows
+what the gears cannot do yet:
+
+- **The menu is a component of its own.** The table (#688) puts it in the
+  Actions column, and the row's Specs number opens the specs as the menu does.
+  Until then the section stays a placeholder, and the menu is checked through
+  its tests.
+- **Sync now adds one repository to the import.** It joins the project's
+  import beside the other repositories' syncs, as the sync of the missing
+  sources does. Asking to sync the project's sources would replace the import's
+  lines and end the watch of the runs it follows.
+- **A stopped sync is retried when its run can be.** Sync now puts a failed or
+  cancelled run back on the queue, and requests a new sync for a lost one or
+  one the gear never gave a run.
+- **Only a refused cancel or retry is a notification.** Without one, a refused
+  cancel turns Cancelling… back into Syncing…, and a refused retry changes
+  nothing. A refused sync request and a failed sync are on the row already: its
+  second line reads Last attempt failed, with the reason.
+- **Disconnect is shown and disabled.** Taking a source out of a project is one
+  operation for the backend: the config written and everything synced from the
+  repository pruned, durably. Done from the browser as a config write and then
+  `POST /studio-artifact-ingest/v1/reconcile`, a reconcile that fails, or a tab
+  closed in between, leaves the repository's files, pull requests and specs in
+  Artifacts and Specs, with no row left in Sources to try again from.
+- **Open in {provider} is built from the clone URL.** For GitHub and
+  Bitbucket the connection's `base_url` is the provider's API root, not the
+  site a person opens. A source whose clone URL is not an `http` or `https`
+  address gets no Open in.
+- **A disabled item says why in its title**, as the design's Disconnect does.
+  For a source whose provider cannot sync or whose connection is gone, its Last
+  sync says the same.
+
 **Requirements**: `cpt-studio-fr-connections`, `cpt-studio-fr-artifact-ingest`
 
 **Principles**: `cpt-studio-principle-project-is-unit`
@@ -155,12 +198,13 @@ Actor ids are defined in the [PRD](../prd/constructor-studio.md); a gear taking 
 | Actor | Role in Feature |
 |-------|-----------------|
 | **Member** (`cpt-studio-actor-member`) | A signed-in member with the project open. Picks repositories and connects them. |
-| **Shell** (`cpt-studio-actor-shell`) | Owns the overlay frame: mounts and unmounts the dialog, draws the scrim, handles Escape and click-outside. |
-| **MFE** (`cpt-studio-actor-mfe`) | projects-mfe. Draws the dialog in one extension and the project screen in another; the screen syncs what the dialog attached. |
+| **Shell** (`cpt-studio-actor-shell`) | Owns the overlay frame: mounts and unmounts the dialog, draws the scrim, handles Escape and click-outside. Moves to the section the MFE asks for, and shows its notifications. |
+| **MFE** (`cpt-studio-actor-mfe`) | projects-mfe. Draws the dialog in one extension and the project screen, with each row's menu, in another; the screen syncs what the dialog attached. |
 | **Connector gear** (`cpt-studio-component-connector`) | Lists the organization's connections and each connection's repositories. |
 | **Artifact gear** (`cpt-studio-component-artifact-ingest`) | Syncs each new GitHub repository into the graph; answers each repository's node and its week of pull requests and commits. |
 | **Documents gear** (`cpt-studio-component-documents`) | Counts each repository's specs and the documents created in Studio. |
 | **Event stream** (`cpt-studio-component-events`) | Carries the transitions of each sync the tab follows. |
+| **Tasks gear** (`cpt-studio-component-tasks`) | Cancels a source's sync run, and puts a failed or cancelled one back on the queue. |
 
 ### 1.4 References
 
@@ -170,9 +214,10 @@ Actor ids are defined in the [PRD](../prd/constructor-studio.md); a gear taking 
 - **Feature**: [Create a project](project-create.md): the picker this dialog shares, and the config's first write
 - **Feature**: [Project artifacts](project-artifacts.md): the import the new repositories join
 - **Feature**: [Connect a source host](connection-create.md): the form Add connection opens
-- **Feature**: [The project's specs](project-specs.md): the section before this one
+- **Feature**: [The project's specs](project-specs.md): the section before this one, and the filter Open specs sets
+- **Feature**: [Levels in the shell](shell-levels.md): the section the MFE asks for, written into the address
 - **Decomposition entry** `cpt-studio-feature-documents`: the specs counted per repository and the documents created in Studio (no feature spec of its own)
-- **Issues**: #643 (the Specs and Sources sections), #687 (Connect source), #685 (the rows), #709 (the config write), #711 (the Specs list's load), #686, #688, #693 (the rest of the section)
+- **Issues**: #643 (the Specs and Sources sections), #687 (Connect source), #685 (the rows), #686 (the row menu), #709 (the config write), #711 (the Specs list's load), #688, #693 (the rest of the section)
 
 ## 2. Actor Flows (CDSL)
 
@@ -247,6 +292,41 @@ extensions, the shell's overlay frame and connections-mfe.
 11. [ ] - `p1` - A sync of one of the sources settles; read the repository nodes, the activity and the specs again, and build the rows again - `inst-12`
 12. [ ] - `p1` - **RETURN** the rows and the footer - `inst-13`
 
+**Use case**: act on one of the project's sources from its row.
+
+### Act on a source from its row
+
+- [ ] `p1` - **ID**: `cpt-studiofrontend-flow-project-sources-row-menu`
+
+**Actor**: Member
+
+**Success Scenarios**:
+- The source's sync is requested, retried or cancelled, and the row's Last sync follows it.
+- Specs opens, searched by the source's path.
+- The repository opens at its provider, in a new tab.
+
+**Error Scenarios**:
+- The gear refuses the cancel or the retry; a notification says so, and the row's sync stays as it was.
+- The gear refuses the sync request, or the sync fails; the row's second line reads Last attempt failed, with the reason.
+- The source cannot be synced now; Sync now is disabled, with the reason.
+
+**Steps**:
+1. [ ] - `p1` - Member opens the menu on a source's row - `inst-1`
+2. [ ] - `p1` - Run `cpt-studiofrontend-algo-project-sources-row-menu` for the items and what each does - `inst-2`
+3. [ ] - `p1` - **IF** Member activates Sync now on a stopped sync whose run can be retried - `inst-3`
+   1. [ ] - `p1` - `API: POST /cf/studio-tasks/v1/runs/{id}/retry`, as `cpt-studiofrontend-algo-project-artifacts-run-control` does - `inst-4`
+4. [ ] - `p1` - **ELSE IF** Member activates Sync now - `inst-5`
+   1. [ ] - `p1` - Run `cpt-studiofrontend-algo-project-artifacts-sync-request` for the source, then `cpt-studiofrontend-algo-project-artifacts-sync-add` with what it returns - `inst-6`
+5. [ ] - `p1` - **IF** Member activates Cancel sync - `inst-7`
+   1. [ ] - `p1` - `API: POST /cf/studio-tasks/v1/runs/{id}/cancel`, as `cpt-studiofrontend-algo-project-artifacts-run-control` does, without asking first - `inst-8`
+6. [ ] - `p1` - **IF** the gear refuses the cancel or the retry - `inst-9`
+   1. [ ] - `p1` - The shell shows a notification naming the source, with the gear's reason when it gives one - `inst-10`
+7. [ ] - `p1` - **IF** Member activates Open specs from this source - `inst-11`
+   1. [ ] - `p1` - Run `cpt-studiofrontend-flow-project-specs-from-source` with the source's `full_path` - `inst-12`
+8. [ ] - `p1` - **IF** Member activates Open in {provider} - `inst-13`
+   1. [ ] - `p1` - Open the repository's address in a new tab, without the opener - `inst-14`
+9. [ ] - `p1` - **RETURN** the row's Last sync follows the sync, as `cpt-studiofrontend-state-project-sources-row-sync` says - `inst-15`
+
 ## 3. Processes / Business Logic (CDSL)
 
 ### Attach the picked repositories
@@ -310,7 +390,7 @@ so it is found the next time the project screen reads the project.
    1. [x] - `p1` - Find its repository node: the same path, ignoring case, and a `connector_id` equal to its connection's `secret_ref`; else one of the same path with no `connector_id`, or with any **IF** its connection is not known - `inst-2`
    2. [x] - `p1` - Find its connection by id - `inst-3`
    3. [x] - `p1` - Take the provider from the node, else from the connection, else none - `inst-4`
-   4. [x] - `p1` - Name it by the last segment of its path; keep the path, and the config's `branch` when it has one - `inst-5`
+   4. [x] - `p1` - Name it by the last segment of its path; keep the path and the clone URL, and the config's `branch` when it has one - `inst-5`
    5. [x] - `p1` - **IF** the specs could not be read, the documents gear does not know the files (`files_known` false), or the source has no node, its specs are missing; **ELSE** they are the count listed for its node, 0 when the node is not listed - `inst-6`
    6. [x] - `p1` - **IF** the activity could not be read or the source has no node, its pull requests and commits are missing; **ELSE** they are its node's, none on every day of the window when the node is not listed - `inst-7`
    7. [x] - `p1` - Take its last sync: Not connected **IF** the connections were read and its connection is not among them; **ELSE** unavailable **IF** its provider cannot sync (`cpt-studiofrontend-dod-project-artifacts-syncable-providers`); **ELSE** the node's `synced_at` **IF** it has one; **ELSE** Not synced - `inst-8`
@@ -331,6 +411,36 @@ so it is found the next time the project screen reads the project.
 3. [x] - `p1` - Created in Studio: the `total` of the project's documents; missing **IF** they could not be read - `inst-3`
 4. [x] - `p1` - Open pull requests: the sum of the rows' open pull requests that are not missing; missing **IF** the activity could not be read - `inst-4`
 5. [x] - `p1` - **RETURN** the four counts - `inst-5`
+
+### Say what a row's menu offers
+
+- [x] `p2` - **ID**: `cpt-studiofrontend-algo-project-sources-row-menu`
+
+**Input**: a source's row, and whether the organization's connections were read
+
+**Output**: the menu's items in order, each with what it does, or disabled with the reason
+
+**Steps**:
+1. [x] - `p1` - Take the sync item - `inst-1`
+   1. [x] - `p1` - **IF** the sync is in flight: Cancel sync; disabled with "Cancelling…" while a cancel is pending, and with "The sync is being requested" while the gear has not given it a run - `inst-2`
+   2. [x] - `p1` - **ELSE IF** the row reads Not connected: Sync now, disabled with "Its connection is gone" - `inst-3`
+   3. [x] - `p1` - **ELSE IF** its provider cannot sync: Sync now, disabled with "Sync isn't available for {provider} yet" - `inst-4`
+   4. [x] - `p1` - **ELSE IF** the sync stopped and its run can be retried: Sync now, retrying that run - `inst-5`
+   5. [x] - `p1` - **ELSE IF** the connections could not be read: Sync now, disabled with "The connections could not be read" - `inst-6`
+   6. [x] - `p1` - **ELSE**: Sync now, requesting a new sync - `inst-7`
+2. [x] - `p1` - Take Open specs from this source, on every row - `inst-8`
+3. [x] - `p1` - **IF** the row's provider is known and its clone URL is an `http` or `https` address, take Open in {provider}, at that address without its user, its password and a trailing `.git` - `inst-9`
+4. [x] - `p1` - Take Disconnect, after a separator, disabled with "Disconnect unavailable" - `inst-10`
+5. [x] - `p1` - **RETURN** the items - `inst-11`
+
+The order is the design's. A cancel needs no connection, so an in-flight sync
+can be cancelled whatever the row reads. Not connected comes before a retry: the
+run would pull through a connection the organization no longer has. The
+connections matter only to a new sync, which sends the connection's provider,
+base URL and credential reference
+(`cpt-studiofrontend-algo-project-artifacts-sync-request`); a retry names only
+the run. A lost sync and a refused request have no run to retry, and get a new
+sync.
 
 ## 4. States (CDSL)
 
@@ -593,7 +703,8 @@ empty `secret_ref`, so their nodes cannot be told apart.
 A row carries what the table's cells need (#688): the provider, the name (the
 last segment of the path), the path, the config's branch when it has one, the
 specs, the pull requests open and merged with one count per day of the window,
-oldest first, the commits, the last sync and the sync this tab follows.
+oldest first, the commits, the last sync and the sync this tab follows. For its
+menu (#686) it also carries the source's clone URL.
 
 The sync of the missing sources compares by the same key
 (`cpt-studiofrontend-algo-project-sources-sync-missing`), so a row that reads Not
@@ -743,7 +854,7 @@ repository again when a sync of one of the project's sources settles, as
 Artifacts does (`cpt-studiofrontend-algo-project-artifacts-sync`). The config is
 read again when Connect source drops the cached copy
 (`cpt-studiofrontend-algo-project-sources-attach`), and so will it be after
-Disconnect (#686). A place that changes another answer drops that query in the
+Disconnect. A place that changes another answer drops that query in the
 shared cache: a type decided in Specs the specs per repository (#690), an upload
 the Studio documents (#693).
 
@@ -763,6 +874,161 @@ open; the next opening finds it if it is still queued or running
 **Touches**:
 - API: every read of `cpt-studiofrontend-flow-project-sources-list`
 - Entities: `shared/useSourcesLoad`, `model/sourceRows`, `useProjectConfig`, `ConnectorsApiService`, `useProjectImport`
+
+### The row's menu is a component of its own, which the table places
+
+- [x] `p1` - **ID**: `cpt-studiofrontend-dod-project-sources-menu`
+
+The system **MUST** draw a source's actions as a menu component that takes the
+source's row: a ghost icon button named "Actions for {name}", opening a menu
+aligned to its end, with the items of
+`cpt-studiofrontend-algo-project-sources-row-menu` in their order. A disabled
+item **MUST** say why in its title. The menu's strings **MUST** come from the
+Sources section's namespace, `screen.projects.sources`, in English and in
+Russian.
+
+The menu is the Artifacts row menu's kind: the kit's dropdown menu, drawn inside
+the MFE's themed root. Sync now carries the design's refresh icon and Open in
+its external-link icon. The table (#688) puts the menu in its Actions column,
+and the row's Specs number calls what Open specs calls. Until then the section
+stays a placeholder, and the menu is checked through its tests.
+
+**Implements**:
+- `cpt-studiofrontend-flow-project-sources-row-menu`
+- `cpt-studiofrontend-algo-project-sources-row-menu`
+
+**Touches**:
+- Entities: `SourceRowMenu`, `model/sourceRowMenu`, `useSourceRowActions`
+
+### Sync now joins the import, and Cancel sync stops the run
+
+- [x] `p1` - **ID**: `cpt-studiofrontend-dod-project-sources-menu-sync`
+
+The system **MUST** request a new sync of one source by adding it to the
+project's import (`cpt-studiofrontend-algo-project-artifacts-sync-add`), **MUST**
+retry a stopped run that can be retried instead of requesting another, and
+**MUST** cancel a sync in flight without asking first
+(`cpt-studiofrontend-algo-project-artifacts-run-control`). Each **MUST** keep the
+member on Sources.
+
+Adding rather than asking to sync the project's sources: that replaces the
+import's lines and ends the watch of the runs it follows, which is what Sync
+repositories in Artifacts is for. The import leaves out a repository already
+queued or running, so a second request asks for nothing; the item reads Cancel
+sync by then anyway. The request is recorded for the repository in the tab, as
+every other request is (`cpt-studiofrontend-dod-project-sources-sync-missing`).
+
+Cancel sync asks no confirmation: what the sync stored stays, and Sync now
+starts it again. The gear finishes the work it started before it records the
+cancel, so the row reads Cancelling… until the run's terminal event.
+
+**Implements**:
+- `cpt-studiofrontend-flow-project-sources-row-menu`
+
+**Touches**:
+- Event: `mfe/artifacts/repos-added`, `mfe/artifacts/cancel-requested`, `mfe/artifacts/retry-requested`
+- Entities: `useSourceRowActions`, `cancelRepoSync`, `retryRepoSync`, `model/syncRequest`
+
+### A refused cancel or retry is a notification
+
+- [x] `p1` - **ID**: `cpt-studiofrontend-dod-project-sources-menu-refusals`
+
+The system **MUST** show the shell's notification when the gear refuses to
+cancel or to retry a source's sync. It names the repository by its path and
+gives the gear's reason when there is one: "Couldn't cancel the sync of {path}:
+{reason}", or "Couldn't retry the sync of {path}" without one. The system **MUST
+NOT** show one for a sync request the gear refuses or a sync that fails: the
+row's second line says those (`cpt-studiofrontend-dod-project-sources-last-sync`).
+
+A refused cancel turns Cancelling… back into Syncing…, and a refused retry
+leaves Last attempt failed as it was: nothing else tells the member that what
+they asked for did not happen. A cancel the gear refuses because the run has
+already ended is not a refusal; the run's terminal event says how it ended.
+
+The import's effect hears the refusal, and it has neither the bridge nor the
+section's strings. So it emits an event, and the Sources section shows the
+notification, as Specs does for a refused type decision. The section listens
+once, not each row, so a refusal gives one notification whichever rows the
+table shows. The refusal is the answer to the member's click, so it comes back
+while they are still on Sources; one that comes after they have left is not
+shown.
+
+**Implements**:
+- `cpt-studiofrontend-flow-project-sources-row-menu`
+
+**Touches**:
+- Event: `mfe/artifacts/cancel-refused`, `mfe/artifacts/retry-refused`
+- Entities: `artifactEffects`, `useSyncRefusals`, `SourcesSection`, `notify` (mfe-shared)
+
+### Open specs shows Specs searched by the source's path
+
+- [x] `p1` - **ID**: `cpt-studiofrontend-dod-project-sources-menu-specs`
+
+The system **MUST** offer Open specs from this source on every row, and on it
+**MUST** set the Specs list's filter for the source's `full_path`
+(`cpt-studiofrontend-dod-project-specs-filter-state`) and ask the shell for the
+Specs section.
+
+By the path, not the name, as `project-specs.md` decides. It is on every row, a
+source with no specs included: the list then shows there are none. The shell
+writes the section into the address without a history entry, and the MFE takes it from
+there, as with the first import's move to Artifacts
+(`cpt-studiofrontend-flow-shell-levels-section`), so Back does not return to
+Sources. Accepted: the shell gives the MFE no other way to change the section.
+Nothing shows the filter until the Specs list does (#692).
+
+**Implements**:
+- `cpt-studiofrontend-flow-project-sources-row-menu`
+- `cpt-studiofrontend-flow-project-specs-from-source`
+
+**Touches**:
+- Entities: `useSourceRowActions`, `specsFilterSlice` (`showSourceSpecs`), `announceSection`
+
+### The repository's page opens from its clone URL
+
+- [x] `p1` - **ID**: `cpt-studiofrontend-dod-project-sources-menu-open-in`
+
+The system **MUST** open the repository's page at its provider in a new tab,
+without the opener, at the address the source's clone URL gives: an `http` or
+`https` clone URL without its user, its password and a trailing `.git`. It
+**MUST** name the item after the provider, as the connector's catalogue names
+it, and **MUST** leave the item out for a source whose clone URL is not `http`
+or `https`, or whose provider is not known.
+
+Not the connection's `base_url` with the path: for GitHub and Bitbucket that is
+the API root, `https://api.github.com` and `https://api.bitbucket.org/2.0`, not
+the site. The user comes off because Bitbucket's clone URL carries the user
+name of the account the connection signs in with. An SSH clone URL names the
+host in another form, and no address is guessed from it. The prototype opens
+the same address (`repoUrl`).
+
+**Implements**:
+- `cpt-studiofrontend-algo-project-sources-row-menu`
+
+**Touches**:
+- Entities: `model/sourceRows` (the clone URL), `model/projectSources` (`repositoryWebUrl`, beside `repositoryKey`), `model/sourceRowMenu`, `SourceRowMenu`
+
+### Disconnect is shown, disabled, until the backend can take a source out
+
+- [x] `p1` - **ID**: `cpt-studiofrontend-dod-project-sources-menu-disconnect`
+
+The system **MUST** show Disconnect last, after a separator, disabled, with the
+title "Disconnect unavailable", and **MUST NOT** take a source out of the config
+or call `POST /studio-artifact-ingest/v1/reconcile` from the menu.
+
+Taking a source out removes everything synced from the repository: files, pull
+requests, type decisions, findings. From the browser it is two calls, and a
+reconcile that fails, or a tab closed between them, leaves those in a project
+that no longer names the repository, where no row offers to try again. It
+belongs to the backend, as one operation: the config written and the prune
+queued durably. The item keeps its place meanwhile, and is not drawn as
+destructive, as in the design.
+
+**Implements**:
+- `cpt-studiofrontend-algo-project-sources-row-menu`
+
+**Touches**:
+- Entities: `model/sourceRowMenu`, `SourceRowMenu`
 
 ## 6. Acceptance Criteria
 
@@ -805,3 +1071,16 @@ The rows (#685), checked through the hook's tests until the table lands (#688):
 - [ ] When the config or the repository nodes cannot be read, the section says so.
 - [ ] Searching keeps the rows whose name or path holds the text, ignoring case, in the config's order, and leaves the footer as it was.
 - [ ] The footer gives the number of sources, the specs from sources, the documents created in Studio and the open pull requests of the whole project.
+
+The row menu (#686), checked through the menu's tests until the table lands (#688):
+
+- [ ] A synced GitHub source's menu, named "Actions for {name}", lists Sync now, Open specs from this source, Open in GitHub and, after a separator, Disconnect, disabled with the title "Disconnect unavailable".
+- [ ] Sync now requests that source's sync and no other: its row's second line reads Syncing…, and the lines of the import's other repositories stay as they were.
+- [ ] While the sync is in flight the item reads Cancel sync; using it asks nothing, and the row reads Cancelling…, with Cancel sync disabled, until the cancel lands.
+- [ ] After a failed or cancelled sync, Sync now retries the same run; after a lost one, or a request the gear refused, it requests a new sync.
+- [ ] A GitLab or Bitbucket source's Sync now is disabled, with "Sync isn't available for GitLab yet" (or Bitbucket); a source whose connection is gone has it disabled, with "Its connection is gone", and an in-flight sync of it can still be cancelled.
+- [ ] When the connections could not be read, Sync now is disabled on a source with nothing to retry, with the reason.
+- [ ] When the gear refuses a cancel or a retry, a notification names the source and gives the gear's reason, and the row's sync stays as it was; a refused sync request or a failed sync gives no notification.
+- [ ] Open specs from this source, on any row, moves to Specs, with the Specs filter set to the source's path, Type confirmed and no document type.
+- [ ] Open in opens the repository's page in a new tab: `https://bitbucket.org/<workspace>/<repo>` for the clone URL `https://<user>@bitbucket.org/<workspace>/<repo>.git`; a source with an SSH clone URL offers no Open in.
+- [ ] The menu's labels, titles and notifications are in English and in Russian.

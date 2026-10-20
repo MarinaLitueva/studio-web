@@ -21,6 +21,7 @@ vi.mock('../../../i18n', () => {
 });
 
 vi.mock('./specs/useTypeDecisionRefusals', () => ({ useTypeDecisionRefusals: () => undefined }));
+vi.mock('../../../shared/useSyncRefusals', () => ({ useSyncRefusals: () => undefined }));
 
 import { SpecsSection } from './specs/SpecsSection';
 import { SourcesSection } from './sources/SourcesSection';

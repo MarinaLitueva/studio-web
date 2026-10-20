@@ -352,13 +352,9 @@ export function initArtifactEffects(dispatch: AppDispatch, app: FrontXApp): void
         if (violationOfType(error, CANCEL_REFUSED)) return;
         // @cpt-end:cpt-studiofrontend-algo-project-artifacts-run-control:p2:inst-4
         // @cpt-begin:cpt-studiofrontend-algo-project-artifacts-run-control:p2:inst-8
-        dispatch(
-          repoControlRefused({
-            projectId,
-            repo,
-            refusal: refusalFrom(error, 'artifacts_reason_cancel_refused'),
-          })
-        );
+        const refusal = refusalFrom(error, 'artifacts_reason_cancel_refused');
+        dispatch(repoControlRefused({ projectId, repo, refusal }));
+        eventBus.emit('mfe/artifacts/cancel-refused', { projectId, repo, refusal });
         // @cpt-end:cpt-studiofrontend-algo-project-artifacts-run-control:p2:inst-8
       }
     })();
@@ -381,13 +377,9 @@ export function initArtifactEffects(dispatch: AppDispatch, app: FrontXApp): void
         // @cpt-end:cpt-studiofrontend-algo-project-artifacts-run-control:p2:inst-6
       } catch (error) {
         if (!mine.ended) {
-          dispatch(
-            repoControlRefused({
-              projectId,
-              repo,
-              refusal: refusalFrom(error, 'artifacts_reason_retry_refused'),
-            })
-          );
+          const refusal = refusalFrom(error, 'artifacts_reason_retry_refused');
+          dispatch(repoControlRefused({ projectId, repo, refusal }));
+          eventBus.emit('mfe/artifacts/retry-refused', { projectId, repo, refusal });
         }
         return;
       }

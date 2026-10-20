@@ -46,6 +46,7 @@ export interface SourceRow {
   provider: string | null;
   name: string;
   fullPath: string;
+  cloneUrl: string;
   branch: string | null;
   nodeId: string | null;
   specs: number | null;
@@ -164,6 +165,7 @@ export function buildSourceRows(answers: SourcesAnswers): SourceRow[] {
       // @cpt-begin:cpt-studiofrontend-algo-project-sources-rows:p2:inst-5
       name: nameOf(source.full_path),
       fullPath: source.full_path,
+      cloneUrl: source.clone_url,
       branch: source.branch ?? null,
       // @cpt-end:cpt-studiofrontend-algo-project-sources-rows:p2:inst-5
       nodeId: node?.instance_id ?? null,

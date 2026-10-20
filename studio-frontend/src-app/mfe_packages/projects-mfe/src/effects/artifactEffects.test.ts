@@ -19,7 +19,7 @@ vi.mock('@gears-frontx/react', async (importOriginal) => ({
   apiRegistry: { getService: mockGetService },
 }));
 
-import type { AppDispatch, FrontXApp } from '@gears-frontx/react';
+import { eventBus, type AppDispatch, type FrontXApp } from '@gears-frontx/react';
 import {
   StudioEventsApiService,
   StudioTasksApiService,
@@ -379,6 +379,25 @@ describe('a repository sync, followed on the event stream', () => {
       await vi.advanceTimersByTimeAsync(0);
 
       expect(h.rows()[0]).toMatchObject({ cancelling: true, refusal: null });
+      expect(eventBus.emit).not.toHaveBeenCalledWith('mfe/artifacts/cancel-refused', expect.anything());
+    });
+
+    it('keeps the run going and says why when the gear refuses', async () => {
+      const h = harness(['acme/api']);
+      h.requestSync();
+      await vi.advanceTimersByTimeAsync(0);
+      h.cancelFetch.mockRejectedValue(refusal(400));
+
+      h.cancel('acme/api');
+      await vi.advanceTimersByTimeAsync(0);
+
+      const said = { kind: 'i18n', key: 'artifacts_reason_cancel_refused' };
+      expect(h.rows()[0]).toMatchObject({ cancelling: false, refusal: said });
+      expect(eventBus.emit).toHaveBeenCalledWith('mfe/artifacts/cancel-refused', {
+        projectId: PROJECT,
+        repo: 'acme/api',
+        refusal: said,
+      });
     });
 
     it('sends nothing for a row it cannot cancel', async () => {
@@ -432,9 +451,12 @@ describe('a repository sync, followed on the event stream', () => {
       h.retry('acme/api');
       await vi.advanceTimersByTimeAsync(0);
 
-      expect(h.rows()[0]).toMatchObject({
-        status: 'cancelled',
-        refusal: { kind: 'i18n', key: 'artifacts_reason_retry_refused' },
+      const said = { kind: 'i18n', key: 'artifacts_reason_retry_refused' };
+      expect(h.rows()[0]).toMatchObject({ status: 'cancelled', refusal: said });
+      expect(eventBus.emit).toHaveBeenCalledWith('mfe/artifacts/retry-refused', {
+        projectId: PROJECT,
+        repo: 'acme/api',
+        refusal: said,
       });
     });
 

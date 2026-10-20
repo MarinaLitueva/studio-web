@@ -1,0 +1,140 @@
+import { describe, expect, it } from 'vitest';
+import type { SourceRow } from './sourceRows';
+import { sourceRowMenu } from './sourceRowMenu';
+
+const row = (overrides: Partial<SourceRow> = {}): SourceRow => ({
+  id: 'c-github:acme/api',
+  connectionId: 'c-github',
+  provider: 'github',
+  name: 'api',
+  fullPath: 'acme/api',
+  cloneUrl: 'https://github.com/acme/api.git',
+  branch: 'main',
+  nodeId: 'n-api',
+  specs: 12,
+  activity: null,
+  lastSync: { kind: 'synced', at: '2026-10-14T10:52:00Z' },
+  sync: { kind: 'none' },
+  ...overrides,
+});
+
+const syncItem = (input: SourceRow, connectionsRead = true) => sourceRowMenu(input, connectionsRead)[0];
+
+const IN_FLIGHT = { kind: 'in_flight', cancelling: false, canCancel: true } as const;
+const FAILED = { kind: 'stopped', status: 'failed', reason: null, canRetry: true } as const;
+
+describe('the row menu', () => {
+  it('offers Sync now, Open specs, Open in and Disconnect, in that order', () => {
+    expect(sourceRowMenu(row(), true)).toEqual([
+      { kind: 'sync_now', retry: false, disabled: null },
+      { kind: 'open_specs' },
+      { kind: 'open_in', url: 'https://github.com/acme/api', provider: 'github' },
+      { kind: 'disconnect' },
+    ]);
+  });
+
+  it('keeps Open specs and Disconnect on a row that offers nothing else', () => {
+    const items = sourceRowMenu(
+      row({ provider: null, cloneUrl: 'git@github.com:acme/api.git', lastSync: { kind: 'not_connected' } }),
+      false
+    );
+    expect(items.map((item) => item.kind)).toEqual(['sync_now', 'open_specs', 'disconnect']);
+  });
+});
+
+describe('the sync item', () => {
+  it.each([
+    ['a sync in flight with a run', row({ sync: IN_FLIGHT }), { kind: 'cancel_sync', disabled: null }],
+    [
+      'a cancel already pending',
+      row({ sync: { kind: 'in_flight', cancelling: true, canCancel: false } }),
+      { kind: 'cancel_sync', disabled: { reason: 'cancelling' } },
+    ],
+    [
+      'a sync the gear has not given a run yet',
+      row({ sync: { kind: 'in_flight', cancelling: false, canCancel: false } }),
+      { kind: 'cancel_sync', disabled: { reason: 'requesting' } },
+    ],
+    [
+      'a sync in flight whose connection is gone',
+      row({ lastSync: { kind: 'not_connected' }, sync: IN_FLIGHT }),
+      { kind: 'cancel_sync', disabled: null },
+    ],
+    [
+      'a source whose connection is gone',
+      row({ lastSync: { kind: 'not_connected' } }),
+      { kind: 'sync_now', retry: false, disabled: { reason: 'not_connected' } },
+    ],
+    [
+      'a failed sync whose connection is gone',
+      row({ lastSync: { kind: 'not_connected' }, sync: FAILED }),
+      { kind: 'sync_now', retry: false, disabled: { reason: 'not_connected' } },
+    ],
+    [
+      'a provider that cannot sync',
+      row({ provider: 'gitlab', lastSync: { kind: 'unavailable', provider: 'gitlab' } }),
+      { kind: 'sync_now', retry: false, disabled: { reason: 'unavailable', provider: 'gitlab' } },
+    ],
+    ['a failed sync with a run', row({ sync: FAILED }), { kind: 'sync_now', retry: true, disabled: null }],
+    [
+      'a cancelled sync with a run',
+      row({ sync: { kind: 'stopped', status: 'cancelled', reason: null, canRetry: true } }),
+      { kind: 'sync_now', retry: true, disabled: null },
+    ],
+    [
+      'a lost sync',
+      row({ sync: { kind: 'stopped', status: 'lost', reason: null, canRetry: false } }),
+      { kind: 'sync_now', retry: false, disabled: null },
+    ],
+    [
+      'a sync request the gear refused',
+      row({
+        sync: {
+          kind: 'stopped',
+          status: 'failed',
+          reason: { kind: 'i18n', key: 'artifacts_reason_request_failed' },
+          canRetry: false,
+        },
+      }),
+      { kind: 'sync_now', retry: false, disabled: null },
+    ],
+    [
+      'a source never synced',
+      row({ nodeId: null, lastSync: { kind: 'not_synced' } }),
+      { kind: 'sync_now', retry: false, disabled: null },
+    ],
+  ])('%s', (_case, input, expected) => {
+    expect(syncItem(input)).toEqual(expected);
+  });
+
+  it('needs the connections only for a new sync', () => {
+    expect(syncItem(row(), false)).toEqual({
+      kind: 'sync_now',
+      retry: false,
+      disabled: { reason: 'connections_unread' },
+    });
+    expect(syncItem(row({ sync: FAILED }), false)).toEqual({ kind: 'sync_now', retry: true, disabled: null });
+    expect(syncItem(row({ sync: IN_FLIGHT }), false)).toEqual({ kind: 'cancel_sync', disabled: null });
+  });
+});
+
+describe('Open in', () => {
+  it('is left out for an SSH clone URL', () => {
+    const kinds = sourceRowMenu(row({ cloneUrl: 'git@github.com:acme/api.git' }), true).map((item) => item.kind);
+    expect(kinds).not.toContain('open_in');
+  });
+
+  it('is left out when the provider is not known', () => {
+    const kinds = sourceRowMenu(row({ provider: null }), true).map((item) => item.kind);
+    expect(kinds).not.toContain('open_in');
+  });
+
+  it('opens the address the clone URL gives, for the row provider', () => {
+    expect(
+      sourceRowMenu(
+        row({ provider: 'bitbucket', cloneUrl: 'https://jdoe@bitbucket.org/acme/api.git' }),
+        true
+      ).find((item) => item.kind === 'open_in')
+    ).toEqual({ kind: 'open_in', url: 'https://bitbucket.org/acme/api', provider: 'bitbucket' });
+  });
+});

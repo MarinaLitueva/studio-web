@@ -28,6 +28,11 @@ export interface RepoRef {
   repo: string;
 }
 
+/** The gear's no to a cancel or a retry, for the screen to show. */
+export interface RepoRefusal extends RepoRef {
+  refusal: Refusal;
+}
+
 declare module '@gears-frontx/react' {
   interface EventPayloadMap {
     /** Pull these repositories into this project's graph. */
@@ -38,5 +43,9 @@ declare module '@gears-frontx/react' {
     'mfe/artifacts/cancel-requested': RepoRef;
     /** Put this repository's failed or cancelled sync back on the queue. */
     'mfe/artifacts/retry-requested': RepoRef;
+    /** The gear would not stop this repository's sync. */
+    'mfe/artifacts/cancel-refused': RepoRefusal;
+    /** The gear would not put this repository's sync back on the queue. */
+    'mfe/artifacts/retry-refused': RepoRefusal;
   }
 }

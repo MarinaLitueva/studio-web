@@ -6,6 +6,19 @@
 import type { ProjectSource } from '@constructor-studio/mfe-shared';
 import type { RepositoryPick } from './projectDraft';
 
+function cloneUrlParts(cloneUrl: string): { protocol: string; host: string; path: string } | null {
+  try {
+    const url = new URL(cloneUrl.trim());
+    const path = url.pathname
+      .replace(/^\/+|\/+$/g, '')
+      .replace(/\.git$/, '')
+      .replace(/\/+$/, '');
+    return url.host && path ? { protocol: url.protocol, host: url.host, path } : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * A clone URL reduced to what names the repository: host and path, without
  * the scheme, credentials, a trailing slash or `.git`, in lower case. `null`
@@ -17,16 +30,15 @@ import type { RepositoryPick } from './projectDraft';
  * the backend keeps in the key and `URL` drops. Change both together.
  */
 export function repositoryKey(cloneUrl: string): string | null {
-  try {
-    const url = new URL(cloneUrl.trim());
-    const path = url.pathname
-      .replace(/^\/+|\/+$/g, '')
-      .replace(/\.git$/, '')
-      .replace(/\/+$/, '');
-    return url.host && path ? `${url.host}/${path}`.toLowerCase() : null;
-  } catch {
-    return null;
-  }
+  const parts = cloneUrlParts(cloneUrl);
+  return parts && `${parts.host}/${parts.path}`.toLowerCase();
+}
+
+// @cpt-dod:cpt-studiofrontend-dod-project-sources-menu-open-in:p1
+export function repositoryWebUrl(cloneUrl: string): string | null {
+  const parts = cloneUrlParts(cloneUrl);
+  if (!parts || (parts.protocol !== 'https:' && parts.protocol !== 'http:')) return null;
+  return `${parts.protocol}//${parts.host}/${parts.path}`;
 }
 
 export function sameRepository(a: string, b: string): boolean {

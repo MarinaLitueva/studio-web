@@ -82,6 +82,7 @@ describe('a source in the config is a row', () => {
       provider: 'github',
       name: 'api',
       fullPath: 'acme/api',
+      cloneUrl: 'https://example.test/acme/api.git',
       branch: 'main',
       nodeId: 'n-api',
       specs: 12,
