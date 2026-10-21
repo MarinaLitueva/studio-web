@@ -420,7 +420,7 @@ wait for it.
 2. [x] - `p1` - **IF** the member retries a failed or cancelled sync that has a run - `inst-5`
    1. [x] - `p1` - `API: POST /cf/studio-tasks/v1/runs/{id}/retry` - `inst-6`
    2. [x] - `p1` - Record the repository as queued and keep watching the same run; a retry puts the run back on the queue rather than starting another - `inst-7`
-3. [x] - `p1` - **IF** the gear refuses either, keep the repository's state and record the refusal against it - `inst-8`
+3. [x] - `p1` - **IF** the gear refuses either, keep the repository's state, record the refusal against it and emit it for the Sources section's notification (`mfe/artifacts/cancel-refused`, `mfe/artifacts/retry-refused`; `cpt-studiofrontend-dod-project-sources-menu-refusals`) - `inst-8`
 4. [x] - `p1` - **RETURN** the row's state - `inst-9`
 
 ## 4. States (CDSL)

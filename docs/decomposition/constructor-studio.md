@@ -1446,7 +1446,7 @@ requirements are planned (`cpt-studio-fr-authz-row-roles`,
 
 - **Purpose**: A project's Sources section: the repositories the project works from, attaching more of them, and each one's sync. Started by #687 with Connect source, #685 with the rows and #686 with the row menu; the table and uploading documents follow in #688 and #693.
 
-- **Depends On**: `cpt-studio-feature-project-create`, `cpt-studio-feature-project-artifacts`, `cpt-studio-feature-connection-create`, `cpt-studio-feature-documents`
+- **Depends On**: `cpt-studio-feature-project-create`, `cpt-studio-feature-project-artifacts`, `cpt-studio-feature-project-specs`, `cpt-studio-feature-connection-create`, `cpt-studio-feature-documents`
 
 - **Scope**:
   - the Sources section of `projects-mfe` and its Connect source dialog, an overlay extension sharing the New project wizard's repository picker
@@ -1455,7 +1455,7 @@ requirements are planned (`cpt-studio-fr-authz-row-roles`,
   - each row's menu: sync the source or cancel its sync, open its specs, open it at its provider
 
 - **Out of scope**:
-  - taking a source out of a project: Disconnect is shown disabled until the backend does it as one operation
+  - taking a source out of a project: Disconnect is shown disabled until the backend does it as one operation (#852)
   - creating a connection inside the dialog (the Connections screen's form is opened instead)
   - syncing GitLab and Bitbucket repositories, whose drivers do not expose files
   - a row for a repository the graph has and the config does not name

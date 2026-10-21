@@ -73,8 +73,8 @@ rows the section's table shows (#685): each source joined to its repository in
 the graph, its week of pull requests and commits, its specs and its sync. Each
 row has a menu (#686): sync the source or cancel its sync, open its specs, open
 it at its provider. Disconnect is in the menu, disabled until the backend can
-take a source out of a project. The table and uploading documents are added
-with #688 and #693.
+take a source out of a project (#852). The table and uploading documents are
+added with #688 and #693.
 
 ### 1.2 Purpose
 
@@ -217,7 +217,7 @@ Actor ids are defined in the [PRD](../prd/constructor-studio.md); a gear taking 
 - **Feature**: [The project's specs](project-specs.md): the section before this one, and the filter Open specs sets
 - **Feature**: [Levels in the shell](shell-levels.md): the section the MFE asks for, written into the address
 - **Decomposition entry** `cpt-studio-feature-documents`: the specs counted per repository and the documents created in Studio (no feature spec of its own)
-- **Issues**: #643 (the Specs and Sources sections), #687 (Connect source), #685 (the rows), #686 (the row menu), #709 (the config write), #711 (the Specs list's load), #688, #693 (the rest of the section)
+- **Issues**: #643 (the Specs and Sources sections), #687 (Connect source), #685 (the rows), #686 (the row menu), #709 (the config write), #711 (the Specs list's load), #688, #693 (the rest of the section), #852 (Disconnect)
 
 ## 2. Actor Flows (CDSL)
 
@@ -753,8 +753,9 @@ row, as in the design.
 - [x] `p1` - **ID**: `cpt-studiofrontend-dod-project-sources-row-sync`
 
 The system **MUST** give each row its sync's state and what can be done with it,
-for the row menu's one sync item (#686): Cancel sync while the sync is in flight
-and has a run; nothing while a cancel is pending; Sync now otherwise, which
+for the row menu's one sync item (#686): Cancel sync while the sync is in
+flight, which can be sent once the sync has a run and no cancel is pending;
+Sync now otherwise, which
 retries the stopped run when it can be retried (`canRetry`) and requests a new
 sync when not; and no sync for a provider that cannot sync, with the reason.
 
@@ -1001,8 +1002,8 @@ Not the connection's `base_url` with the path: for GitHub and Bitbucket that is
 the API root, `https://api.github.com` and `https://api.bitbucket.org/2.0`, not
 the site. The user comes off because Bitbucket's clone URL carries the user
 name of the account the connection signs in with. An SSH clone URL names the
-host in another form, and no address is guessed from it. The prototype opens
-the same address (`repoUrl`).
+host in another form, and no address is guessed from it. The prototype's
+`repoUrl` takes the same address but keeps the user and the password.
 
 **Implements**:
 - `cpt-studiofrontend-algo-project-sources-row-menu`
@@ -1024,7 +1025,7 @@ reconcile that fails, or a tab closed between them, leaves those in a project
 that no longer names the repository, where no row offers to try again. It
 belongs to the backend, as one operation: the config written and the prune
 queued durably. The item keeps its place meanwhile, and is not drawn as
-destructive, as in the design.
+destructive, as in the design. Disconnect follows in #852.
 
 **Implements**:
 - `cpt-studiofrontend-algo-project-sources-row-menu`

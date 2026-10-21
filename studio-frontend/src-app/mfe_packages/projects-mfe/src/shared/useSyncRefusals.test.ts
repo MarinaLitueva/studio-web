@@ -30,29 +30,35 @@ const refuse = (
 beforeEach(() => notify.mockClear());
 
 describe('a refused cancel or retry', () => {
-  it("becomes the shell's error toast, with the gear's reason", () => {
+  it.each([
+    [
+      'mfe/artifacts/cancel-refused',
+      "with the gear's reason",
+      { kind: 'provider', text: 'run is gone' },
+      'sync_cancel_refused_because {"path":"acme/api","reason":"run is gone"}',
+    ],
+    [
+      'mfe/artifacts/cancel-refused',
+      'without a reason',
+      { kind: 'i18n', key: 'artifacts_reason_cancel_refused' },
+      'sync_cancel_refused {"path":"acme/api"}',
+    ],
+    [
+      'mfe/artifacts/retry-refused',
+      "with the gear's reason",
+      { kind: 'provider', text: 'run is gone' },
+      'sync_retry_refused_because {"path":"acme/api","reason":"run is gone"}',
+    ],
+    [
+      'mfe/artifacts/retry-refused',
+      'without a reason',
+      { kind: 'i18n', key: 'artifacts_reason_retry_refused' },
+      'sync_retry_refused {"path":"acme/api"}',
+    ],
+  ] as const)("%s %s becomes the shell's error toast", (event, _reason, refusal, text) => {
     renderHook(() => useSyncRefusals('p-1'));
-    refuse('mfe/artifacts/cancel-refused', 'p-1', { kind: 'provider', text: 'run is gone' });
-    expect(notify).toHaveBeenCalledWith(
-      bridge,
-      {
-        kind: 'error',
-        text: 'sync_cancel_refused_because {"path":"acme/api","reason":"run is gone"}',
-      },
-      'projects'
-    );
-  });
-
-  it('says which it was when the gear gave no reason', () => {
-    renderHook(() => useSyncRefusals('p-1'));
-    refuse('mfe/artifacts/retry-refused', 'p-1', {
-      kind: 'i18n',
-      key: 'artifacts_reason_retry_refused',
-    });
-    expect(notify.mock.calls[0][1]).toEqual({
-      kind: 'error',
-      text: 'sync_retry_refused {"path":"acme/api"}',
-    });
+    refuse(event, 'p-1', refusal);
+    expect(notify).toHaveBeenCalledWith(bridge, { kind: 'error', text }, 'projects');
   });
 
   it("is not shown for another project's sources", () => {
