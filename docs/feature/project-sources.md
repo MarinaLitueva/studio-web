@@ -105,9 +105,6 @@ code:
   repositories and nothing more: a sync request for one is accepted, then fails
   five times. Such a repository is attached and its line in the import says why
   it is not synced (`cpt-studiofrontend-algo-project-artifacts-sync`).
-- **The header's actions are a stopgap.** The project's section header has no
-  actions slot in ui-kit yet; the projects MFE adds one per section until the
-  kit's page header replaces the header.
 - **Until #688, the section stays a placeholder.** After Connect source the new
   repositories' syncs show in Artifacts, where the import already reports. The
   rows (#685) are checked through the tests of the hook that builds them.
@@ -404,9 +401,9 @@ the workspace. A domain that does not declare a property an entry requires
 refuses the entry, and with it every extension of the MFE.
 
 The header's actions belong to the section: the project screen draws the header
-and asks the open section for its actions, and only Sources has any yet. Upload
-documents joins them with #693. When the ui-kit page header lands, it takes the
-actions as they are.
+and asks the open section for its actions: Check in Specs, Connect source in
+Sources. Upload documents joins them with #693. The header is the ui-kit page
+header, and the section's actions go in its actions slot.
 
 **Implements**:
 - `cpt-studiofrontend-flow-project-sources-connect`
