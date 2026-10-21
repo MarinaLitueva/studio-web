@@ -1,4 +1,4 @@
-// TODO: move to mfe-shared once a other MFE use it.
+// TODO: move to mfe-shared once another MFE uses it.
 
 import React from 'react';
 import {
