@@ -613,9 +613,9 @@ and never be synced.
 The system **MUST** show a source's last sync in two lines. The first **MUST** be
 one of: the time of the last successful sync (the repository node's
 `synced_at`); Not synced, when there is no node or it has no `synced_at`; Not
-connected, when the source's connection is gone from the organization; Sync
-isn't available for <provider> yet, for a provider that cannot sync. It **MUST
-NOT** change while a sync runs.
+connected, when the source's connection is gone from the organization;
+`Sync isn't available for {provider} yet`, for a provider that cannot sync. It
+**MUST NOT** change while a sync runs.
 
 The second line **MUST** show the sync this tab follows: Syncing… while it is
 queued or running, Cancelling… once a cancel is asked for and the gear has not
