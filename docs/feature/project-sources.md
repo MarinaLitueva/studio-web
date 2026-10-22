@@ -179,7 +179,7 @@ what the gears cannot do yet:
   `POST /studio-artifact-ingest/v1/reconcile`, a reconcile that fails, or a tab
   closed in between, leaves the repository's files, pull requests and specs in
   Artifacts and Specs, with no row left in Sources to try again from.
-- **Open in {provider} is built from the clone URL.** For GitHub and
+- **`Open in {provider}` is built from the clone URL.** For GitHub and
   Bitbucket the connection's `base_url` is the provider's API root, not the
   site a person opens. A source whose clone URL is not an `http` or `https`
   address gets no Open in.
@@ -323,7 +323,7 @@ extensions, the shell's overlay frame and connections-mfe.
    1. [ ] - `p1` - The shell shows a notification naming the source, with the gear's reason when it gives one - `inst-10`
 7. [ ] - `p1` - **IF** Member activates Open specs from this source - `inst-11`
    1. [ ] - `p1` - Run `cpt-studiofrontend-flow-project-specs-from-source` with the source's `full_path` - `inst-12`
-8. [ ] - `p1` - **IF** Member activates Open in {provider} - `inst-13`
+8. [ ] - `p1` - **IF** Member activates `Open in {provider}` - `inst-13`
    1. [ ] - `p1` - Open the repository's address in a new tab, without the opener - `inst-14`
 9. [ ] - `p1` - **RETURN** the row's Last sync follows the sync, as `cpt-studiofrontend-state-project-sources-row-sync` says - `inst-15`
 
@@ -424,12 +424,12 @@ so it is found the next time the project screen reads the project.
 1. [x] - `p1` - Take the sync item - `inst-1`
    1. [x] - `p1` - **IF** the sync is in flight: Cancel sync; disabled with "Cancelling…" while a cancel is pending, and with "The sync is being requested" while the gear has not given it a run - `inst-2`
    2. [x] - `p1` - **ELSE IF** the row reads Not connected: Sync now, disabled with "Its connection is gone" - `inst-3`
-   3. [x] - `p1` - **ELSE IF** its provider cannot sync: Sync now, disabled with "Sync isn't available for {provider} yet" - `inst-4`
+   3. [x] - `p1` - **ELSE IF** its provider cannot sync: Sync now, disabled with `Sync isn't available for {provider} yet` - `inst-4`
    4. [x] - `p1` - **ELSE IF** the sync stopped and its run can be retried: Sync now, retrying that run - `inst-5`
    5. [x] - `p1` - **ELSE IF** the connections could not be read: Sync now, disabled with "The connections could not be read" - `inst-6`
    6. [x] - `p1` - **ELSE**: Sync now, requesting a new sync - `inst-7`
 2. [x] - `p1` - Take Open specs from this source, on every row - `inst-8`
-3. [x] - `p1` - **IF** the row's provider is known and its clone URL is an `http` or `https` address, take Open in {provider}, at that address without its user, its password and a trailing `.git` - `inst-9`
+3. [x] - `p1` - **IF** the row's provider is known and its clone URL is an `http` or `https` address, take `Open in {provider}`, at that address without its user, its password and a trailing `.git` - `inst-9`
 4. [x] - `p1` - Take Disconnect, after a separator, disabled with "Disconnect unavailable" - `inst-10`
 5. [x] - `p1` - **RETURN** the items - `inst-11`
 
@@ -727,9 +727,9 @@ and never be synced.
 The system **MUST** show a source's last sync in two lines. The first **MUST** be
 one of: the time of the last successful sync (the repository node's
 `synced_at`); Not synced, when there is no node or it has no `synced_at`; Not
-connected, when the source's connection is gone from the organization; Sync
-isn't available for <provider> yet, for a provider that cannot sync. It **MUST
-NOT** change while a sync runs.
+connected, when the source's connection is gone from the organization;
+`Sync isn't available for {provider} yet`, for a provider that cannot sync. It
+**MUST NOT** change while a sync runs.
 
 The second line **MUST** show the sync this tab follows: Syncing… while it is
 queued or running, Cancelling… once a cancel is asked for and the gear has not
@@ -881,7 +881,7 @@ open; the next opening finds it if it is still queued or running
 - [x] `p1` - **ID**: `cpt-studiofrontend-dod-project-sources-menu`
 
 The system **MUST** draw a source's actions as a menu component that takes the
-source's row: a ghost icon button named "Actions for {name}", opening a menu
+source's row: a ghost icon button named `Actions for {name}`, opening a menu
 aligned to its end, with the items of
 `cpt-studiofrontend-algo-project-sources-row-menu` in their order. A disabled
 item **MUST** say why in its title. The menu's strings **MUST** come from the
@@ -938,10 +938,11 @@ cancel, so the row reads Cancelling… until the run's terminal event.
 
 The system **MUST** show the shell's notification when the gear refuses to
 cancel or to retry a source's sync. It names the repository by its path and
-gives the gear's reason when there is one: "Couldn't cancel the sync of {path}:
-{reason}", or "Couldn't retry the sync of {path}" without one. The system **MUST
-NOT** show one for a sync request the gear refuses or a sync that fails: the
-row's second line says those (`cpt-studiofrontend-dod-project-sources-last-sync`).
+gives the gear's reason when there is one:
+`Couldn't cancel the sync of {path}: {reason}`, or
+`Couldn't retry the sync of {path}` without one. The system **MUST NOT** show
+one for a sync request the gear refuses or a sync that fails: the row's second
+line says those (`cpt-studiofrontend-dod-project-sources-last-sync`).
 
 A refused cancel turns Cancelling… back into Syncing…, and a refused retry
 leaves Last attempt failed as it was: nothing else tells the member that what
@@ -1077,7 +1078,7 @@ The rows (#685), checked through the hook's tests until the table lands (#688):
 
 The row menu (#686), checked through the menu's tests until the table lands (#688):
 
-- [ ] A synced GitHub source's menu, named "Actions for {name}", lists Sync now, Open specs from this source, Open in GitHub and, after a separator, Disconnect, disabled with the title "Disconnect unavailable".
+- [ ] A synced GitHub source's menu, named `Actions for {name}`, lists Sync now, Open specs from this source, Open in GitHub and, after a separator, Disconnect, disabled with the title "Disconnect unavailable".
 - [ ] Sync now requests that source's sync and no other: its row's second line reads Syncing…, and the lines of the import's other repositories stay as they were.
 - [ ] While the sync is in flight the item reads Cancel sync; using it asks nothing, and the row reads Cancelling…, with Cancel sync disabled, until the cancel lands.
 - [ ] After a failed or cancelled sync, Sync now retries the same run; after a lost one, or a request the gear refused, it requests a new sync.
