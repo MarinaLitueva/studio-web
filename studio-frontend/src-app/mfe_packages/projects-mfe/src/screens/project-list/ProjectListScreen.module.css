@@ -12,15 +12,17 @@
 .searchRow {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
   padding-block: var(--space-2);
   border-bottom: var(--border-width) solid var(--border);
 }
 
+/* The kit's Input with an icon wraps the field in a full-width span. */
 .searchBox {
   flex: none;
 }
 
+/* `input.search`, not `.search`: on the first mount the kit's `._input` rule
+   lands in the shadow root after this sheet, so a single class loses. */
 input.search {
   width: 13.75rem;
   height: var(--control-height-sm);

@@ -29,7 +29,7 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
         {busy ? <Skeleton className={styles.titleSkeleton} /> : title}
       </PageHeaderTitle>
     </PageHeaderContent>
-    {actions ? <PageHeaderActions>{actions}</PageHeaderActions> : null}
+    <PageHeaderActions className={styles.actions}>{actions}</PageHeaderActions>
   </PageHeader>
 );
 

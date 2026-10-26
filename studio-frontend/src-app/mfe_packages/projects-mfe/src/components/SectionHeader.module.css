@@ -2,3 +2,7 @@
   width: 8rem;
   height: var(--text-heading-1-line-height);
 }
+
+.actions:empty {
+  display: none;
+}

@@ -129,7 +129,7 @@ Definitions of Done, which are traced.
 - The workspace is written but the shell never hears it; the overlay stays open and offers to retry the announcement alone, because retrying the creation would write a second workspace under the same name.
 
 **Steps**:
-1. [ ] - `p1` - Member activates "New workspace" in the Projects list toolbar - `inst-1`
+1. [ ] - `p1` - Member activates "New workspace" on the Workspaces screen - `inst-1`
 2. [ ] - `p1` - Mount the workspace overlay extension in the shell's overlay domain - `inst-2`
 3. [ ] - `p1` - Reset the form so no abandoned name is carried in - `inst-3`
 4. [ ] - `p1` - Member types a name and confirms - `inst-4`
