@@ -5,7 +5,12 @@ import {
   type DataGridLoadContext,
   type DataGridLoadResult,
 } from '@gears-frontx/ui-kit';
-import { ConnectorsApiService } from '@constructor-studio/mfe-shared';
+import {
+  AccountsApiService,
+  ConnectorsApiService,
+  PROJECT_CONFIG_TYPE,
+  type ProjectConfig,
+} from '@constructor-studio/mfe-shared';
 import { ArtifactIngestApiService } from '../api/ArtifactIngestApiService';
 import { DocumentsApiService } from '../api/DocumentsApiService';
 import { inFlight } from '../model/repoImport';
@@ -33,6 +38,7 @@ export interface SourcesLoad {
   rows: SourceRow[];
   footer: SourcesFooter;
   windowDays: number | null;
+  retry: () => void;
   load: (context: DataGridLoadContext) => Promise<DataGridLoadResult<SourceRow>>;
   rowsBridge: React.ReactElement;
 }
@@ -71,6 +77,7 @@ function useOnSyncSettled(projectId: string, settledSyncs: string, onSettled: ()
 // @cpt-dod:cpt-studiofrontend-dod-project-sources-gaps:p1
 // @cpt-dod:cpt-studiofrontend-dod-project-sources-search:p1
 export function useSourcesLoad(projectId: string, workspaceId: string, orgId: string): SourcesLoad {
+  const accounts = apiRegistry.getService(AccountsApiService);
   const ingest = apiRegistry.getService(ArtifactIngestApiService);
   const documents = apiRegistry.getService(DocumentsApiService);
   const connectors = apiRegistry.getService(ConnectorsApiService);
@@ -123,6 +130,16 @@ export function useSourcesLoad(projectId: string, workspaceId: string, orgId: st
   }, [cache, ingest, documents, nodesParams, projectId]);
   useOnSyncSettled(projectId, settledSyncsOf(lines), refetchAfterSync);
 
+  const retry = useCallback(() => {
+    void cache.invalidate(
+      accounts.getTenantMetadata<ProjectConfig>({
+        tenantId: projectId,
+        metadataType: PROJECT_CONFIG_TYPE,
+      })
+    );
+    void cache.invalidate(ingest.nodes(nodesParams));
+  }, [cache, accounts, ingest, nodesParams, projectId]);
+
   const rowsRef = useRef(rows);
   useLayoutEffect(() => {
     rowsRef.current = rows;
@@ -150,6 +167,7 @@ export function useSourcesLoad(projectId: string, workspaceId: string, orgId: st
     rows,
     footer,
     windowDays: answers.activity?.days ?? null,
+    retry,
     load,
     rowsBridge: <RowsBridge rowsKey={rowsKey} />,
   };

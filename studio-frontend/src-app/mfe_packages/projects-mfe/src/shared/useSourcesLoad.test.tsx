@@ -6,7 +6,7 @@ import { ARTIFACT_NODE_TYPES } from '../api/artifactTypes';
 /** The Sources rows and the load the table calls (#685, DoD `...-sources-reads`). */
 
 type Query = { data?: unknown; isLoading: boolean; isError: boolean };
-type Key = 'nodes' | 'connections' | 'activity' | 'specs' | 'documents';
+type Key = 'config' | 'nodes' | 'connections' | 'activity' | 'specs' | 'documents';
 
 const { queries, config, lines, invalidate, triggerLoad } = vi.hoisted(() => ({
   queries: { current: {} as Record<string, Query> },
@@ -21,6 +21,7 @@ const descriptor = (key: Key) => () => ({ key });
 vi.mock('@gears-frontx/react', () => ({
   apiRegistry: {
     getService: () => ({
+      getTenantMetadata: descriptor('config'),
       nodes: descriptor('nodes'),
       connections: descriptor('connections'),
       sourceActivity: descriptor('activity'),
@@ -32,7 +33,11 @@ vi.mock('@gears-frontx/react', () => ({
   useQueryCache: () => ({ invalidate }),
 }));
 vi.mock('@gears-frontx/ui-kit', () => ({ useDataGrid: () => ({ triggerLoad }) }));
-vi.mock('@constructor-studio/mfe-shared', () => ({ ConnectorsApiService: class {} }));
+vi.mock('@constructor-studio/mfe-shared', () => ({
+  AccountsApiService: class {},
+  ConnectorsApiService: class {},
+  PROJECT_CONFIG_TYPE: 'project-config',
+}));
 vi.mock('../api/ArtifactIngestApiService', () => ({ ArtifactIngestApiService: class {} }));
 vi.mock('../api/DocumentsApiService', () => ({ DocumentsApiService: class {} }));
 vi.mock('./useProjectConfig', () => ({ useProjectConfig: () => config.current }));
@@ -149,7 +154,7 @@ describe('useSourcesLoad', () => {
     expect(view.footer.sources).toBe(3);
   });
 
-  it.each<Key | 'config'>(['config', 'nodes', 'connections', 'activity', 'specs', 'documents'])(
+  it.each<Key>(['config', 'nodes', 'connections', 'activity', 'specs', 'documents'])(
     'is not ready until the %s read has answered or failed',
     (read) => {
       if (read === 'config') config.current.loading = true;
@@ -251,5 +256,12 @@ describe('useSourcesLoad', () => {
     lines.current = [{ ...running, phase: 'storing', stored: 40 }];
     sources.rerender();
     expect(triggerLoad).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads the config and the repository nodes again on retry', () => {
+    const { view } = mount();
+
+    view.retry();
+    expect(invalidate.mock.calls.map(([query]) => query.key)).toEqual(['config', 'nodes']);
   });
 });

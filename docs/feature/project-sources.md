@@ -73,8 +73,8 @@ rows the section's table shows (#685): each source joined to its repository in
 the graph, its week of pull requests and commits, its specs and its sync. Each
 row has a menu (#686): sync the source or cancel its sync, open its specs, open
 it at its provider. Disconnect is in the menu, disabled until the backend can
-take a source out of a project (#852). The table and uploading documents are
-added with #688 and #693.
+take a source out of a project (#852). The table shows the rows (#688); uploading
+documents is added with #693.
 
 ### 1.2 Purpose
 
@@ -116,9 +116,6 @@ code:
   repositories and nothing more: a sync request for one is accepted, then fails
   five times. Such a repository is attached and its line in the import says why
   it is not synced (`cpt-studiofrontend-algo-project-artifacts-sync`).
-- **Until #688, the section stays a placeholder.** After Connect source the new
-  repositories' syncs show in Artifacts, where the import already reports. The
-  rows (#685) are checked through the tests of the hook that builds them.
 
 **For the rows (#685)**, fixed here because the design is silent, or shows data
 the prototype does not read:
@@ -157,8 +154,6 @@ what the gears cannot do yet:
 
 - **The menu is a component of its own.** The table (#688) puts it in the
   Actions column, and the row's Specs number opens the specs as the menu does.
-  Until then the section stays a placeholder, and the menu is checked through
-  its tests.
 - **Sync now adds one repository to the import.** It joins the project's
   import beside the other repositories' syncs, as the sync of the missing
   sources does. Asking to sync the project's sources would replace the import's
@@ -719,7 +714,7 @@ and never be synced.
 
 ### Last sync is the last successful sync, and the sync this tab follows
 
-- [ ] `p1` - **ID**: `cpt-studiofrontend-dod-project-sources-last-sync`
+- [x] `p1` - **ID**: `cpt-studiofrontend-dod-project-sources-last-sync`
 
 The system **MUST** show a source's last sync in two lines. The first **MUST** be
 one of: the time of the last successful sync (the repository node's
@@ -770,7 +765,7 @@ are the menu's (#686); the row only says which applies.
 
 ### A missing number is shown as missing, never as zero
 
-- [ ] `p1` - **ID**: `cpt-studiofrontend-dod-project-sources-gaps`
+- [x] `p1` - **ID**: `cpt-studiofrontend-dod-project-sources-gaps`
 
 The system **MUST** fail the section only when the project's config or its
 repository nodes cannot be read, and **MUST** show the rows when another read
@@ -890,8 +885,7 @@ the MFE's themed root. The kit takes the pointer off a disabled item, which woul
 hide its title, so the menu gives it back; Base UI still does not activate the
 item. Sync now carries the design's refresh icon and Open in its external-link
 icon. The table (#688) puts the menu in its Actions column,
-and the row's Specs number calls what Open specs calls. Until then the section
-stays a placeholder, and the menu is checked through its tests.
+and the row's Specs number calls what Open specs calls.
 
 **Implements**:
 - `cpt-studiofrontend-flow-project-sources-row-menu`
@@ -1055,7 +1049,7 @@ destructive, as in the design. Disconnect follows in #852.
 - [ ] Reopening a project syncs its GitHub sources that have no repository node of their path and connection and have not been requested in this tab, and no others.
 - [ ] The New project wizard's repositories step works as `project-create.md` describes, on the same picker; in both, Back to the providers clears the connection, the search and any error, and keeps the picks.
 
-The rows (#685), checked through the hook's tests until the table lands (#688):
+The rows (#685):
 
 - [ ] A synced GitHub source's row has its node's last sync time on the first line, its specs, its open and merged pull requests with one count per day of the last 7, and its commits.
 - [ ] A source with no repository node reads Not synced, with its specs, pull requests and commits missing.
@@ -1073,7 +1067,7 @@ The rows (#685), checked through the hook's tests until the table lands (#688):
 - [ ] Searching keeps the rows whose name or path holds the text, ignoring case, in the config's order, and leaves the footer as it was.
 - [ ] The footer gives the number of sources, the specs from sources, the documents created in Studio and the open pull requests of the whole project.
 
-The row menu (#686), checked through the menu's tests until the table lands (#688):
+The row menu (#686):
 
 - [ ] A synced GitHub source's menu, named `Actions for {name}`, lists Sync now, Open specs from this source, Open in GitHub and, after a separator, Disconnect, disabled with the title "Disconnect unavailable".
 - [ ] Sync now requests that source's sync and no other: its row's second line reads Syncing…, and the lines of the import's other repositories stay as they were.

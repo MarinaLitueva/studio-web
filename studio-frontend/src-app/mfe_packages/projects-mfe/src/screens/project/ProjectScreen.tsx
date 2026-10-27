@@ -131,7 +131,13 @@ export const ProjectScreen: React.FC<ProjectScreenProps> = ({ projectId }) => {
       case 'specs':
         return <SpecsSection projectId={projectId} projectName={project.name} />;
       case 'sources':
-        return <SourcesSection projectId={projectId} />;
+        return (
+          <SourcesSection
+            projectId={projectId}
+            orgId={org?.id ?? null}
+            workspaceId={workspace?.id ?? null}
+          />
+        );
       default:
         return <PlaceholderSection title={t(`section_${section}`)} note={t('no_source_yet')} />;
     }

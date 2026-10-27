@@ -1,18 +1,24 @@
 import React from 'react';
 import { useEverLoaded } from '@constructor-studio/mfe-shared';
-import { useProjectText, useSourcesSectionTranslations, useSourcesText } from '../../../../i18n';
-import { PlaceholderSection, PlaceholderSkeleton } from '../PlaceholderSection';
+import { useSourcesSectionTranslations } from '../../../../i18n';
 import { useSyncRefusals } from '../../../../shared/useSyncRefusals';
+import { SourcesSkeleton, SourcesTable } from './SourcesTable';
 
-export const SourcesSection: React.FC<{ projectId: string }> = ({ projectId }) => {
+interface SourcesSectionProps {
+  projectId: string;
+  orgId: string | null;
+  workspaceId: string | null;
+}
+
+export const SourcesSection: React.FC<SourcesSectionProps> = ({ projectId, orgId, workspaceId }) => {
   const { isLoaded, error } = useSourcesSectionTranslations();
   const everLoaded = useEverLoaded(isLoaded);
-  const t = useSourcesText();
-  const projectText = useProjectText();
   useSyncRefusals(projectId);
 
-  if (!everLoaded && !error) return <PlaceholderSkeleton />;
-  return <PlaceholderSection title={projectText('section_sources')} note={t('placeholder')} />;
+  if ((!everLoaded && !error) || orgId === null || workspaceId === null) {
+    return <SourcesSkeleton />;
+  }
+  return <SourcesTable projectId={projectId} orgId={orgId} workspaceId={workspaceId} />;
 };
 
 SourcesSection.displayName = 'SourcesSection';

@@ -8,7 +8,7 @@
 // @cpt-dod:cpt-studiofrontend-dod-project-sources-picker:p1
 // @cpt-dod:cpt-studiofrontend-dod-project-sources-attached:p1
 import React from 'react';
-import { Search, Lock, Eye, Plug, Github, Gitlab, GitBranch, type LucideIcon } from 'lucide-react';
+import { Search, Lock, Eye, Plug } from 'lucide-react';
 import {
   Button,
   Checkbox,
@@ -37,6 +37,7 @@ import { useProjectCreateText } from '../i18n';
 import { useSourceConnections } from '../shared/useConnections';
 import { useRepositories } from '../shared/useRepositories';
 import { useDebounced } from '../shared/useDebounced';
+import { PROVIDER_ICONS } from './providerIcons';
 import { repoKey, sourceKey, type RepositoryPick } from '../model/projectDraft';
 import styles from './RepositoryPicker.module.css';
 
@@ -227,13 +228,6 @@ const RepositoryTable: React.FC<TableProps> = ({
 RepositoryTable.displayName = 'RepositoryTable';
 
 const GITHUB = 'github';
-
-// As connections-mfe draws them; lucide has no Bitbucket mark.
-const PROVIDER_ICONS: Record<string, LucideIcon> = {
-  github: Github,
-  gitlab: Gitlab,
-  bitbucket: GitBranch,
-};
 
 /** The chips' row while the connections load, with the hint under it, so the card keeps its height. */
 const CatalogueSkeleton: React.FC<{ providerChosen: boolean }> = ({ providerChosen }) => {
