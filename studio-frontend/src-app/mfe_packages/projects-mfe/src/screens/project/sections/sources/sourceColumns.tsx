@@ -11,7 +11,7 @@ import {
 import { useProjectText, useSourcesText } from '../../../../i18n';
 import type { SourceRow } from '../../../../model/sourceRows';
 import type { SourceRowActions } from '../../../../shared/useSourceRowActions';
-import { ActivitySparkline } from '../../../../components/ActivitySparkline';
+import { ActivitySparkline } from './ActivitySparkline';
 import { PROVIDER_ICONS } from '../../../../components/providerIcons';
 import { SourceRowMenu } from './SourceRowMenu';
 import styles from './SourcesSection.module.css';
@@ -55,6 +55,8 @@ const SourceCell: React.FC<{ row: SourceRow; actions: SourceRowActions }> = ({
   );
 };
 
+SourceCell.displayName = 'SourceCell';
+
 const RoleCell: React.FC<{ row: SourceRow; actions: SourceRowActions }> = ({ row, actions }) =>
   row.provider === null ? (
     <span className={styles.muted}>{MISSING}</span>
@@ -64,6 +66,8 @@ const RoleCell: React.FC<{ row: SourceRow; actions: SourceRowActions }> = ({ row
       {actions.providerName(row.provider)}
     </span>
   );
+
+RoleCell.displayName = 'RoleCell';
 
 const SpecsCell: React.FC<{ row: SourceRow; actions: SourceRowActions }> = ({ row, actions }) => {
   const t = useSourcesText();
@@ -81,6 +85,8 @@ const SpecsCell: React.FC<{ row: SourceRow; actions: SourceRowActions }> = ({ ro
     </Button>
   );
 };
+
+SpecsCell.displayName = 'SpecsCell';
 
 const PullRequestsCell: React.FC<{
   row: SourceRow;
@@ -111,6 +117,8 @@ const PullRequestsCell: React.FC<{
     </div>
   );
 };
+
+PullRequestsCell.displayName = 'PullRequestsCell';
 
 function reasonText(projectText: ScreenText, reason: Refusal | null): string | undefined {
   if (reason === null) return undefined;
@@ -171,11 +179,16 @@ const LastSyncCell: React.FC<{ row: SourceRow; actions: SourceRowActions }> = ({
   );
 };
 
+LastSyncCell.displayName = 'LastSyncCell';
+
 const HiddenHeader: React.FC<{ column: DataGridTableColumn<SourceRow> }> = ({ column }) => (
   <VisuallyHidden>
+    {/* The kit types a label as `string | (() => string)`. */}
     {typeof column.label === 'function' ? column.label() : column.label}
   </VisuallyHidden>
 );
+
+HiddenHeader.displayName = 'HiddenHeader';
 
 export function sourceColumns({
   t,
@@ -186,7 +199,7 @@ export function sourceColumns({
 }: SourceColumnDeps): DataGridTableColumn<SourceRow>[] {
   const windowed = (key: string) =>
     windowDays === null ? t(key) : t.count(`${key}_window`, windowDays);
-  const columns: DataGridTableColumn<SourceRow>[] = [
+  return [
     {
       id: 'source',
       label: t('col_source'),
@@ -239,6 +252,4 @@ export function sourceColumns({
       ),
     },
   ];
-  // The kit's table sets its text at the meta size; the design's cells are body text.
-  return columns.map((column) => ({ ...column, getClassName: () => styles.cell }));
 }

@@ -34,6 +34,7 @@ vi.mock('../../../../i18n', async () => {
 
 import { dictionaryText } from '@frontx-test-utils/dictionaryText';
 import { sourceColumns } from './sourceColumns';
+import { stubResizeObserver } from '@frontx-test-utils/stubResizeObserver';
 
 const PROVIDERS: Record<string, string> = { github: 'GitHub', gitlab: 'GitLab' };
 
@@ -60,11 +61,7 @@ function cell(id: string, row: SourceRow, container?: HTMLElement) {
 }
 
 beforeEach(() => {
-  globalThis.ResizeObserver ??= class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  } as unknown as typeof ResizeObserver;
+  stubResizeObserver();
 });
 
 afterEach(() => {
@@ -85,7 +82,7 @@ describe('the headers', () => {
     ]);
   });
 
-  // The kit's header: 10px uppercase monospace (0.6em a character), 1rem padding each side,
+  // The kit's header (0.4.3): 10px uppercase monospace (0.6em a character), 1rem padding each side,
   // and 4px to spare so rounding does not cut the last letter.
   it.each([
     ['en', en],
@@ -108,7 +105,7 @@ describe('the headers', () => {
     }>;
     render(<Header column={column('actions')} />);
 
-    expect(screen.getByText('Actions').className).toMatch(/visuallyHidden|sr-only|hidden/i);
+    expect(screen.getByText('Actions').className).toMatch(/visuallyHidden/);
   });
 });
 

@@ -1,5 +1,5 @@
 import { renderHook } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { formatDayTime, useDayTime } from './dayTime';
 
 const { registry } = vi.hoisted(() => ({ registry: { language: 'en' } }));
@@ -47,10 +47,16 @@ describe('formatDayTime', () => {
 });
 
 describe('useDayTime', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("formats in the app's language", () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
     registry.language = 'ru';
     const { result } = renderHook(() => useDayTime());
 
-    expect(result.current(SEPT_3)).toMatch(/^3 сент\., 16:06/);
+    expect(result.current(SEPT_3)).toBe('3 сент., 16:06');
   });
 });

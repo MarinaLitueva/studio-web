@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ActivitySparkline } from './ActivitySparkline';
+import { stubResizeObserver } from '@frontx-test-utils/stubResizeObserver';
 
 /** A week of pull requests as bars on the table's shared scale (#688). */
 
@@ -9,11 +10,7 @@ const placed = { top: 100, left: 40 };
 
 beforeEach(() => {
   Object.assign(placed, { top: 100, left: 40 });
-  globalThis.ResizeObserver ??= class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  } as unknown as typeof ResizeObserver;
+  stubResizeObserver();
   const measure = HTMLElement.prototype.getBoundingClientRect;
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
     this: HTMLElement

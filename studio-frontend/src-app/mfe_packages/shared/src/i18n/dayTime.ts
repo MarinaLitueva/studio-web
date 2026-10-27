@@ -32,6 +32,8 @@ function dayTimeFormatter(
   return formatter;
 }
 
+// FrontX's `useFormatters()` has no style for a day, a short month, 24-hour time and the year
+// only when it is not this one.
 export function formatDayTime(
   value: DayTimeInput,
   language: string | null | undefined,

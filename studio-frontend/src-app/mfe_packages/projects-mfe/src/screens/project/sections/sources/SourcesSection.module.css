@@ -4,39 +4,11 @@
   min-width: 0;
 }
 
+/* TODO: the design draws a 32px search and 14px cells, the kit's DataGrid (and Specs) 40px and
+ * 12px; check with the design which one Studio's tables keep. */
 .grid {
   --data-grid-table-min-inline-size: 73.5rem;
-  --control-height-lg: var(--control-height-sm);
   min-width: 0;
-}
-
-.stateBlock {
-  gap: var(--space-4);
-  padding-block: var(--space-4);
-}
-
-.error {
-  margin: 0;
-  padding-inline: var(--space-4);
-  font-size: var(--text-body-size);
-  line-height: var(--text-body-line-height);
-  color: var(--danger);
-}
-
-.retry {
-  margin-inline: var(--space-4);
-  align-self: flex-start;
-}
-
-.stripSkeleton {
-  height: var(--control-height-sm);
-  width: 20rem;
-  margin: var(--space-3) var(--space-4);
-}
-
-.tableSkeleton {
-  height: 16rem;
-  margin-inline: var(--space-4);
 }
 
 .empty {
@@ -61,11 +33,6 @@
   font-size: var(--text-meta-size);
   line-height: var(--text-meta-line-height);
   color: var(--muted-foreground);
-}
-
-.cell {
-  font-size: var(--text-body-size);
-  line-height: var(--text-body-line-height);
 }
 
 .muted {
@@ -120,8 +87,8 @@ button.specsLink {
   --button-fg: var(--foreground);
   height: auto;
   padding: 0;
-  font-size: var(--text-body-size);
-  line-height: var(--text-body-line-height);
+  font-size: inherit;
+  line-height: inherit;
 }
 
 .pullRequests {

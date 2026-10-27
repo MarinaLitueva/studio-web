@@ -5,12 +5,25 @@ import en from './i18n/en.json';
 import projectEn from '../../i18n/en.json';
 import { sourceRow } from '../../../../model/sourceRows.fixture';
 import { filterSourceRows, type SourceRow } from '../../../../model/sourceRows';
+import { stubResizeObserver } from '@frontx-test-utils/stubResizeObserver';
 import type { SourcesLoad } from '../../../../shared/useSourcesLoad';
 
 /** The Sources section on the kit's DataGrid (#688). */
 
-const { sources, retry, openSourcesConnect, bridge } = vi.hoisted(() => ({
+const { sources, scope, translations, loadArgs } = vi.hoisted(() => ({
   sources: { current: { ready: true, failed: false, rows: [] as SourceRow[] } },
+  scope: {
+    current: {
+      org: { id: 'org-1', name: 'Acme' } as { id: string; name: string } | null,
+      orgLoading: false,
+      workspace: { id: 'ws-1', name: 'Main' } as { id: string; name: string } | null,
+      workspaceLoading: false,
+    },
+  },
+  translations: { current: { isLoaded: true, error: null as Error | null } },
+  loadArgs: [] as unknown[][],
+}));
+const { retry, openSourcesConnect, bridge } = vi.hoisted(() => ({
   retry: vi.fn(),
   openSourcesConnect: vi.fn(),
   bridge: { id: 'bridge' },
@@ -23,18 +36,32 @@ vi.mock('@gears-frontx/react', async (importOriginal) => ({
   useTranslation: () => ({ t: (key: string) => key, language: 'en' }),
 }));
 
+vi.mock('@constructor-studio/mfe-shared', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@constructor-studio/mfe-shared')>()),
+  useOrganization: () => ({
+    org: scope.current.org,
+    loading: scope.current.orgLoading,
+    failed: false,
+  }),
+  useWorkspace: () => ({
+    workspace: scope.current.workspace,
+    loading: scope.current.workspaceLoading,
+  }),
+}));
+
 vi.mock('../../../../i18n', async () => {
   const { dictionaryText } = await import('@frontx-test-utils/dictionaryText');
   return {
     useSourcesText: () => dictionaryText(en),
     useProjectText: () => dictionaryText(projectEn),
-    useSourcesSectionTranslations: () => ({ isLoaded: true, error: null }),
+    useSourcesSectionTranslations: () => translations.current,
   };
 });
 
 // The rows as the hook builds them, searched and paged as its load does.
 vi.mock('../../../../shared/useSourcesLoad', () => ({
-  useSourcesLoad: (): SourcesLoad => {
+  useSourcesLoad: (...args: unknown[]): SourcesLoad => {
+    loadArgs.push(args);
     const { ready, failed, rows } = sources.current;
     return {
       ready,
@@ -71,22 +98,23 @@ const rows = (count: number, name = (index: number) => `acme/repo-${index}`) =>
     sourceRow({ id: `c:${name(index)}`, name: name(index).split('/')[1], fullPath: name(index) })
   );
 
-function section(props: { orgId?: string | null; workspaceId?: string | null } = {}) {
-  const { orgId = 'org-1', workspaceId = 'ws-1' } = props;
-  return render(<SourcesSection projectId="p-1" orgId={orgId} workspaceId={workspaceId} />);
-}
+const section = () => render(<SourcesSection projectId="p-1" />);
 
 const shownRows = () => screen.queryAllByRole('button', { name: /^Actions for / }).length;
 const search = () => screen.getByPlaceholderText('Search sources');
 const FOOTER = /sources · 3 specs from sources · 1 created in Studio · 0 open pull requests$/;
 
 beforeEach(() => {
-  globalThis.ResizeObserver ??= class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  } as unknown as typeof ResizeObserver;
+  stubResizeObserver();
   sources.current = { ready: true, failed: false, rows: [] };
+  scope.current = {
+    org: { id: 'org-1', name: 'Acme' },
+    orgLoading: false,
+    workspace: { id: 'ws-1', name: 'Main' },
+    workspaceLoading: false,
+  };
+  translations.current = { isLoaded: true, error: null };
+  loadArgs.length = 0;
 });
 
 afterEach(() => {
@@ -104,12 +132,43 @@ describe('SourcesSection', () => {
     expect(screen.queryByText(FOOTER)).toBeNull();
   });
 
-  it('shows a skeleton while the organization or the workspace is unknown', () => {
+  it.each(['orgLoading', 'workspaceLoading'] as const)('shows a skeleton while %s', (loading) => {
     sources.current.rows = rows(2);
-    const { container } = section({ workspaceId: null });
+    scope.current[loading] = true;
+    const { container } = section();
 
     expect(container.querySelector('[class*="skeleton"]')).not.toBeNull();
     expect(screen.queryByRole('table')).toBeNull();
+  });
+
+  it('shows a skeleton while its dictionary loads, and the table once it failed', async () => {
+    sources.current.rows = rows(2);
+    translations.current = { isLoaded: false, error: null };
+    const { container } = section();
+    expect(container.querySelector('[class*="skeleton"]')).not.toBeNull();
+    cleanup();
+
+    translations.current = { isLoaded: false, error: new Error('dictionary') };
+    section();
+    await waitFor(() => expect(shownRows()).toBe(2));
+  });
+
+  it('says so when no organization is open', () => {
+    scope.current.org = null;
+    section();
+
+    expect(screen.getByText('Sources are read in an organization, and none is open.')).toBeTruthy();
+    expect(screen.queryByRole('table')).toBeNull();
+    expect(loadArgs).toEqual([]);
+  });
+
+  it('shows the rows with no workspace open, and reads no documents of one', async () => {
+    sources.current.rows = rows(2);
+    scope.current.workspace = null;
+    section();
+
+    await waitFor(() => expect(shownRows()).toBe(2));
+    expect(loadArgs[0]).toEqual(['p-1', null, 'org-1']);
   });
 
   it('says the sources could not be read, and Try again reads them again', () => {
@@ -156,16 +215,16 @@ describe('SourcesSection', () => {
     expect((search() as HTMLInputElement).value).toBe('');
   });
 
-  it('pages from 13 sources, not before', async () => {
-    sources.current.rows = rows(12);
+  it('pages from 26 sources, not before', async () => {
+    sources.current.rows = rows(25);
     section();
-    await waitFor(() => expect(shownRows()).toBe(12));
+    await waitFor(() => expect(shownRows()).toBe(25));
     expect(screen.queryByRole('navigation', { name: 'Pagination' })).toBeNull();
     cleanup();
 
-    sources.current.rows = rows(13);
+    sources.current.rows = rows(26);
     section();
-    await waitFor(() => expect(shownRows()).toBe(12));
+    await waitFor(() => expect(shownRows()).toBe(25));
     expect(screen.getByRole('navigation', { name: 'Pagination' })).toBeTruthy();
   });
 });

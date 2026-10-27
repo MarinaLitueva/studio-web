@@ -1,24 +1,23 @@
 import React from 'react';
-import { useEverLoaded } from '@constructor-studio/mfe-shared';
-import { useSourcesSectionTranslations } from '../../../../i18n';
+import { useEverLoaded, useOrganization, useWorkspace } from '@constructor-studio/mfe-shared';
+import { useProjectText, useSourcesSectionTranslations, useSourcesText } from '../../../../i18n';
 import { useSyncRefusals } from '../../../../shared/useSyncRefusals';
-import { SourcesSkeleton, SourcesTable } from './SourcesTable';
+import { SectionSkeleton } from '../../../../components/SectionStates';
+import { PlaceholderSection } from '../PlaceholderSection';
+import { SourcesTable } from './SourcesTable';
 
-interface SourcesSectionProps {
-  projectId: string;
-  orgId: string | null;
-  workspaceId: string | null;
-}
-
-export const SourcesSection: React.FC<SourcesSectionProps> = ({ projectId, orgId, workspaceId }) => {
+export const SourcesSection: React.FC<{ projectId: string }> = ({ projectId }) => {
   const { isLoaded, error } = useSourcesSectionTranslations();
   const everLoaded = useEverLoaded(isLoaded);
+  const { org, loading: orgLoading } = useOrganization();
+  const { workspace, loading: workspaceLoading } = useWorkspace();
+  const t = useSourcesText();
+  const projectText = useProjectText();
   useSyncRefusals(projectId);
 
-  if ((!everLoaded && !error) || orgId === null || workspaceId === null) {
-    return <SourcesSkeleton />;
-  }
-  return <SourcesTable projectId={projectId} orgId={orgId} workspaceId={workspaceId} />;
+  if ((!everLoaded && !error) || orgLoading || workspaceLoading) return <SectionSkeleton />;
+  if (!org) return <PlaceholderSection title={projectText('section_sources')} note={t('no_org')} />;
+  return <SourcesTable projectId={projectId} orgId={org.id} workspaceId={workspace?.id ?? null} />;
 };
 
 SourcesSection.displayName = 'SourcesSection';

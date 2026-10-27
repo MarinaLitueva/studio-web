@@ -13,12 +13,12 @@ import {
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
-  Skeleton,
   useDataGrid,
   type DataGridTextSearchPluginApi,
 } from '@gears-frontx/ui-kit';
 import { useSourcesText } from '../../../../i18n';
 import { openSourcesConnect } from '../../../../actions/sourcesConnectActions';
+import { ReadFailed, SectionSkeleton } from '../../../../components/SectionStates';
 import { activityScale, type SourceRow } from '../../../../model/sourceRows';
 import { useSourcesLoad } from '../../../../shared/useSourcesLoad';
 import { useSourceRowActions } from '../../../../shared/useSourceRowActions';
@@ -27,12 +27,7 @@ import { sourceColumns } from './sourceColumns';
 import { SourcesFooter } from './SourcesFooter';
 import styles from './SourcesSection.module.css';
 
-export const SourcesSkeleton: React.FC = () => (
-  <div className={styles.section}>
-    <Skeleton className={styles.stripSkeleton} />
-    <Skeleton className={styles.tableSkeleton} />
-  </div>
-);
+const PAGE_LIMITS = [25, 50, 100];
 
 const SourcesEmpty: React.FC = () => {
   const t = useSourcesText();
@@ -79,7 +74,7 @@ SourcesEmpty.displayName = 'SourcesEmpty';
 interface SourcesTableProps {
   projectId: string;
   orgId: string;
-  workspaceId: string;
+  workspaceId: string | null;
 }
 
 export const SourcesTable: React.FC<SourcesTableProps> = ({ projectId, orgId, workspaceId }) => {
@@ -94,18 +89,11 @@ export const SourcesTable: React.FC<SourcesTableProps> = ({ projectId, orgId, wo
     [t, sources.windowDays, actions, scale, container]
   );
 
-  if (!sources.ready) return <SourcesSkeleton />;
+  if (!sources.ready) return <SectionSkeleton />;
 
   if (sources.failed) {
     return (
-      <div className={`${styles.section} ${styles.stateBlock}`}>
-        <p className={styles.error} role="alert">
-          {t('read_failed')}
-        </p>
-        <Button variant="outline" size="sm" className={styles.retry} onClick={sources.retry}>
-          {t('retry')}
-        </Button>
-      </div>
+      <ReadFailed message={t('read_failed')} retryLabel={t('retry')} onRetry={sources.retry} />
     );
   }
 
@@ -120,7 +108,7 @@ export const SourcesTable: React.FC<SourcesTableProps> = ({ projectId, orgId, wo
           columns={columns}
         >
           <DataGridTextSearchPlugin placeholder={t('search')} />
-          <DataGridPaginationPlugin autoHide />
+          <DataGridPaginationPlugin defaultLimit={PAGE_LIMITS[0]} limits={PAGE_LIMITS} autoHide />
           <DataGridEmptyStatePlugin component={SourcesEmpty} />
           {sources.rowsBridge}
         </DataGrid>

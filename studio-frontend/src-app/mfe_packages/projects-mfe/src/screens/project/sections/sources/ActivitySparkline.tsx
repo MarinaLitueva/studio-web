@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { Bar, BarChart, Cell, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, Rectangle, XAxis, YAxis, type BarShapeProps } from 'recharts';
 import {
   ChartContainer,
   ChartTooltip,
@@ -9,6 +9,7 @@ import {
 } from '@gears-frontx/ui-kit';
 import styles from './ActivitySparkline.module.css';
 
+// `.chart` in ActivitySparkline.module.css, until Recharts measures it.
 const SIZE = { width: 96, height: 24 };
 const NO_MARGIN = { top: 0, right: 0, bottom: 0, left: 0 };
 const ESCAPE = { x: true, y: true };
@@ -21,6 +22,10 @@ export interface ActivitySparklineProps {
   dayLabel: (daysBack: number) => string;
   container?: HTMLElement | null;
 }
+
+const barShape = (props: BarShapeProps) => (
+  <Rectangle {...props} fill={props.payload?.prs === 0 ? 'var(--border)' : 'var(--color-prs)'} />
+);
 
 /** Under the chart in the window's top half, over it in the bottom half. */
 function tooltipPlace(chart: DOMRect): React.CSSProperties {
@@ -75,11 +80,13 @@ export const ActivitySparkline: React.FC<ActivitySparklineProps> = ({
               />
             }
           />
-          <Bar dataKey="prs" radius={[2, 2, 0, 0]} minPointSize={1} isAnimationActive={false}>
-            {data.map((entry) => (
-              <Cell key={entry.day} fill={entry.prs === 0 ? 'var(--border)' : 'var(--color-prs)'} />
-            ))}
-          </Bar>
+          <Bar
+            dataKey="prs"
+            radius={[2, 2, 0, 0]}
+            minPointSize={1}
+            isAnimationActive={false}
+            shape={barShape}
+          />
         </BarChart>
       </ChartContainer>
       {container &&
