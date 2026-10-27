@@ -38,7 +38,9 @@ export async function writeProjectSources(
   const config = (await read.fetch({ staleTime: 0 }))?.value ?? {};
   const sources = change([...(config.sources ?? [])]);
   const next: ProjectConfig = { ...config, sources };
-
+  // The project list shows `source_git_url` ahead of `sources[0]`
+  // (`projectSubtitle`), so one naming a repository that is gone would keep
+  // showing it.
   const gitUrl = next.source_git_url;
   if (gitUrl && !sources.some((source) => sameRepository(source.clone_url, gitUrl))) {
     delete next.source_git_url;

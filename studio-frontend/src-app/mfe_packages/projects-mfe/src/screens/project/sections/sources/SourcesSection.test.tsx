@@ -153,8 +153,9 @@ describe('SourcesSection', () => {
     await waitFor(() => expect(shownRows()).toBe(2));
   });
 
-  it('says so when no organization is open', () => {
+  it('says so when no organization is open, without waiting for a workspace', () => {
     scope.current.org = null;
+    scope.current.workspaceLoading = true;
     section();
 
     expect(screen.getByText('Sources are read in an organization, and none is open.')).toBeTruthy();

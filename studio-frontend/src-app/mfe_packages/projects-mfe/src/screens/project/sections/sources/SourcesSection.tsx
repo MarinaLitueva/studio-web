@@ -15,8 +15,9 @@ export const SourcesSection: React.FC<{ projectId: string }> = ({ projectId }) =
   const projectText = useProjectText();
   useSyncRefusals(projectId);
 
-  if ((!everLoaded && !error) || orgLoading || workspaceLoading) return <SectionSkeleton />;
+  if ((!everLoaded && !error) || orgLoading) return <SectionSkeleton />;
   if (!org) return <PlaceholderSection title={projectText('section_sources')} note={t('no_org')} />;
+  if (workspaceLoading) return <SectionSkeleton />;
   return <SourcesTable projectId={projectId} orgId={org.id} workspaceId={workspace?.id ?? null} />;
 };
 
