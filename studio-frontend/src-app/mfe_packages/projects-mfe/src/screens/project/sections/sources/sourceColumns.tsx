@@ -2,15 +2,12 @@ import React from 'react';
 import { Cloud } from 'lucide-react';
 import { useFormatters } from '@gears-frontx/react';
 import { Button, VisuallyHidden, type DataGridTableColumn } from '@gears-frontx/ui-kit';
-import {
-  useDayTime,
-  useDaysAgo,
-  type Refusal,
-  type ScreenText,
-} from '@constructor-studio/mfe-shared';
+import type { Refusal, ScreenText } from '@constructor-studio/mfe-shared';
 import { useProjectText, useSourcesText } from '../../../../i18n';
 import type { SourceRow } from '../../../../model/sourceRows';
 import type { SourceRowActions } from '../../../../shared/useSourceRowActions';
+import { useDayTime } from '../../../../shared/dayTime';
+import { useDaysAgo } from '../../../../shared/daysAgo';
 import { ActivitySparkline } from './ActivitySparkline';
 import { PROVIDER_ICONS } from '../../../../components/providerIcons';
 import { SourceRowMenu } from './SourceRowMenu';

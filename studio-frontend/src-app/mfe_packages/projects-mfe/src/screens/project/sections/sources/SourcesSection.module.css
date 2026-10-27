@@ -4,8 +4,8 @@
   min-width: 0;
 }
 
-/* TODO: the design draws a 32px search and 14px cells, the kit's DataGrid (and Specs) 40px and
- * 12px; check with the design which one Studio's tables keep. */
+/* TODO(#888): the design draws a 32px search and 14px cells, the kit's DataGrid (and Specs)
+ * 40px and 12px; check with the design which one Studio's tables keep. */
 .grid {
   --data-grid-table-min-inline-size: 73.5rem;
   min-width: 0;
@@ -15,16 +15,6 @@
   margin-inline: auto;
   border: 0;
   white-space: normal;
-}
-
-/* The picker's empty state: a primary icon on a rounder tile, a heavier title. */
-.emptyMedia {
-  --foreground: var(--primary);
-  --radius-xl: var(--radius-2xl);
-}
-
-.emptyTitle {
-  --text-label-weight: var(--text-heading-2-weight);
 }
 
 .footer {

@@ -40,6 +40,7 @@ import { useDebounced } from '../shared/useDebounced';
 import { PROVIDER_ICONS } from './providerIcons';
 import { repoKey, sourceKey, type RepositoryPick } from '../model/projectDraft';
 import styles from './RepositoryPicker.module.css';
+import empty from './EmptyState.module.css';
 
 export interface RepositoryPickerProps {
   providerId: string | null;
@@ -124,10 +125,10 @@ const RepositoryTable: React.FC<TableProps> = ({
       ) : failed ? (
         <Empty className={styles.empty}>
           <EmptyHeader>
-            <EmptyMedia variant="icon" className={styles.emptyMedia}>
+            <EmptyMedia variant="icon" className={empty.media}>
               <Plug strokeWidth={1.5} />
             </EmptyMedia>
-            <EmptyDescription className={styles.emptyDescription}>{t('repos_error')}</EmptyDescription>
+            <EmptyDescription className={empty.description}>{t('repos_error')}</EmptyDescription>
           </EmptyHeader>
         </Empty>
       ) : (
@@ -154,7 +155,7 @@ const RepositoryTable: React.FC<TableProps> = ({
                   {search.trim() ? (
                     <Empty className={styles.empty}>
                       <EmptyHeader>
-                        <EmptyDescription className={styles.emptyDescription}>{t('repos_no_match')}</EmptyDescription>
+                        <EmptyDescription className={empty.description}>{t('repos_no_match')}</EmptyDescription>
                       </EmptyHeader>
                       <EmptyActions>
                         <Button variant="link" onClick={() => onSearchChange('')}>
@@ -165,11 +166,11 @@ const RepositoryTable: React.FC<TableProps> = ({
                   ) : (
                     <Empty className={styles.empty}>
                       <EmptyHeader>
-                        <EmptyMedia variant="icon" className={styles.emptyMedia}>
+                        <EmptyMedia variant="icon" className={empty.media}>
                           <Plug strokeWidth={1.5} />
                         </EmptyMedia>
-                        <EmptyTitle className={styles.emptyTitle}>{t('repos_empty_title')}</EmptyTitle>
-                        <EmptyDescription className={styles.emptyDescription}>{t('repos_empty')}</EmptyDescription>
+                        <EmptyTitle className={empty.title}>{t('repos_empty_title')}</EmptyTitle>
+                        <EmptyDescription className={empty.description}>{t('repos_empty')}</EmptyDescription>
                       </EmptyHeader>
                       {emptyAction ? <EmptyActions>{emptyAction}</EmptyActions> : null}
                     </Empty>
@@ -264,11 +265,11 @@ const Catalogue: React.FC<RepositoryPickerProps & { orgId: string }> = ({
       <div className={styles.repoViewport}>
         <Empty className={styles.empty}>
           <EmptyHeader>
-            <EmptyMedia variant="icon" className={styles.emptyMedia}>
+            <EmptyMedia variant="icon" className={empty.media}>
               <Plug strokeWidth={1.5} />
             </EmptyMedia>
-            <EmptyTitle className={styles.emptyTitle}>{t('connections_empty_title')}</EmptyTitle>
-            <EmptyDescription className={styles.emptyDescription}>{t('connections_empty')}</EmptyDescription>
+            <EmptyTitle className={empty.title}>{t('connections_empty_title')}</EmptyTitle>
+            <EmptyDescription className={empty.description}>{t('connections_empty')}</EmptyDescription>
           </EmptyHeader>
           {noConnectionsAction ? <EmptyActions>{noConnectionsAction}</EmptyActions> : null}
         </Empty>

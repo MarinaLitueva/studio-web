@@ -18,9 +18,11 @@ vi.mock('@gears-frontx/react', async (importOriginal) => ({
   }),
 }));
 
-vi.mock('@constructor-studio/mfe-shared', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@constructor-studio/mfe-shared')>()),
+vi.mock('../../../../shared/dayTime', () => ({
   useDayTime: () => (value: string) => `day ${new Date(value).toISOString()}`,
+}));
+
+vi.mock('../../../../shared/daysAgo', () => ({
   useDaysAgo: () => (back: number) => `${back} back`,
 }));
 

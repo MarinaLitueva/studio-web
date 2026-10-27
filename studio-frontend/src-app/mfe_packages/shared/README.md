@@ -28,10 +28,6 @@ MFE needs to diverge, move that piece back into it. Do not add a flag or an
 option to the shared version — that is how this folder turns into a dumping
 ground whose every change can break every MFE at once.
 
-One exception: the app's date formats (`i18n/dayTime`, `i18n/daysAgo`) live here
-from their first consumer, so that every MFE writes a date the same way instead
-of growing its own copy.
-
 **Counts in translations.** FrontX's `t` fills `{param}` and picks no plural
 form, so a count goes through `t.count(key, n)` from `createText`: it reads
 `key_one`, `key_few` or `key_many` by the plural rule of the language in use,

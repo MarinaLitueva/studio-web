@@ -179,6 +179,30 @@ what the gears cannot do yet:
   For a source whose provider cannot sync or whose connection is gone, its Last
   sync says the same.
 
+**For the table (#688)**, fixed here because the issue or the design leaves it
+open:
+
+- **There is a Role column, as in the prototype.** #688 has none, since nothing
+  in the data gives a source a role; the column shows the source's provider, as
+  the prototype's does.
+- **The pager pages by 25, 50 or 100 rows, 25 to start**, as the Specs table
+  does, and is hidden while every source fits on one page.
+- **The search is on the left**, as the prototype's `list-standard.md` has it;
+  the kit's text search fills only the grid's left slot.
+- **The sparkline has one scale for the whole table, at least 3**, so a single
+  pull request does not draw a full bar. A quiet day is a grey tick, which is
+  how a quiet week draws a flat line. The tooltip names the day.
+- **Last sync is a day and a time**, "3 Sept, 16:06", with the year only when
+  it is not this one, and the relative time as its title.
+- **With no sources, the kit's empty state offers Connect source**, with no
+  column headers above it: the kit's grid hides the table when it has no rows
+  and no filter. A search that matches nothing says so and offers Clear search.
+- **With no workspace open the rows show**, and the footer's documents created
+  in Studio are missing. With no organization open the section says so.
+- **The search and the cells take the kit's sizes**, as Specs does: 40px and
+  12px, where the prototype has 32px and 14px. Which one Studio's tables keep is
+  open with design (#888).
+
 **Requirements**: `cpt-studio-fr-connections`, `cpt-studio-fr-artifact-ingest`
 
 **Principles**: `cpt-studio-principle-project-is-unit`
@@ -209,7 +233,7 @@ Actor ids are defined in the [PRD](../prd/constructor-studio.md); a gear taking 
 - **Feature**: [The project's specs](project-specs.md): the section before this one, and the filter Open specs sets
 - **Feature**: [Levels in the shell](shell-levels.md): the section the MFE asks for, written into the address
 - **Decomposition entry** `cpt-studio-feature-documents`: the specs counted per repository and the documents created in Studio (no feature spec of its own)
-- **Issues**: #643 (the Specs and Sources sections), #687 (Connect source), #685 (the rows), #686 (the row menu), #709 (the config write), #711 (the Specs list's load), #688, #693 (the rest of the section), #852 (Disconnect)
+- **Issues**: #643 (the Specs and Sources sections), #687 (Connect source), #685 (the rows), #686 (the row menu), #709 (the config write), #711 (the Specs list's load), #688 (the table), #693 (uploading documents), #852 (Disconnect)
 
 ## 2. Actor Flows (CDSL)
 
@@ -1079,3 +1103,18 @@ The row menu (#686):
 - [ ] Open specs from this source, on any row, moves to Specs, with the Specs filter set to the source's path, Type confirmed and no document type.
 - [ ] Open in opens the repository's page in a new tab: `https://bitbucket.org/<workspace>/<repo>` for the clone URL `https://<user>@bitbucket.org/<workspace>/<repo>.git`; a source with an SSH clone URL offers no Open in.
 - [ ] The menu's labels, titles and notifications are in English and in Russian.
+
+The table (#688):
+
+- [ ] The section shows the sources in a table with the columns Source, Role, Specs, Pull requests · 7 days, Commits · 7 days, Last sync and the row menu, in the config's order; no column sorts.
+- [ ] A source's Role is its provider.
+- [ ] A source's Specs number opens Specs filtered to the source, as Open specs from this source does.
+- [ ] Pull requests · 7 days gives the open and merged counts and a bar per day, on one scale for every row; a day with none is a grey tick, and a bar's tooltip names its day.
+- [ ] Last sync reads "3 Sept, 16:06", with the year only for another year, and its title gives the relative time.
+- [ ] With 25 sources there is no pager; with 26, the table shows 25 and offers 25, 50 or 100 a page.
+- [ ] A search that matches nothing says so and offers Clear search, which brings the rows back.
+- [ ] With no sources, the section shows an empty state with Connect source and no column headers.
+- [ ] While the organization loads, or the open organization's workspace, the section shows a skeleton; with no organization open it says so.
+- [ ] With no workspace open the rows show, and the footer's documents created in Studio are missing.
+- [ ] When the config or the repository nodes cannot be read, Try again reads both again.
+- [ ] The table's labels are in English and in Russian.

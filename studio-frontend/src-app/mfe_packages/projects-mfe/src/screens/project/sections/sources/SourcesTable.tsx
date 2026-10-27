@@ -26,6 +26,7 @@ import { useThemedRoot } from '../../../../shared/useThemedRoot';
 import { sourceColumns } from './sourceColumns';
 import { SourcesFooter } from './SourcesFooter';
 import styles from './SourcesSection.module.css';
+import empty from '../../../../components/EmptyState.module.css';
 
 const PAGE_LIMITS = [25, 50, 100];
 
@@ -55,10 +56,10 @@ const SourcesEmpty: React.FC = () => {
   return (
     <Empty className={styles.empty}>
       <EmptyHeader>
-        <EmptyMedia variant="icon" className={styles.emptyMedia}>
+        <EmptyMedia variant="icon" className={empty.media}>
           <Plug strokeWidth={1.5} />
         </EmptyMedia>
-        <EmptyTitle className={styles.emptyTitle}>{t('empty_title')}</EmptyTitle>
+        <EmptyTitle className={empty.title}>{t('empty_title')}</EmptyTitle>
       </EmptyHeader>
       <EmptyActions>
         <Button size="sm" icon={<Plug />} onClick={() => openSourcesConnect(bridge)}>

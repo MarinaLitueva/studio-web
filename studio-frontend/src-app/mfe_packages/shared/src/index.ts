@@ -128,8 +128,6 @@ export {
   screenText,
   type ScreenText,
 } from './i18n/screenText';
-export { formatDayTime, useDayTime, type DayTimeInput } from './i18n/dayTime';
-export { formatDaysAgo, useDaysAgo } from './i18n/daysAgo';
 export { errorMessage } from './errors/message';
 export {
   PROJECT_CONFIG_TYPE,
