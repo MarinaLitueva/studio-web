@@ -1,13 +1,13 @@
 import { useEffect } from 'react';
-import { eventBus, useMfeBridge } from '@gears-frontx/react';
-import { notify } from '@constructor-studio/mfe-shared';
+import { eventBus } from '@gears-frontx/react';
+import { useNotify } from '@constructor-studio/mfe-shared';
 import { useUploadText, useUploadTranslations } from '../i18n';
 import '../events/documentUploadEvents';
 
 export function useUploadToasts(): void {
   useUploadTranslations();
   const t = useUploadText();
-  const bridge = useMfeBridge();
+  const notify = useNotify('projects');
 
   useEffect(() => {
     const finished = eventBus.on(
@@ -15,14 +15,14 @@ export function useUploadToasts(): void {
       ({ project, added, refused }) => {
         if (added > 0) {
           const text = t.count('toast_added', added, { project });
-          notify(bridge, { kind: 'success', text }, 'projects');
+          notify({ kind: 'success', text });
         }
         if (refused > 0) {
           const text = t.count('toast_refused', refused, { project });
-          notify(bridge, { kind: 'error', text }, 'projects');
+          notify({ kind: 'error', text });
         }
       }
     );
     return () => finished.unsubscribe();
-  }, [bridge, t]);
+  }, [notify, t]);
 }

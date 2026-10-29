@@ -1,15 +1,11 @@
 import { renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { notify, bridge } = vi.hoisted(() => ({ notify: vi.fn(), bridge: { id: 'bridge' } }));
+const { notify } = vi.hoisted(() => ({ notify: vi.fn() }));
 
-vi.mock('@gears-frontx/react', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@gears-frontx/react')>()),
-  useMfeBridge: () => bridge,
-}));
 vi.mock('@constructor-studio/mfe-shared', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@constructor-studio/mfe-shared')>()),
-  notify,
+  useNotify: () => notify,
 }));
 vi.mock('../../../../i18n', () => {
   const t = (key: string, params?: Record<string, string>) =>
@@ -30,17 +26,16 @@ describe('a refused type decision', () => {
   it("becomes the shell's error toast, with the gear's reason", () => {
     renderHook(() => useTypeDecisionRefusals('p-1'));
     refuse('p-1', { kind: 'provider', text: 'unknown type' });
-    expect(notify).toHaveBeenCalledWith(
-      bridge,
-      { kind: 'error', text: 'type_refused_because {"name":"prd.md","reason":"unknown type"}' },
-      'projects'
-    );
+    expect(notify).toHaveBeenCalledWith({
+      kind: 'error',
+      text: 'type_refused_because {"name":"prd.md","reason":"unknown type"}',
+    });
   });
 
   it('uses its own words when the gear gave none', () => {
     renderHook(() => useTypeDecisionRefusals('p-1'));
     refuse('p-1', { kind: 'i18n', key: 'type_refused' });
-    expect(notify.mock.calls[0][1]).toEqual({
+    expect(notify.mock.calls[0][0]).toEqual({
       kind: 'error',
       text: 'type_refused {"name":"prd.md"}',
     });

@@ -2,9 +2,8 @@ import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SpecsCheck } from '../slices/specsCheckSlice';
 
-const { notify, bridge, dispatch, checks, loaded } = vi.hoisted(() => ({
+const { notify, dispatch, checks, loaded } = vi.hoisted(() => ({
   notify: vi.fn(),
-  bridge: { id: 'bridge' },
   dispatch: vi.fn(),
   checks: { current: {} as Record<string, SpecsCheck> },
   loaded: { current: true },
@@ -12,14 +11,13 @@ const { notify, bridge, dispatch, checks, loaded } = vi.hoisted(() => ({
 
 vi.mock('@gears-frontx/react', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@gears-frontx/react')>()),
-  useMfeBridge: () => bridge,
   useAppDispatch: () => dispatch,
   useAppSelector: (select: (state: unknown) => unknown) =>
     select({ 'projects/specsCheck': { selected: [], shown: null, checks: checks.current } }),
 }));
 vi.mock('@constructor-studio/mfe-shared', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@constructor-studio/mfe-shared')>()),
-  notify,
+  useNotify: () => notify,
 }));
 vi.mock('../i18n', () => {
   const t = Object.assign(
@@ -51,7 +49,7 @@ const running = (phases: SpecsCheck['phases'] = {}): SpecsCheck => ({
 });
 const ended = (outcome: SpecsCheckOutcome): SpecsCheck => ({ ...running(), outcome });
 
-const notices = () => notify.mock.calls.map(([, notice]) => notice);
+const notices = () => notify.mock.calls.map(([notice]) => notice);
 
 beforeEach(() => {
   notify.mockClear();
@@ -64,11 +62,11 @@ describe("a check's toast", () => {
   it('says how many specs are being checked until a run reports', () => {
     checks.current = { 'p-1': running() };
     renderHook(() => useSpecsCheckToasts());
-    expect(notify).toHaveBeenCalledWith(
-      bridge,
-      { kind: 'loading', text: 'check_progress#20(Billing)', id: 'specs-check:p-1' },
-      'projects'
-    );
+    expect(notify).toHaveBeenCalledWith({
+      kind: 'loading',
+      text: 'check_progress#20(Billing)',
+      id: 'specs-check:p-1',
+    });
   });
 
   it('shows the step and file of the run further behind, updated in place', () => {

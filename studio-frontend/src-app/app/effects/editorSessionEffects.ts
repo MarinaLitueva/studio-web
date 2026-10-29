@@ -15,7 +15,6 @@
 // @cpt-dod:cpt-studiofrontend-dod-editor-bridge-component:p1
 
 import { apiRegistry, type AuthSession, type FrontXApp } from '@gears-frontx/react';
-import { toast } from 'sonner';
 import {
   AccountsApiService,
   ConnectorsApiService,
@@ -39,6 +38,7 @@ import {
 import { StudioSessionApiService, type StudioSession } from '@/app/api';
 import { connectEditorBridge, type EditorMessage, type EditorTheme } from '@/app/mfe/editorBridge';
 import type { FrameHook } from '@/app/mfe/MfeHandlerIframe';
+import { showNotice } from '@/app/mfe/notifyAction';
 import { publishFrameUrl } from '@/app/mfe/sharedContext';
 import { readAppContext } from '@/app/slices/appContextSlice';
 import { readSessionProfile } from '@/app/slices/appSessionSlice';
@@ -451,7 +451,7 @@ export function createEditorSession(app: FrontXApp): EditorSession {
       },
       onOpenComponent: () => {
         // TODO(#583): open the component's page once the portal has one.
-        toast.info(app.i18nRegistry.t('shell:editor_component_unavailable'));
+        showNotice({ kind: 'info', text: app.i18nRegistry.t('shell:editor_component_unavailable') });
       },
     });
     bridge = mine;

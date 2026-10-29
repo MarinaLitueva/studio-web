@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
-import { eventBus, useMfeBridge } from '@gears-frontx/react';
-import { notify } from '@constructor-studio/mfe-shared';
+import { eventBus } from '@gears-frontx/react';
+import { useNotify } from '@constructor-studio/mfe-shared';
 import { useSpecsText } from '../../../../i18n';
 import '../../../../events/specsEvents';
 
@@ -9,7 +9,7 @@ import '../../../../events/specsEvents';
  * heard the refusal has neither the bridge nor this dictionary.
  */
 export function useTypeDecisionRefusals(projectId: string): void {
-  const bridge = useMfeBridge();
+  const notify = useNotify('projects');
   const t = useSpecsText();
 
   useEffect(() => {
@@ -20,8 +20,8 @@ export function useTypeDecisionRefusals(projectId: string): void {
         refusal.kind === 'provider'
           ? t('type_refused_because', { name, reason: refusal.text })
           : t(refusal.key, { name });
-      notify(bridge, { kind: 'error', text }, 'projects');
+      notify({ kind: 'error', text });
     });
     return () => subscription.unsubscribe();
-  }, [bridge, t, projectId]);
+  }, [notify, t, projectId]);
 }

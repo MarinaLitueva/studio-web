@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { useAppDispatch, useAppSelector, useMfeBridge } from '@gears-frontx/react';
-import { notify, type ScreenText, type StudioNotice } from '@constructor-studio/mfe-shared';
+import { useAppDispatch, useAppSelector } from '@gears-frontx/react';
+import { useNotify, type ScreenText, type StudioNotice } from '@constructor-studio/mfe-shared';
 import { useSpecsSectionTranslations, useSpecsText } from '../i18n';
 import { behindPhase, fileName, type SpecsCheckOutcome } from '../model/specsCheck';
 import {
@@ -74,7 +74,7 @@ export function checkNotice(t: ScreenText, check: SpecsCheck): CheckNotice {
 export function useSpecsCheckToasts(): void {
   const { isLoaded } = useSpecsSectionTranslations();
   const t = useSpecsText();
-  const bridge = useMfeBridge();
+  const notify = useNotify('projects');
   const dispatch = useAppDispatch();
   const checks = useAppSelector((state) => state[SPECS_CHECK_SLICE_KEY].checks);
   /** What each project's toast says, so a render that changes nothing sends nothing. */
@@ -88,7 +88,7 @@ export function useSpecsCheckToasts(): void {
       const notice = checkNotice(t, check);
       const text = `${notice.kind}:${notice.text}`;
       if (shown.get(projectId)?.text !== text) {
-        notify(bridge, { ...notice, id: specsCheckToastId(projectId) }, 'projects');
+        notify({ ...notice, id: specsCheckToastId(projectId) });
         shown.set(projectId, { text, project: check.project });
       }
       if (check.outcome) {
@@ -98,15 +98,11 @@ export function useSpecsCheckToasts(): void {
     }
     leave.current = () => {
       for (const [projectId, { project }] of shown) {
-        notify(
-          bridge,
-          { kind: 'info', text: t('check_left', { project }), id: specsCheckToastId(projectId) },
-          'projects'
-        );
+        notify({ kind: 'info', text: t('check_left', { project }), id: specsCheckToastId(projectId) });
       }
       shown.clear();
     };
-  }, [isLoaded, checks, t, bridge, dispatch]);
+  }, [isLoaded, checks, t, notify, dispatch]);
 
   useEffect(() => () => leave.current(), []);
 }

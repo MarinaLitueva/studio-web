@@ -1,8 +1,11 @@
 /** The MFE -> shell channel for toasts: the shell owns the only toaster. */
 
 import { ActionHandler } from '@gears-frontx/react';
-import { toast } from 'sonner';
+import { toast } from '@gears-frontx/ui-kit/toast';
 import { STUDIO_NOTICE_KINDS, type StudioNotice } from '@constructor-studio/mfe-shared';
+
+/** The prototype's timing: success and info close by themselves, error and loading stay. */
+const TIMEOUT_MS: Record<StudioNotice['kind'], number> = { success: 6000, info: 6000, error: 0, loading: 0 };
 
 /** The notify payload as the schema names it, or `null` when it is not one. */
 export function noticeOf(payload: Record<string, unknown> | undefined): StudioNotice | null {
@@ -15,6 +18,10 @@ export function noticeOf(payload: Record<string, unknown> | undefined): StudioNo
   return { kind: known, text, id };
 }
 
+export function showNotice(notice: StudioNotice): void {
+  toast.add({ id: notice.id, type: notice.kind, title: notice.text, timeout: TIMEOUT_MS[notice.kind] });
+}
+
 export function createNotifyHandler(): ActionHandler {
   return ActionHandler.fromFunction(async (_actionTypeId, payload) => {
     const notice = noticeOf(payload);
@@ -22,8 +29,6 @@ export function createNotifyHandler(): ActionHandler {
       console.warn('[shell] notify: payload refused', payload);
       return;
     }
-    // sonner replaces the toast that has this id, or shows a new one.
-    if (notice.id === undefined) toast[notice.kind](notice.text);
-    else toast[notice.kind](notice.text, { id: notice.id });
+    showNotice(notice);
   });
 }

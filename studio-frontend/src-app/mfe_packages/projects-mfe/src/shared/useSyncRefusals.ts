@@ -1,12 +1,12 @@
 import { useEffect } from 'react';
-import { eventBus, useMfeBridge } from '@gears-frontx/react';
-import { notify } from '@constructor-studio/mfe-shared';
+import { eventBus } from '@gears-frontx/react';
+import { useNotify } from '@constructor-studio/mfe-shared';
 import { useSourcesText } from '../i18n';
 import type { RepoRefusal } from '../events/artifactEvents';
 
 // @cpt-dod:cpt-studiofrontend-dod-project-sources-menu-refusals:p1
 export function useSyncRefusals(projectId: string): void {
-  const bridge = useMfeBridge();
+  const notify = useNotify('projects');
   const t = useSourcesText();
 
   useEffect(() => {
@@ -17,7 +17,7 @@ export function useSyncRefusals(projectId: string): void {
         refusal.kind === 'provider'
           ? t(withReason, { path, reason: refusal.text })
           : t(withoutReason, { path });
-      notify(bridge, { kind: 'error', text }, 'projects');
+      notify({ kind: 'error', text });
     };
     const cancel = eventBus.on('mfe/artifacts/cancel-refused', (refused) =>
       show(refused, 'sync_cancel_refused', 'sync_cancel_refused_because')
@@ -29,5 +29,5 @@ export function useSyncRefusals(projectId: string): void {
       cancel.unsubscribe();
       retry.unsubscribe();
     };
-  }, [bridge, t, projectId]);
+  }, [notify, t, projectId]);
 }

@@ -28,13 +28,13 @@ export {
   sendAndForget,
   openOverlay,
   closeOverlay,
-  notify,
   type HostAction,
   type StudioNotice,
   type StudioArtifact,
   type StudioArtifactKind,
   type StudioArtifactRequest,
 } from './host/hostActions';
+export { useNotify } from './host/useNotify';
 export {
   OrganizationProvider,
   useOrganization,

@@ -1,34 +1,39 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const toast = vi.hoisted(() => ({
-  error: vi.fn(),
-  success: vi.fn(),
-  info: vi.fn(),
-  loading: vi.fn(),
-}));
-vi.mock('sonner', () => ({ toast }));
+const toast = vi.hoisted(() => ({ add: vi.fn() }));
+vi.mock('@gears-frontx/ui-kit/toast', () => ({ toast }));
 
 import notifySchema from './schemas/action_shell_notification_show.v1.json';
 import { STUDIO_NOTICE_KINDS } from '@constructor-studio/mfe-shared';
-import { createNotifyHandler, noticeOf } from './notifyAction';
+import { createNotifyHandler, noticeOf, showNotice } from './notifyAction';
 
-beforeEach(() => {
-  for (const show of Object.values(toast)) show.mockClear();
-});
+beforeEach(() => toast.add.mockClear());
 
 describe('notify', () => {
   it('shows the text as a toast of its kind', async () => {
-    await createNotifyHandler().handleAction('action', { kind: 'error', text: 'Not saved' });
-    expect(toast.error).toHaveBeenCalledWith('Not saved');
-    expect(toast.success).not.toHaveBeenCalled();
+    const handler = createNotifyHandler();
+    for (const kind of ['error', 'success', 'info'] as const) {
+      await handler.handleAction('action', { kind, text: 'Not saved' });
+      expect(toast.add).toHaveBeenLastCalledWith(expect.objectContaining({ type: kind, title: 'Not saved' }));
+    }
   });
 
-  it('replaces the toast with the same id, so progress and its outcome are one toast', async () => {
+  it('gives the toast the id, so progress and its outcome are one toast', async () => {
     const handler = createNotifyHandler();
     await handler.handleAction('action', { kind: 'loading', text: 'Checking 3/20', id: 'check:p-1' });
     await handler.handleAction('action', { kind: 'success', text: '20 checked', id: 'check:p-1' });
-    expect(toast.loading).toHaveBeenCalledWith('Checking 3/20', { id: 'check:p-1' });
-    expect(toast.success).toHaveBeenCalledWith('20 checked', { id: 'check:p-1' });
+    expect(toast.add.mock.calls.map(([options]) => [options.id, options.type])).toEqual([
+      ['check:p-1', 'loading'],
+      ['check:p-1', 'success'],
+    ]);
+  });
+
+  it('closes success and info after 6 seconds and keeps error and loading', () => {
+    showNotice({ kind: 'success', text: 'x' });
+    showNotice({ kind: 'info', text: 'x' });
+    showNotice({ kind: 'error', text: 'x' });
+    showNotice({ kind: 'loading', text: 'x', id: 'check:p-1' });
+    expect(toast.add.mock.calls.map(([options]) => options.timeout)).toEqual([6000, 6000, 0, 0]);
   });
 
   it('refuses a payload with an unknown kind, no text or an id that is not a name', async () => {
@@ -41,7 +46,7 @@ describe('notify', () => {
     expect(noticeOf({ kind: 'loading', text: 'Checking' })).toBeNull();
     expect(noticeOf(undefined)).toBeNull();
     await createNotifyHandler().handleAction('action', { kind: 'warning', text: 'x' });
-    for (const show of Object.values(toast)) expect(show).not.toHaveBeenCalled();
+    expect(toast.add).not.toHaveBeenCalled();
   });
 
   it('names the kinds mfe-shared declares', () => {

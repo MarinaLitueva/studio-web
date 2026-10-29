@@ -1,15 +1,11 @@
 import { renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { notify, bridge } = vi.hoisted(() => ({ notify: vi.fn(), bridge: { id: 'bridge' } }));
+const { notify } = vi.hoisted(() => ({ notify: vi.fn() }));
 
-vi.mock('@gears-frontx/react', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@gears-frontx/react')>()),
-  useMfeBridge: () => bridge,
-}));
 vi.mock('@constructor-studio/mfe-shared', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@constructor-studio/mfe-shared')>()),
-  notify,
+  useNotify: () => notify,
 }));
 vi.mock('../i18n', () => {
   const t = (key: string, params?: Record<string, string>) =>
@@ -58,7 +54,7 @@ describe('a refused cancel or retry', () => {
   ] as const)("%s %s becomes the shell's error toast", (event, _reason, refusal, text) => {
     renderHook(() => useSyncRefusals('p-1'));
     refuse(event, 'p-1', refusal);
-    expect(notify).toHaveBeenCalledWith(bridge, { kind: 'error', text }, 'projects');
+    expect(notify).toHaveBeenCalledWith({ kind: 'error', text });
   });
 
   it("is not shown for another project's sources", () => {

@@ -4,11 +4,11 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthSession, AuthStateEvent, FrontXApp } from '@gears-frontx/react';
 
-const { mockHas, mockGetService, publishFrameUrl, toastInfo } = vi.hoisted(() => ({
+const { mockHas, mockGetService, publishFrameUrl, showNotice } = vi.hoisted(() => ({
   mockHas: vi.fn(),
   mockGetService: vi.fn(),
   publishFrameUrl: vi.fn(),
-  toastInfo: vi.fn(),
+  showNotice: vi.fn(),
 }));
 
 vi.mock('@gears-frontx/react', async (importOriginal) => ({
@@ -16,7 +16,7 @@ vi.mock('@gears-frontx/react', async (importOriginal) => ({
   apiRegistry: { has: mockHas, getService: mockGetService },
 }));
 vi.mock('@/app/mfe/sharedContext', () => ({ publishFrameUrl }));
-vi.mock('sonner', () => ({ toast: { info: toastInfo } }));
+vi.mock('@/app/mfe/notifyAction', () => ({ showNotice }));
 
 import {
   AccountsApiService,
@@ -1179,7 +1179,7 @@ describe('createEditorSession', () => {
 
       h.frames[0]?.answer({ type: 'studio.openComponent', name: 'cf-gears-api-gateway' });
 
-      expect(toastInfo).toHaveBeenCalledWith('shell:editor_component_unavailable');
+      expect(showNotice).toHaveBeenCalledWith({ kind: 'info', text: 'shell:editor_component_unavailable' });
     });
 
     it("attaches to the entry space-mfe declares", () => {

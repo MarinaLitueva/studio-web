@@ -3,7 +3,6 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { FrontXProvider, apiRegistry, createFrontXApp, registerSlice, MfeHandlerMF, gtsPlugin, FRONTX_MFE_ENTRY_MF } from '@gears-frontx/react';
 import { SHELL_SCHEMAS } from '@/app/mfe/schemas';
-import { Toaster } from '@/app/components/ui/sonner';
 import {
   AccountsApiService,
   ConnectorsApiService,
@@ -25,6 +24,7 @@ import { appSessionSlice } from '@/app/slices/appSessionSlice';
 import { editorSessionSlice } from '@/app/slices/editorSessionSlice';
 import { keycloakOidcProvider } from '@/app/auth/keycloakOidcProvider';
 import App from './App';
+import { ShellToaster } from '@/app/layout/ShellToaster';
 
 // Import all themes
 import { DEFAULT_THEME_ID, defaultTheme } from '@/app/themes/default';
@@ -122,7 +122,7 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <FrontXProvider app={app}>
       <App />
-      <Toaster />
+      <ShellToaster />
     </FrontXProvider>
   </StrictMode>
 );
