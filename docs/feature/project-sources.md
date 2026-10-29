@@ -991,7 +991,7 @@ shown.
 
 **Touches**:
 - Event: `mfe/artifacts/cancel-refused`, `mfe/artifacts/retry-refused`
-- Entities: `artifactEffects`, `useSyncRefusals`, `SourcesSection`, `notify` (mfe-shared)
+- Entities: `artifactEffects`, `useSyncRefusals`, `SourcesSection`, `useNotify` (mfe-shared)
 
 ### Open specs shows Specs searched by the source's path
 

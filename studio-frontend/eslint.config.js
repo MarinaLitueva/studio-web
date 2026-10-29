@@ -375,6 +375,17 @@ export default [
               message:
                 'MFE VIOLATION: MFE packages cannot import from other MFE packages. Each MFE must be self-contained.',
             },
+            {
+              group: ['@gears-frontx/ui-kit/toast'],
+              message:
+                "MFE VIOLATION: an MFE shows a toast with useNotify from mfe-shared. The kit's toast in an MFE realm is dropped silently.",
+            },
+            {
+              group: ['@gears-frontx/ui-kit'],
+              importNames: ['toast', 'Toaster', 'useToastManager', 'createToastManager'],
+              message:
+                "MFE VIOLATION: an MFE shows a toast with useNotify from mfe-shared. The kit's toast in an MFE realm is dropped silently.",
+            },
           ],
         },
       ],

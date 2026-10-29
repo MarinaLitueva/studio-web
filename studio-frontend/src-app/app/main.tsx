@@ -24,7 +24,7 @@ import { appSessionSlice } from '@/app/slices/appSessionSlice';
 import { editorSessionSlice } from '@/app/slices/editorSessionSlice';
 import { keycloakOidcProvider } from '@/app/auth/keycloakOidcProvider';
 import App from './App';
-import { ShellToaster } from '@/app/layout/ShellToaster';
+import { ShellToaster } from '@/app/layout/ShellToaster'; // Below globals.css: the kit Button's CSS must follow Tailwind's preflight
 
 // Import all themes
 import { DEFAULT_THEME_ID, defaultTheme } from '@/app/themes/default';
