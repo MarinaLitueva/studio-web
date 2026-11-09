@@ -139,6 +139,15 @@ describe('WorkspacesScreen', () => {
     await waitFor(() => expect(shownRows()).toBe(10));
   });
 
+  it('says the organization has no workspaces yet, with no search to clear', async () => {
+    queryResult.current = { ...queryResult.current, data: { items: [] } };
+    render(<WorkspacesScreen />);
+
+    await waitFor(() => expect(screen.getByText(en.empty_title)).toBeTruthy());
+    expect(screen.getByText(en.empty_hint)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: en.clear_search })).toBeNull();
+  });
+
   it('opens a workspace from its row', async () => {
     render(<WorkspacesScreen />);
     await waitFor(() => expect(shownRows()).toBe(10));
