@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { apiRegistry, useApiQuery, useQueryCache } from '@gears-frontx/react';
+import type { DataGridLoadContext, DataGridLoadResult } from '@gears-frontx/ui-kit';
 import {
-  useDataGrid,
-  type DataGridLoadContext,
-  type DataGridLoadResult,
-} from '@gears-frontx/ui-kit';
-import { AccountsApiService, ConnectorsApiService } from '@constructor-studio/mfe-shared';
+  AccountsApiService,
+  ConnectorsApiService,
+  RowsBridge,
+  TEXT_SEARCH_FILTER_KEY,
+} from '@constructor-studio/mfe-shared';
 import { ArtifactIngestApiService } from '../api/ArtifactIngestApiService';
 import { DocumentsApiService } from '../api/DocumentsApiService';
 import { inFlight } from '../model/repoImport';
@@ -18,7 +19,6 @@ import {
   type SourcesFooter,
   type SourcesTableRow,
 } from '../model/sourceRows';
-import { TEXT_SEARCH_FILTER_KEY } from './dataGridFilters';
 import { useProjectImport } from './useArtifactImport';
 import { repositoryNodesParams } from './useArtifacts';
 import { projectConfigQuery, useProjectConfig } from './useProjectConfig';
@@ -38,17 +38,6 @@ export interface SourcesLoad {
   load: (context: DataGridLoadContext) => Promise<DataGridLoadResult<SourcesTableRow>>;
   rowsBridge: React.ReactElement;
 }
-
-const RowsBridge: React.FC<{ rowsKey: string }> = ({ rowsKey }) => {
-  const grid = useDataGrid();
-  const shown = useRef(rowsKey);
-  useEffect(() => {
-    if (shown.current === rowsKey) return;
-    shown.current = rowsKey;
-    void grid.triggerLoad();
-  }, [grid, rowsKey]);
-  return null;
-};
 
 function settledSyncsOf(lines: readonly SourceImportLine[]): string {
   return lines

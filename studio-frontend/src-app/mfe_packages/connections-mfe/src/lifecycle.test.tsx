@@ -1,3 +1,4 @@
+import { stubResizeObserver } from '@frontx-test-utils/stubResizeObserver';
 import { withOwnQueryCache } from '@frontx-test-utils/withOwnQueryCache';
 import React from 'react';
 import { render, screen } from '@testing-library/react';
@@ -74,6 +75,7 @@ vi.mock('@constructor-studio/mfe-shared', async (importOriginal) => ({
 
 describe('connections-mfe lifecycle', () => {
   beforeEach(() => {
+    stubResizeObserver();
     // `useConnectionList` reads `listing.key`/`listing.fetch` at the call
     // site — evaluated even though `useQuery` itself is mocked below — so the
     // fake service has to return descriptor-shaped objects, not bare strings.
@@ -149,8 +151,8 @@ describe('connections-mfe lifecycle', () => {
     // state are what prove the lifecycle now mounts the connections list instead.
     expect(screen.getByRole('heading', { level: 2, name: en.title })).toBeTruthy();
     expect(screen.getByRole('button', { name: en.connect_source })).toBeTruthy();
-    expect(screen.getByRole('searchbox', { name: en.search_placeholder })).toBeTruthy();
-    expect(screen.getByText(en.empty_title)).toBeTruthy();
+    expect(await screen.findByPlaceholderText(en.search_placeholder)).toBeTruthy();
+    expect(await screen.findByText(en.empty_title)).toBeTruthy();
   });
 
   it('inherits base mount behavior from StudioMfeLifecycle', async () => {

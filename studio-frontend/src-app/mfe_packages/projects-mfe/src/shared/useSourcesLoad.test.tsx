@@ -42,10 +42,13 @@ vi.mock('@gears-frontx/react', () => ({
   useQueryCache: () => ({ invalidate }),
 }));
 vi.mock('@gears-frontx/ui-kit', () => ({ useDataGrid: () => ({ triggerLoad }) }));
-vi.mock('@constructor-studio/mfe-shared', () => ({
+vi.mock('@constructor-studio/mfe-shared', async () => ({
   AccountsApiService: class {},
   ConnectorsApiService: class {},
   PROJECT_CONFIG_TYPE: 'project-config',
+  TEXT_SEARCH_FILTER_KEY: 'textSearch',
+  // The real bridge, over the `useDataGrid` mocked above.
+  RowsBridge: (await import('../../../shared/src/ui/RowsBridge')).RowsBridge,
 }));
 vi.mock('../api/ArtifactIngestApiService', () => ({ ArtifactIngestApiService: class {} }));
 vi.mock('../api/DocumentsApiService', () => ({ DocumentsApiService: class {} }));

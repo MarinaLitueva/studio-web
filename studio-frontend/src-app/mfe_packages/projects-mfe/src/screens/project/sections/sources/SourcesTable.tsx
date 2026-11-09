@@ -3,7 +3,6 @@ import { Plug } from 'lucide-react';
 import { useAppSelector, useMfeBridge } from '@gears-frontx/react';
 import {
   Button,
-  DataGrid,
   DataGridEmptyStatePlugin,
   DataGridPaginationPlugin,
   DataGridTextSearchPlugin,
@@ -16,13 +15,13 @@ import {
   useDataGrid,
   type DataGridTextSearchPluginApi,
 } from '@gears-frontx/ui-kit';
+import { LIST_PAGE_LIMITS, ListGrid, useThemedRoot } from '@constructor-studio/mfe-shared';
 import { useSourcesText } from '../../../../i18n';
 import { openSourcesConnect } from '../../../../actions/sourcesConnectActions';
 import { ReadFailed, SectionSkeleton } from '../../../../components/SectionStates';
 import { activityScale, type SourcesTableRow } from '../../../../model/sourceRows';
 import { useSourcesLoad } from '../../../../shared/useSourcesLoad';
 import { useSourceRowActions } from '../../../../shared/useSourceRowActions';
-import { useThemedRoot } from '../../../../shared/useThemedRoot';
 import { NAV_SLICE_KEY } from '../../../../slices/navSlice';
 import { UploadDocumentsButton } from '../../upload/UploadDocumentsButton';
 import { UploadPanel } from '../../upload/UploadPanel';
@@ -30,8 +29,6 @@ import { sourceColumns } from './sourceColumns';
 import { SourcesFooter } from './SourcesFooter';
 import styles from './SourcesSection.module.css';
 import empty from '../../../../components/EmptyState.module.css';
-
-const PAGE_LIMITS = [25, 50, 100];
 
 const SourcesEmpty: React.FC = () => {
   const t = useSourcesText();
@@ -113,20 +110,20 @@ export const SourcesTable: React.FC<SourcesTableProps> = ({
     <div ref={findThemedRoot} className={styles.section}>
       <UploadPanel projectId={projectId} projectName={projectName} className={styles.upload} />
       <div className={styles.grid}>
-        <DataGrid<SourcesTableRow>
+        <ListGrid<SourcesTableRow>
           key={projectId}
           name="project-sources"
           persistent="memory"
           load={sources.load}
           columns={columns}
+          footer={<SourcesFooter footer={sources.footer} />}
         >
           <DataGridTextSearchPlugin placeholder={t('search')} />
-          <DataGridPaginationPlugin defaultLimit={PAGE_LIMITS[0]} limits={PAGE_LIMITS} autoHide />
+          <DataGridPaginationPlugin defaultLimit={LIST_PAGE_LIMITS[0]} limits={LIST_PAGE_LIMITS} autoHide />
           <DataGridEmptyStatePlugin component={SourcesEmpty} />
           {sources.rowsBridge}
-        </DataGrid>
+        </ListGrid>
       </div>
-      <SourcesFooter footer={sources.footer} />
     </div>
   );
 };

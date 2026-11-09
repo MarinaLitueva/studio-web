@@ -10,79 +10,12 @@
   padding: 0 var(--space-6) var(--space-6);
 }
 
-.searchRow {
-  display: flex;
-  align-items: center;
-  padding-block: var(--space-2);
-  border-bottom: var(--border-width) solid var(--border);
-}
-
-/* The kit's Input with an icon wraps the field in a full-width span. */
-.searchBox {
-  flex: none;
-}
-
-/* `input.search`: see ProjectListScreen.module.css. */
-input.search {
-  width: 13.75rem;
-  height: var(--control-height-sm);
-}
-
 .note {
   margin: 0;
   padding: var(--space-4) var(--space-6);
   font-size: var(--text-body-size);
   line-height: var(--text-body-line-height);
   color: var(--muted-foreground);
-}
-
-.table {
-  width: 100%;
-  table-layout: fixed;
-  border: 0;
-  border-radius: 0;
-}
-
-.table td {
-  padding-block: var(--space-4);
-}
-
-.table th {
-  color: var(--muted-foreground);
-}
-
-.colName {
-  text-align: start;
-  overflow: hidden;
-}
-
-.colProjects {
-  width: 12%;
-}
-
-.colIssues {
-  width: 12%;
-}
-
-.colAccess {
-  width: 16%;
-}
-
-.colConfiguration {
-  width: 16%;
-}
-
-.colUpdated {
-  width: 10%;
-}
-
-.colProjects,
-.colIssues,
-.colAccess,
-.colConfiguration,
-.colUpdated {
-  text-align: start;
-  white-space: nowrap;
 }
 
 .nameButton {
@@ -149,22 +82,6 @@ input.search {
   margin-inline: auto;
   border: 0;
   white-space: normal;
-}
-
-.footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  min-height: var(--control-height-lg);
-  padding-inline: var(--space-4);
-  border-top: var(--border-width) solid var(--border);
-}
-
-.range {
-  font-size: var(--text-meta-size);
-  line-height: var(--text-meta-line-height);
-  color: var(--muted-foreground);
 }
 
 .stateBlock {

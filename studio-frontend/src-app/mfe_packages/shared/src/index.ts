@@ -42,6 +42,9 @@ export {
 } from './host/chainOutcome';
 export { useNotify } from './host/useNotify';
 export { SectionHeader } from './ui/SectionHeader';
+export { LIST_PAGE_LIMITS, ListGrid } from './ui/ListGrid';
+export { RowsBridge, TEXT_SEARCH_FILTER_KEY } from './ui/RowsBridge';
+export { useThemedRoot } from './ui/useThemedRoot';
 export { StudioMfeLifecycle } from './mfe/StudioMfeLifecycle';
 export { authShared } from './auth/authShared';
 export {

@@ -1,36 +1,85 @@
 /** The organization's workspaces */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   apiRegistry,
   useApiQuery,
+  useFormatters,
   useMfeBridge,
   useSharedProperty,
 } from "@gears-frontx/react";
-import { Folder, Search } from "lucide-react";
+import { Folder } from "lucide-react";
 import {
   Button,
+  DataGridEmptyStatePlugin,
+  DataGridPaginationPlugin,
+  DataGridTextSearchPlugin,
   Empty,
   EmptyActions,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
-  Input,
   Skeleton,
+  useDataGrid,
+  type DataGridLoadContext,
+  type DataGridLoadResult,
+  type DataGridTextSearchPluginApi,
 } from "@gears-frontx/ui-kit";
 import {
   useOrganization,
+  useThemedRoot,
   AccountsApiService,
+  LIST_PAGE_LIMITS,
+  ListGrid,
+  RowsBridge,
   STUDIO_SHARED_PROPERTY_CONTEXT_WORKSPACE,
+  TEXT_SEARCH_FILTER_KEY,
   type OrganizationRef,
   type Tenant,
 } from "@constructor-studio/mfe-shared";
 import { requestWorkspace } from "../../actions/workspaceActions";
 import { useWorkspacesScreenTranslations, useWorkspacesText } from "../../i18n";
 import { WorkspacesHeader } from "./components/WorkspacesHeader";
-import { WorkspacesTable } from "./components/WorkspacesTable";
+import { workspaceColumns } from "./components/workspaceColumns";
 import styles from "./WorkspacesScreen.module.css";
+
+const WorkspacesEmpty: React.FC = () => {
+  const t = useWorkspacesText();
+  const grid = useDataGrid<Tenant>();
+  const filtered = grid.useStore((state) => state.hasActiveFilters);
+
+  if (filtered) {
+    return (
+      <Empty className={styles.empty}>
+        <EmptyHeader>
+          <EmptyDescription>{t("empty_search")}</EmptyDescription>
+        </EmptyHeader>
+        <EmptyActions>
+          <Button
+            variant="link"
+            onClick={() => grid.getPlugin<DataGridTextSearchPluginApi>("textSearch")?.setSearch("")}
+          >
+            {t("clear_search")}
+          </Button>
+        </EmptyActions>
+      </Empty>
+    );
+  }
+  return (
+    <Empty className={styles.empty}>
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <Folder />
+        </EmptyMedia>
+        <EmptyTitle>{t("empty_title")}</EmptyTitle>
+        <EmptyDescription>{t("empty_hint")}</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
+  );
+};
+
+WorkspacesEmpty.displayName = "WorkspacesEmpty";
 
 // @cpt-dod:cpt-studiofrontend-dod-workspaces-screen-level:p1
 const WorkspaceList: React.FC<{
@@ -40,7 +89,8 @@ const WorkspaceList: React.FC<{
   const bridge = useMfeBridge();
   const accounts = apiRegistry.getService(AccountsApiService);
   const t = useWorkspacesText();
-  const [query, setQuery] = useState("");
+  const { formatRelative } = useFormatters();
+  const [container, findThemedRoot] = useThemedRoot();
   // `staleTime: 0` is what makes the `refetch()` below reach the network, and
   // is not an accidental opt-out of the shared 30s default. There are two
   // caches, and this number is handed to both: react-query's, whose staleness
@@ -73,11 +123,26 @@ const WorkspaceList: React.FC<{
     [all],
   );
 
-  const rows = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return all;
-    return all.filter((row) => row.name.toLowerCase().includes(needle));
-  }, [all, query]);
+  const rowsKey = useMemo(() => JSON.stringify(all), [all]);
+  const rowsRef = useRef(all);
+  useLayoutEffect(() => {
+    rowsRef.current = all;
+  }, [all]);
+
+  const [found, setFound] = useState<number | null>(null);
+  const load = useCallback(
+    async (context: DataGridLoadContext): Promise<DataGridLoadResult<Tenant>> => {
+      const search: string = context.filters?.[TEXT_SEARCH_FILTER_KEY]?.value ?? "";
+      const needle = search.trim().toLowerCase();
+      const shown = needle
+        ? rowsRef.current.filter((row) => row.name.toLowerCase().includes(needle))
+        : rowsRef.current;
+      setFound(shown.length);
+      const { page, limit } = context.pagination ?? { page: 1, limit: shown.length };
+      return { results: shown.slice((page - 1) * limit, page * limit), total: shown.length };
+    },
+    [],
+  );
 
   // @cpt-dod:cpt-studiofrontend-dod-workspaces-screen-row-opens:p1
   const open = useCallback(
@@ -87,10 +152,29 @@ const WorkspaceList: React.FC<{
     [bridge, organization.id],
   );
 
+  const columns = useMemo(
+    () =>
+      workspaceColumns({
+        labels: {
+          workspace: t("col_workspace"),
+          projects: t("col_projects"),
+          issues: t("col_issues"),
+          access: t("col_access"),
+          configuration: t("col_configuration"),
+          updated: t("col_updated"),
+          noData: t("no_data"),
+        },
+        formatRelative,
+        onOpen: open,
+      }),
+    [t, formatRelative, open],
+  );
+
   const pending = translationsPending || (isLoading && all.length === 0);
+  const gridShown = !isError || all.length > 0;
 
   return (
-    <div className={styles.screen}>
+    <div ref={findThemedRoot} className={styles.screen}>
       <WorkspacesHeader
         busy={pending}
         canCreate
@@ -99,21 +183,6 @@ const WorkspaceList: React.FC<{
       />
 
       <div className={styles.body}>
-        {/* TODO: DataGrid's text search replaces this row. */}
-        <div className={styles.searchRow}>
-          <div className={styles.searchBox}>
-            <Input
-              className={styles.search}
-              type="search"
-              value={query}
-              icon={<Search size={16} strokeWidth={1.3} />}
-              placeholder={t("search_placeholder")}
-              onChange={(event) => setQuery(event.target.value)}
-              aria-label={t("search_placeholder")}
-            />
-          </div>
-        </div>
-
         {pending ? (
           <div className={styles.loading}>
             <Skeleton className={styles.rowSkeleton} />
@@ -124,7 +193,9 @@ const WorkspaceList: React.FC<{
           <>
             {isError && (
               <div className={styles.stateBlock}>
-                <p className={styles.error}>{t("error_title")}</p>
+                <p className={styles.error} role="alert">
+                  {t("error_title")}
+                </p>
                 <Button
                   variant="secondary"
                   size="sm"
@@ -135,37 +206,27 @@ const WorkspaceList: React.FC<{
                 </Button>
               </div>
             )}
-            <WorkspacesTable
-              rows={rows}
-              // The organization's count, not the search's: the caption reads
-              // "1-2 of 10", and passing `rows` would make it say "1-2 of 2".
-              total={all.length}
-              empty={
-                query.trim() ? (
-                  <Empty className={styles.empty}>
-                    <EmptyHeader>
-                      <EmptyDescription>{t("empty_search")}</EmptyDescription>
-                    </EmptyHeader>
-                    <EmptyActions>
-                      <Button variant="link" onClick={() => setQuery("")}>
-                        {t("clear_search")}
-                      </Button>
-                    </EmptyActions>
-                  </Empty>
-                ) : isError ? null : (
-                  <Empty className={styles.empty}>
-                    <EmptyHeader>
-                      <EmptyMedia variant="icon">
-                        <Folder />
-                      </EmptyMedia>
-                      <EmptyTitle>{t("empty_title")}</EmptyTitle>
-                      <EmptyDescription>{t("empty_hint")}</EmptyDescription>
-                    </EmptyHeader>
-                  </Empty>
-                )
-              }
-              onOpen={open}
-            />
+            {gridShown && (
+              <ListGrid<Tenant>
+                key={organization.id}
+                name="workspaces"
+                persistent="memory"
+                label={t("table_label")}
+                load={load}
+                columns={columns}
+                portalContainer={container ?? undefined}
+                footer={found ? t.count("totals_workspaces", found) : null}
+              >
+                <DataGridTextSearchPlugin placeholder={t("search_placeholder")} />
+                <DataGridPaginationPlugin
+                  defaultLimit={LIST_PAGE_LIMITS[0]}
+                  limits={LIST_PAGE_LIMITS}
+                  autoHide
+                />
+                <DataGridEmptyStatePlugin component={WorkspacesEmpty} />
+                <RowsBridge rowsKey={rowsKey} />
+              </ListGrid>
+            )}
           </>
         )}
       </div>

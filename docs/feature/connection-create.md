@@ -463,7 +463,7 @@ the record was written is not when it last synchronised, and a member reading
 - `cpt-studiofrontend-algo-connection-list-read`
 
 **Touches**:
-- Entities: `ConnectionsTable`
+- Entities: `connectionColumns`
 
 ### The list learns without polling
 

@@ -9,55 +9,6 @@
   padding: 0 var(--space-6) var(--space-6);
 }
 
-.searchRow {
-  display: flex;
-  align-items: center;
-  padding-block: var(--space-2);
-  border-bottom: var(--border-width) solid var(--border);
-}
-
-/* The kit's Input with an icon wraps the field in a full-width span. */
-.searchBox {
-  flex: none;
-}
-
-/* `input.search`: see ProjectListScreen.module.css. */
-input.search {
-  width: 13.75rem;
-  height: var(--control-height-sm);
-}
-
-.table {
-  width: 100%;
-}
-
-/* Two text lines plus breathing room — the mockup's row rhythm. Doubled to
-   outweigh the kit's own cell padding. */
-.table.table tbody tr > td {
-  padding-block: var(--space-4);
-}
-
-.table th {
-  color: var(--muted-foreground);
-}
-
-.colConnection {
-  text-align: start;
-}
-
-.colStatus,
-.colAvailable,
-.colProjects,
-.colLastSync {
-  text-align: start;
-  white-space: nowrap;
-}
-
-.colActions {
-  text-align: end;
-  white-space: nowrap;
-}
-
 .nameCell {
   display: flex;
   align-items: center;
@@ -145,16 +96,29 @@ input.search {
   text-align: center;
 }
 
+.stateBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-block: var(--space-4);
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+.error {
+  margin: 0;
+  padding-inline: var(--space-4);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+  color: var(--danger);
+}
+
+.retry {
+  margin-inline: var(--space-4);
+  align-self: flex-start;
+}
+
 .empty {
   margin-inline: auto;
   border: 0;
   white-space: normal;
-}
-
-.footer {
-  padding: var(--space-3) var(--space-4);
-  border-top: var(--border-width) solid var(--border);
-  font-size: var(--text-meta-size);
-  line-height: var(--text-meta-line-height);
-  color: var(--muted-foreground);
 }
