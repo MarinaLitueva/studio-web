@@ -8,14 +8,17 @@ import {
   DataGridTextSearchPlugin,
   Empty,
   EmptyActions,
-  EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
   useDataGrid,
-  type DataGridTextSearchPluginApi,
 } from '@gears-frontx/ui-kit';
-import { LIST_PAGE_LIMITS, ListGrid, useThemedRoot } from '@constructor-studio/mfe-shared';
+import {
+  LIST_PAGE_LIMITS,
+  ListGrid,
+  ListNoMatch,
+  useThemedRoot,
+} from '@constructor-studio/mfe-shared';
 import { useSourcesText } from '../../../../i18n';
 import { openSourcesConnect } from '../../../../actions/sourcesConnectActions';
 import { ReadFailed, SectionSkeleton } from '../../../../components/SectionStates';
@@ -38,21 +41,7 @@ const SourcesEmpty: React.FC = () => {
   const projectId = useAppSelector((state) => state[NAV_SLICE_KEY].projectId);
 
   if (filtered) {
-    return (
-      <Empty className={styles.empty}>
-        <EmptyHeader>
-          <EmptyDescription>{t('no_match')}</EmptyDescription>
-        </EmptyHeader>
-        <EmptyActions>
-          <Button
-            variant="link"
-            onClick={() => grid.getPlugin<DataGridTextSearchPluginApi>('textSearch')?.setSearch('')}
-          >
-            {t('clear_search')}
-          </Button>
-        </EmptyActions>
-      </Empty>
-    );
+    return <ListNoMatch message={t('no_match')} clearLabel={t('clear_search')} />;
   }
   return (
     <Empty className={styles.empty}>

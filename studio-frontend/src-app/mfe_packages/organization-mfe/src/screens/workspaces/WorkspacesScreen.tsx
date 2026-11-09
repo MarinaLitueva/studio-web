@@ -1,6 +1,6 @@
 /** The organization's workspaces */
 
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   apiRegistry,
   useApiQuery,
@@ -10,21 +10,16 @@ import {
 } from "@gears-frontx/react";
 import { Folder } from "lucide-react";
 import {
-  Button,
   DataGridEmptyStatePlugin,
   DataGridPaginationPlugin,
   DataGridTextSearchPlugin,
   Empty,
-  EmptyActions,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
   Skeleton,
   useDataGrid,
-  type DataGridLoadContext,
-  type DataGridLoadResult,
-  type DataGridTextSearchPluginApi,
 } from "@gears-frontx/ui-kit";
 import {
   useOrganization,
@@ -32,9 +27,10 @@ import {
   AccountsApiService,
   LIST_PAGE_LIMITS,
   ListGrid,
-  RowsBridge,
+  ListNoMatch,
+  ListReadFailed,
   STUDIO_SHARED_PROPERTY_CONTEXT_WORKSPACE,
-  TEXT_SEARCH_FILTER_KEY,
+  useListRows,
   type OrganizationRef,
   type Tenant,
 } from "@constructor-studio/mfe-shared";
@@ -50,21 +46,7 @@ const WorkspacesEmpty: React.FC = () => {
   const filtered = grid.useStore((state) => state.hasActiveFilters);
 
   if (filtered) {
-    return (
-      <Empty className={styles.empty}>
-        <EmptyHeader>
-          <EmptyDescription>{t("empty_search")}</EmptyDescription>
-        </EmptyHeader>
-        <EmptyActions>
-          <Button
-            variant="link"
-            onClick={() => grid.getPlugin<DataGridTextSearchPluginApi>("textSearch")?.setSearch("")}
-          >
-            {t("clear_search")}
-          </Button>
-        </EmptyActions>
-      </Empty>
-    );
+    return <ListNoMatch message={t("empty_search")} clearLabel={t("clear_search")} />;
   }
   return (
     <Empty className={styles.empty}>
@@ -80,6 +62,11 @@ const WorkspacesEmpty: React.FC = () => {
 };
 
 WorkspacesEmpty.displayName = "WorkspacesEmpty";
+
+function searchWorkspaces(rows: readonly Tenant[], text: string): readonly Tenant[] {
+  const needle = text.trim().toLowerCase();
+  return needle ? rows.filter((row) => row.name.toLowerCase().includes(needle)) : rows;
+}
 
 // @cpt-dod:cpt-studiofrontend-dod-workspaces-screen-level:p1
 const WorkspaceList: React.FC<{
@@ -123,26 +110,7 @@ const WorkspaceList: React.FC<{
     [all],
   );
 
-  const rowsKey = useMemo(() => JSON.stringify(all), [all]);
-  const rowsRef = useRef(all);
-  useLayoutEffect(() => {
-    rowsRef.current = all;
-  }, [all]);
-
-  const [found, setFound] = useState<number | null>(null);
-  const load = useCallback(
-    async (context: DataGridLoadContext): Promise<DataGridLoadResult<Tenant>> => {
-      const search: string = context.filters?.[TEXT_SEARCH_FILTER_KEY]?.value ?? "";
-      const needle = search.trim().toLowerCase();
-      const shown = needle
-        ? rowsRef.current.filter((row) => row.name.toLowerCase().includes(needle))
-        : rowsRef.current;
-      setFound(shown.length);
-      const { page, limit } = context.pagination ?? { page: 1, limit: shown.length };
-      return { results: shown.slice((page - 1) * limit, page * limit), total: shown.length };
-    },
-    [],
-  );
+  const { load, found, rowsBridge } = useListRows(all, searchWorkspaces);
 
   // @cpt-dod:cpt-studiofrontend-dod-workspaces-screen-row-opens:p1
   const open = useCallback(
@@ -192,19 +160,11 @@ const WorkspaceList: React.FC<{
         ) : (
           <>
             {isError && (
-              <div className={styles.stateBlock}>
-                <p className={styles.error} role="alert">
-                  {t("error_title")}
-                </p>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className={styles.retry}
-                  onClick={() => void refetch()}
-                >
-                  {t("retry")}
-                </Button>
-              </div>
+              <ListReadFailed
+                message={t("error_title")}
+                retryLabel={t("retry")}
+                onRetry={() => void refetch()}
+              />
             )}
             {gridShown && (
               <ListGrid<Tenant>
@@ -224,7 +184,7 @@ const WorkspaceList: React.FC<{
                   autoHide
                 />
                 <DataGridEmptyStatePlugin component={WorkspacesEmpty} />
-                <RowsBridge rowsKey={rowsKey} />
+                {rowsBridge}
               </ListGrid>
             )}
           </>

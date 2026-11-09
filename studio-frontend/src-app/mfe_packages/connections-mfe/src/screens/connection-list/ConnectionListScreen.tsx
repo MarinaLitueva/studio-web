@@ -6,19 +6,19 @@ import {
   DataGridPaginationPlugin,
   DataGridTextSearchPlugin,
   Empty,
-  EmptyActions,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
   Skeleton,
   useDataGrid,
-  type DataGridTextSearchPluginApi,
 } from '@gears-frontx/ui-kit';
 import { useMfeBridge } from '@gears-frontx/react';
 import {
   LIST_PAGE_LIMITS,
   ListGrid,
+  ListNoMatch,
+  ListReadFailed,
   SectionHeader,
   useOrganization,
   useThemedRoot,
@@ -36,21 +36,7 @@ const ConnectionsEmpty: React.FC = () => {
   const filtered = grid.useStore((state) => state.hasActiveFilters);
 
   if (filtered) {
-    return (
-      <Empty className={styles.empty}>
-        <EmptyHeader>
-          <EmptyDescription>{t('empty_no_match')}</EmptyDescription>
-        </EmptyHeader>
-        <EmptyActions>
-          <Button
-            variant="link"
-            onClick={() => grid.getPlugin<DataGridTextSearchPluginApi>('textSearch')?.setSearch('')}
-          >
-            {t('clear_search')}
-          </Button>
-        </EmptyActions>
-      </Empty>
-    );
+    return <ListNoMatch message={t('empty_no_match')} clearLabel={t('clear_search')} />;
   }
   return (
     <Empty className={styles.empty}>
@@ -103,19 +89,11 @@ export const ConnectionListScreen: React.FC = () => {
         ) : (
           <>
             {list.failed && (
-              <div className={styles.stateBlock}>
-                <p className={styles.error} role="alert">
-                  {t('error_title')}
-                </p>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className={styles.retry}
-                  onClick={list.retry}
-                >
-                  {t('retry')}
-                </Button>
-              </div>
+              <ListReadFailed
+                message={t('error_title')}
+                retryLabel={t('retry')}
+                onRetry={list.retry}
+              />
             )}
             {gridShown && (
               <ListGrid<ConnectionRow>

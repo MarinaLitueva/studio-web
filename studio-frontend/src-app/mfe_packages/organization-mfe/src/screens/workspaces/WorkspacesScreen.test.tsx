@@ -106,6 +106,28 @@ describe('WorkspacesScreen', () => {
     expect(screen.getByText('30 workspaces')).toBeTruthy();
   });
 
+  it('shows the rest on the second page, under the same count', async () => {
+    queryResult.current = { ...queryResult.current, data: { items: rows(30) } };
+    render(<WorkspacesScreen />);
+    await waitFor(() => expect(shownRows()).toBe(25));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Go to page 2' }));
+
+    await waitFor(() => expect(shownRows()).toBe(5));
+    expect(screen.getByRole('button', { name: 'Workspace 29' })).toBeTruthy();
+    expect(screen.getByText('30 workspaces')).toBeTruthy();
+  });
+
+  it('finds a workspace whatever the case and the spaces around the search', async () => {
+    render(<WorkspacesScreen />);
+    await waitFor(() => expect(shownRows()).toBe(10));
+
+    typeSearch('  platform ');
+
+    await waitFor(() => expect(shownRows()).toBe(1));
+    expect(screen.getByRole('button', { name: 'Platform' })).toBeTruthy();
+  });
+
   it('says nothing matched, and Clear search brings the rows back', async () => {
     render(<WorkspacesScreen />);
     await waitFor(() => expect(shownRows()).toBe(10));
@@ -133,6 +155,18 @@ describe('WorkspacesScreen', () => {
     rerender(<WorkspacesScreen />);
 
     await waitFor(() => expect(shownRows()).toBe(11));
+  });
+
+  it("shows the other organization's own rows and count when the organization changes", async () => {
+    const { rerender } = render(<WorkspacesScreen />);
+    await waitFor(() => expect(shownRows()).toBe(10));
+
+    org.current = { id: 'org-2', name: 'Lab' };
+    queryResult.current = { ...queryResult.current, data: { items: rows(3) } };
+    rerender(<WorkspacesScreen />);
+
+    await waitFor(() => expect(shownRows()).toBe(3));
+    expect(screen.getByText('3 workspaces')).toBeTruthy();
   });
 
   it('keeps the rows and offers to read again when a read fails', async () => {

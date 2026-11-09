@@ -9,14 +9,15 @@ const { connections, providers, org, invalidate, triggerLoad } = vi.hoisted(() =
   providers: { current: {} as Query },
   org: { current: { id: 'org-1', name: 'Fabric' } as { id: string; name: string } | null },
   invalidate: vi.fn(),
-  triggerLoad: vi.fn(),
+  triggerLoad: vi.fn(() => ({ promise: Promise.resolve() })),
 }));
 
 vi.mock('@tanstack/react-query', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tanstack/react-query')>()),
   useQuery: () => connections.current,
 }));
-vi.mock('@gears-frontx/react', () => ({
+vi.mock('@gears-frontx/react', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@gears-frontx/react')>()),
   apiRegistry: {
     getService: () => ({
       providers: { key: ['providers'] },
@@ -29,12 +30,12 @@ vi.mock('@gears-frontx/react', () => ({
   useApiQuery: () => providers.current,
   useQueryCache: () => ({ invalidate }),
 }));
-vi.mock('@gears-frontx/ui-kit', () => ({ useDataGrid: () => ({ triggerLoad }) }));
-vi.mock('@constructor-studio/mfe-shared', async () => ({
-  ConnectorsApiService: class {},
-  TEXT_SEARCH_FILTER_KEY: 'textSearch',
-  // The real bridge, over the `useDataGrid` mocked above.
-  RowsBridge: (await import('../../../shared/src/ui/RowsBridge')).RowsBridge,
+vi.mock('@gears-frontx/ui-kit', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@gears-frontx/ui-kit')>()),
+  useDataGrid: () => ({ triggerLoad, getPlugin: () => undefined }),
+}));
+vi.mock('@constructor-studio/mfe-shared', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@constructor-studio/mfe-shared')>()),
   useOrganization: () => ({ org: org.current, loading: false }),
 }));
 
@@ -124,7 +125,7 @@ describe('useConnectionList', () => {
     providers.current = answered({ items: [{ provider: 'github', display_name: 'GitHub' }] });
     connections.current = answered({ items: ITEMS });
     invalidate.mockReset();
-    triggerLoad.mockReset();
+    triggerLoad.mockClear();
   });
 
   it("names a row's provider by its display name, or by its key when it has none", async () => {

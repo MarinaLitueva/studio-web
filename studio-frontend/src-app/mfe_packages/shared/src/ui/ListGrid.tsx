@@ -10,6 +10,8 @@ import styles from './ListGrid.module.css';
 
 export const LIST_PAGE_LIMITS = [25, 50, 100];
 
+export const TEXT_SEARCH_FILTER_KEY = 'textSearch';
+
 export type ListGridProps<TItem extends DataGridItem> = DataGridProps<TItem> & {
   footer?: ReactNode;
 };

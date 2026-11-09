@@ -1,14 +1,13 @@
 // @cpt-algo:cpt-studiofrontend-algo-connection-list-read:p2
-import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRegistry, useApiQuery, useQueryCache } from '@gears-frontx/react';
-import type { DataGridLoadContext, DataGridLoadResult } from '@gears-frontx/ui-kit';
 import {
   type ConnectionDto,
   ConnectorsApiService,
+  type ListRows,
   type OrganizationRef,
-  RowsBridge,
-  TEXT_SEARCH_FILTER_KEY,
+  useListRows,
   useOrganization,
 } from '@constructor-studio/mfe-shared';
 
@@ -18,16 +17,12 @@ export interface ConnectionRow {
   providerName: string;
 }
 
-export interface ConnectionListView {
+export interface ConnectionListView extends ListRows<ConnectionRow> {
   loading: boolean;
   failed: boolean;
   org: OrganizationRef | null;
   total: number;
-  /** What the search found; `null` until the grid's first load. */
-  found: number | null;
   retry: () => void;
-  load: (context: DataGridLoadContext) => Promise<DataGridLoadResult<ConnectionRow>>;
-  rowsBridge: React.ReactElement;
 }
 
 export function matchesQuery(row: ConnectionRow, query: string): boolean {
@@ -39,17 +34,24 @@ export function matchesQuery(row: ConnectionRow, query: string): boolean {
   );
 }
 
+function searchConnections(rows: readonly ConnectionRow[], query: string): readonly ConnectionRow[] {
+  // @cpt-begin:cpt-studiofrontend-algo-connection-list-read:p2:inst-4
+  return rows.filter((row) => matchesQuery(row, query));
+  // @cpt-end:cpt-studiofrontend-algo-connection-list-read:p2:inst-4
+}
+
 export function useConnectionList(): ConnectionListView {
   const connectors = apiRegistry.getService(ConnectorsApiService);
   const cache = useQueryCache();
   const { org, loading: orgLoading } = useOrganization();
+  const tenantId = org?.id ?? '';
 
   // @cpt-begin:cpt-studiofrontend-algo-connection-list-read:p2:inst-2
   const { data: providerData, isLoading: providersLoading } = useApiQuery(connectors.providers);
   // @cpt-end:cpt-studiofrontend-algo-connection-list-read:p2:inst-2
 
   // @cpt-begin:cpt-studiofrontend-algo-connection-list-read:p2:inst-1
-  const listing = connectors.connections({ tenantId: org?.id ?? '' });
+  const listing = connectors.connections({ tenantId });
   const {
     data: connectionData,
     isLoading: connectionsLoading,
@@ -57,7 +59,7 @@ export function useConnectionList(): ConnectionListView {
   } = useQuery({
     queryKey: listing.key,
     queryFn: ({ signal }) => listing.fetch({ signal }),
-    enabled: Boolean(org?.id),
+    enabled: Boolean(tenantId),
   });
   // @cpt-end:cpt-studiofrontend-algo-connection-list-read:p2:inst-1
 
@@ -74,27 +76,8 @@ export function useConnectionList(): ConnectionListView {
     }));
   }, [providerData, connectionData]);
 
-  const rowsKey = useMemo(() => JSON.stringify(all), [all]);
-  const rowsRef = useRef(all);
-  useLayoutEffect(() => {
-    rowsRef.current = all;
-  }, [all]);
+  const rows = useListRows(all, searchConnections);
 
-  const [found, setFound] = useState<number | null>(null);
-  const load = useCallback(
-    async (context: DataGridLoadContext): Promise<DataGridLoadResult<ConnectionRow>> => {
-      const search: string = context.filters?.[TEXT_SEARCH_FILTER_KEY]?.value ?? '';
-      // @cpt-begin:cpt-studiofrontend-algo-connection-list-read:p2:inst-4
-      const shown = rowsRef.current.filter((row) => matchesQuery(row, search));
-      // @cpt-end:cpt-studiofrontend-algo-connection-list-read:p2:inst-4
-      setFound(shown.length);
-      const { page, limit } = context.pagination ?? { page: 1, limit: shown.length };
-      return { results: shown.slice((page - 1) * limit, page * limit), total: shown.length };
-    },
-    []
-  );
-
-  const tenantId = org?.id ?? '';
   const retry = useCallback(() => {
     void cache.invalidate(connectors.connections({ tenantId }));
   }, [cache, connectors, tenantId]);
@@ -105,10 +88,8 @@ export function useConnectionList(): ConnectionListView {
     failed: connectionsFailed,
     org,
     total: all.length,
-    found,
     retry,
-    load,
-    rowsBridge: <RowsBridge rowsKey={rowsKey} />,
+    ...rows,
   };
   // @cpt-end:cpt-studiofrontend-algo-connection-list-read:p2:inst-6
 }
