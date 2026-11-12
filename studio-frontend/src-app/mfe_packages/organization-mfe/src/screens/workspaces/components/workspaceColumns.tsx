@@ -31,7 +31,6 @@ export function workspaceColumns({
       id: "workspace",
       label: labels.workspace,
       render: (row) => (
-        // @cpt-dod:cpt-studiofrontend-dod-workspaces-screen-row-opens:p1
         <span className={styles.nameCell}>
           <span className={styles.rowGlyph} aria-hidden>
             <Layers size={16} strokeWidth={1.3} />
